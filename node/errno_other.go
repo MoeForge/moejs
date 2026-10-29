@@ -5,20 +5,41 @@ package node
 import (
 	"errors"
 	"io/fs"
+	"runtime"
 	"syscall"
 )
 
-// errnoNumbers are libuv's codes on Windows, negated.
-var errnoNumbers = map[string]int{
-	"E2BIG": 4093, "EACCES": 4092, "EAGAIN": 4088, "EBADF": 4083, "EBUSY": 4082, "ECANCELED": 4081,
-	"EEXIST": 4075, "EFAULT": 4074, "EFBIG": 4036, "EINTR": 4072, "EINVAL": 4071, "EIO": 4070,
-	"EISDIR": 4068, "ELOOP": 4067, "EMFILE": 4066, "EMLINK": 4032, "ENAMETOOLONG": 4064, "ENFILE": 4060,
-	"ENODEV": 4055, "ENOENT": 4058, "ENOMEM": 4057, "ENOSPC": 4055, "ENOSYS": 4054, "ENOTDIR": 4052,
-	"ENOTEMPTY": 4051, "ENOTSUP": 4049, "ENXIO": 4033, "EPERM": 4048, "EROFS": 4034, "ESPIPE": 4035,
-	"ETXTBSY": 4031, "EXDEV": 4037,
+// errnoNames are the names of the errnos, libuv's. On Windows, these are
+// the values Go invents (above APPLICATION_ERROR), which the os package
+// and this package raise themselves.
+var errnoNames = map[syscall.Errno]string{
+	syscall.E2BIG: "E2BIG", syscall.EACCES: "EACCES", syscall.EAGAIN: "EAGAIN", syscall.EBADF: "EBADF",
+	syscall.EBUSY: "EBUSY", syscall.ECANCELED: "ECANCELED", syscall.EEXIST: "EEXIST", syscall.EFAULT: "EFAULT",
+	syscall.EFBIG: "EFBIG", syscall.EINTR: "EINTR", syscall.EINVAL: "EINVAL", syscall.EIO: "EIO",
+	syscall.EISDIR: "EISDIR", syscall.ELOOP: "ELOOP", syscall.EMFILE: "EMFILE", syscall.EMLINK: "EMLINK",
+	syscall.ENAMETOOLONG: "ENAMETOOLONG", syscall.ENFILE: "ENFILE", syscall.ENODEV: "ENODEV",
+	syscall.ENOMEM: "ENOMEM", syscall.ENOSPC: "ENOSPC", syscall.ENOSYS: "ENOSYS",
+	syscall.ENOTEMPTY: "ENOTEMPTY", syscall.ENOTSUP: "ENOTSUP", syscall.ENXIO: "ENXIO", syscall.EPERM: "EPERM",
+	syscall.EROFS: "EROFS", syscall.ESPIPE: "ESPIPE", syscall.ETXTBSY: "ETXTBSY", syscall.EXDEV: "EXDEV",
 }
 
+// errnoName returns the code of n. On Windows, a system error code goes
+// through libuv's uv_translate_sys_error, so that ERROR_PATH_NOT_FOUND
+// (Go's ENOTDIR) is ENOENT and ERROR_ACCESS_DENIED is EPERM, as Node.js
+// reports them; Go's invented values are named.
 func errnoName(n syscall.Errno) string {
+	if runtime.GOOS == "windows" && uint32(n) < 1<<29 {
+		return winSysErrorCode(uint32(n))
+	}
+	if c, ok := errnoNames[n]; ok {
+		return c
+	}
+	switch n {
+	case syscall.ENOENT:
+		return "ENOENT"
+	case syscall.ENOTDIR:
+		return "ENOTDIR"
+	}
 	var err error = n
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -31,8 +52,10 @@ func errnoName(n syscall.Errno) string {
 	return ""
 }
 
+// errnoNumber returns libuv's code of code on Windows, negated, and that
+// of UNKNOWN for one libuv does not know.
 func errnoNumber(code string) int {
-	if n, ok := errnoNumbers[code]; ok {
+	if n, ok := winErrnoNumbers[code]; ok {
 		return n
 	}
 	return 4094

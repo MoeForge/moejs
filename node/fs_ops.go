@@ -355,7 +355,10 @@ func (f *fsys) readdirRecursive(rel, p string, lifo, withTypes bool, grow func(i
 		}
 		ents, err := f.readdir(r)
 		if err != nil {
-			return nil, newSysError(err, "scandir", path.Join(p, dir))
+			if f.win32 && dir == "" {
+				return nil, newSysError(err, "scandir", p)
+			}
+			return nil, newSysError(err, "scandir", f.joinJS(p, dir))
 		}
 		// Each directory's part of the listing is charged, or held, as
 		// it is read, and the runtime's interrupt and Close stop the
@@ -463,7 +466,7 @@ func (e *env) listingValue(p string, ents []listed, enc encoding, withTypes, cha
 			parent := pv
 			if d.dir != "" {
 				if d.dir != lastDir {
-					lastDir, lastParent = d.dir, str(path.Join(p, d.dir))
+					lastDir, lastParent = d.dir, str(e.fsys.joinJS(p, d.dir))
 				}
 				parent = lastParent
 			}
@@ -472,7 +475,7 @@ func (e *env) listingValue(p string, ents []listed, enc encoding, withTypes, cha
 		}
 		name := d.name
 		if d.dir != "" {
-			name = d.dir + "/" + d.name
+			name = e.fsys.subName(d.dir, d.name)
 		}
 		v, err := e.nameValue(name, enc)
 		if err != nil {
@@ -764,7 +767,23 @@ func (e *env) mkdirOp(c call, args []engine.Value) (engine.Value, error) {
 
 // firstMissing returns the first directory of the path p, as JavaScript
 // gave it, that does not exist: what mkdir with recursive creates first.
+// On Windows, it is absolute and namespaced, as Node's is there.
 func (f *fsys) firstMissing(p string) string {
+	if f.win32 {
+		rel, err := f.rel(p)
+		if err != nil || rel == "." {
+			return ""
+		}
+		for i := 0; i <= len(rel); i++ {
+			if i < len(rel) && rel[i] != '/' {
+				continue
+			}
+			if !f.exists(rel[:i]) {
+				return win32Namespaced(f.jsPath(rel[:i]))
+			}
+		}
+		return ""
+	}
 	for i := 1; i <= len(p); i++ {
 		if i < len(p) && p[i] != '/' {
 			continue
@@ -774,6 +793,11 @@ func (f *fsys) firstMissing(p string) string {
 			continue
 		}
 		rel, err := f.rel(prefix)
+		if errors.Is(err, errEscape) {
+			// A directory above the mount, which JavaScript cannot
+			// change.
+			continue
+		}
 		if err != nil {
 			return ""
 		}
@@ -892,6 +916,10 @@ func (e *env) rmdirOp(c call, args []engine.Value) (engine.Value, error) {
 			return struct{}{}, newSysError(err, "rmdir", p)
 		}
 		if !info.IsDir() {
+			// libuv on Windows fails with ERROR_DIRECTORY: ENOENT.
+			if f.win32 {
+				return struct{}{}, newSysError(syscall.ENOENT, "rmdir", p)
+			}
 			return struct{}{}, newSysError(syscall.ENOTDIR, "rmdir", p)
 		}
 		if recursive {
@@ -922,7 +950,11 @@ func (e *env) unlinkOp(c call, args []engine.Value) (engine.Value, error) {
 		}
 		info, err := f.stat(rel, true)
 		if err == nil && info.IsDir() {
+			// libuv on Windows fails with ERROR_ACCESS_DENIED: EPERM.
 			err = syscall.EISDIR
+			if f.win32 {
+				err = syscall.EPERM
+			}
 		}
 		if err == nil {
 			err = f.remove(rel)

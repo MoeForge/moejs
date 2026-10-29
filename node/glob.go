@@ -70,6 +70,7 @@ type globCompile struct {
 	expanded int // the bytes the braces of the call's patterns expanded to
 	charge   func(n int) error
 	halt     func() error
+	win32    bool // the patterns may start with a drive or a share
 }
 
 // add counts an expression of n instructions.
@@ -170,6 +171,14 @@ func compileGlob(p string, cc *globCompile) ([]globPattern, error) {
 
 func compileOne(p string, cc *globCompile) (globPattern, error) {
 	var g globPattern
+	// On Windows, an absolute pattern may start with a volume: C:/ or
+	// //server/share/.
+	var vol string
+	if cc != nil && cc.win32 {
+		if v, n := win32Root(p); v != "" && (v[0] == '/' || strings.HasPrefix(p[n:], "/")) {
+			vol, p = v, p[n:]
+		}
+	}
 	abs := strings.HasPrefix(p, "/")
 	parts := strings.Split(p, "/")
 	if abs {
@@ -216,7 +225,7 @@ func compileOne(p string, cc *globCompile) (globPattern, error) {
 	}
 	g.prefix = strings.Join(prefix, "/")
 	if abs {
-		g.prefix = "/" + g.prefix
+		g.prefix = vol + "/" + g.prefix
 	}
 	return g, nil
 }
@@ -1251,13 +1260,19 @@ func (f *fsys) glob(cwd string, patterns []globPattern, o globOptions) ([]globMa
 	for _, prefix := range order {
 		base := prefix
 		if base != "" {
-			if base = path.Clean(base); base == "." {
+			if f.win32 {
+				vol, n := win32Root(base)
+				base = vol + path.Clean(base[n:])
+			} else {
+				base = path.Clean(base)
+			}
+			if base == "." {
 				base = ""
 			}
 		}
 		var jsDir string
 		switch {
-		case strings.HasPrefix(prefix, "/"):
+		case strings.HasPrefix(prefix, "/"), f.win32 && win32IsAbs(prefix):
 			jsDir = prefix
 		case prefix == "":
 			jsDir = cwd
@@ -1430,11 +1445,12 @@ func (w *globWalk) test(m *segMatcher, name string) bool {
 // join joins a directory of the walk, as the pattern names it, and a
 // name.
 func joinGlob(dir, name string) string {
-	switch dir {
-	case "":
+	switch {
+	case dir == "":
 		return name
-	case "/":
-		return "/" + name
+	case strings.HasSuffix(dir, "/"):
+		// "/", or a volume's root on Windows (C:/).
+		return dir + name
 	}
 	return dir + "/" + name
 }

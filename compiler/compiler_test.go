@@ -452,9 +452,10 @@ func TestCompileLimits(t *testing.T) {
 	sb.WriteString("return v0;\n}")
 	m, err := syntax.ParseModule("t.js", sb.String(), syntax.Options{})
 	require.NoError(t, err)
-	_, err = CompileModule(m)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "more than 256 registers")
+	fn, err := CompileModule(m)
+	require.NoError(t, err, "300 let bindings spill and compile")
+	assert.Less(t, int(fn.Children[0].NumRegs), 256, "spilled bindings live in the environment")
+	assert.Greater(t, len(fn.Children[0].CaptureLayout), 100, "spilled bindings are environment slots")
 }
 
 // TestCompileParameterLimits checks that parameters count against the

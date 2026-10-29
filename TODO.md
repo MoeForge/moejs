@@ -203,6 +203,17 @@ These run, with a result that differs from the specification:
   `..` that leaves the mount after other names (`/w/a/../../w/b.txt`) is
   EACCES, where Node.js resolves it outside and back in; one right after
   the mount (`/w/../w/b.txt`) is read lexically.
+- `node` on Windows: the Windows path forms and error codes are tested
+  on Linux, through the package's test hook, and the package
+  cross-compiles for Windows, but nothing has run on Windows itself yet:
+  `os.Root`'s errors there (the rename onto a directory, `ERROR_DIRECTORY`,
+  a listing of a file), links and junctions, 8.3 short names (a `Mount`
+  given as `C:\PROGRA~1` does not match `C:\Program Files`), trailing dots
+  and spaces that Windows drops from a name, and reserved names such as
+  `NUL`. `glob` matches case as written, where Node.js ignores it (there
+  and on macOS).
+  `mkdir` with `recursive` returns the plain path for a `Mount` without a
+  volume, where Node.js has no such mount.
 - `node` Buffer, against Node.js 24: no `readBigInt64LE` and the other
   BigInt reads and writes, no `copyBytesFrom`, no `asciiSlice`,
   `utf8Write` and the other `*Slice` and `*Write` methods, no `Blob`,
@@ -221,6 +232,10 @@ These run, with a result that differs from the specification:
 
 ## Host API
 
+- An idle hook for the synchronous calls of `node:fs` (`readFileSync` and
+  the others): they block the loop inside JavaScript, between an `OnWake`
+  and the next `OnIdle` of `eventloop.Options`, so a host's watchdog counts
+  the time they wait for the file system
 - `ParseJSON` straight from the bytes (it copies them into a string first)
 - Source maps
 - The outcome of a module's top-level `await` that settles after `Load`

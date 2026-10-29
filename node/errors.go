@@ -56,6 +56,10 @@ var errReadOnly = errors.New("read-only file system")
 // errClosed is the error of an operation after Close: EBADF.
 var errClosed = errors.New("file system closed")
 
+// errNotDir is a listing of a file on Windows, where Go's ENOTDIR is
+// ERROR_PATH_NOT_FOUND, which libuv names ENOENT: libuv's is ENOTDIR.
+var errNotDir = errors.New("not a directory")
+
 // errnoCode returns the Node.js code of err, a Go error of the file
 // system or of the Allow hook.
 func errnoCode(err error) string {
@@ -67,6 +71,8 @@ func errnoCode(err error) string {
 		return "EROFS"
 	case errors.Is(err, errClosed), errors.Is(err, fs.ErrClosed):
 		return "EBADF"
+	case errors.Is(err, errNotDir):
+		return "ENOTDIR"
 	case errors.As(err, &en):
 		if c := errnoName(en); c != "" {
 			return c
@@ -131,41 +137,80 @@ func newSysError2(err error, syscall, path, dest string) *sysError {
 	return &sysError{code: errnoCode(err), syscall: syscall, path: path, dest: dest, hasPath: true, hasDest: true}
 }
 
-// errDescs are libuv's descriptions of the codes (uv_strerror).
+// errDescs are libuv's descriptions of the codes (uv_strerror v1.52.1
+// uv.h UV_ERRNO_MAP).
 var errDescs = map[string]string{
-	"E2BIG":        "argument list too long",
-	"EACCES":       "permission denied",
-	"EAGAIN":       "resource temporarily unavailable",
-	"EBADF":        "bad file descriptor",
-	"EBUSY":        "resource busy or locked",
-	"ECANCELED":    "operation canceled",
-	"EEXIST":       "file already exists",
-	"EFAULT":       "bad address in system call argument",
-	"EFBIG":        "file too large",
-	"EINTR":        "interrupted system call",
-	"EINVAL":       "invalid argument",
-	"EIO":          "i/o error",
-	"EISDIR":       "illegal operation on a directory",
-	"ELOOP":        "too many symbolic links encountered",
-	"EMFILE":       "too many open files",
-	"EMLINK":       "too many links",
-	"ENAMETOOLONG": "name too long",
-	"ENFILE":       "file table overflow",
-	"ENODEV":       "no such device",
-	"ENOENT":       "no such file or directory",
-	"ENOMEM":       "not enough memory",
-	"ENOSPC":       "no space left on device",
-	"ENOSYS":       "function not implemented",
-	"ENOTDIR":      "not a directory",
-	"ENOTEMPTY":    "directory not empty",
-	"ENOTSUP":      "operation not supported on socket",
-	"ENXIO":        "no such device or address",
-	"EPERM":        "operation not permitted",
-	"EROFS":        "read-only file system",
-	"ESPIPE":       "invalid seek",
-	"ETXTBSY":      "text file is busy",
-	"EXDEV":        "cross-device link not permitted",
-	"EDQUOT":       "disk quota exceeded",
+	"E2BIG":           "argument list too long",
+	"EACCES":          "permission denied",
+	"EADDRINUSE":      "address already in use",
+	"EADDRNOTAVAIL":   "address not available",
+	"EAFNOSUPPORT":    "address family not supported",
+	"EAGAIN":          "resource temporarily unavailable",
+	"EALREADY":        "connection already in progress",
+	"EBADF":           "bad file descriptor",
+	"EBUSY":           "resource busy or locked",
+	"ECANCELED":       "operation canceled",
+	"ECHARSET":        "invalid Unicode character",
+	"ECONNABORTED":    "software caused connection abort",
+	"ECONNREFUSED":    "connection refused",
+	"ECONNRESET":      "connection reset by peer",
+	"EDESTADDRREQ":    "destination address required",
+	"EEXIST":          "file already exists",
+	"EFAULT":          "bad address in system call argument",
+	"EFBIG":           "file too large",
+	"EFTYPE":          "inappropriate file type or format",
+	"EHOSTUNREACH":    "host is unreachable",
+	"EINTR":           "interrupted system call",
+	"EINVAL":          "invalid argument",
+	"EIO":             "i/o error",
+	"EISCONN":         "socket is already connected",
+	"EISDIR":          "illegal operation on a directory",
+	"ELOOP":           "too many symbolic links encountered",
+	"EMFILE":          "too many open files",
+	"EMLINK":          "too many links",
+	"EMSGSIZE":        "message too long",
+	"ENAMETOOLONG":    "name too long",
+	"ENETDOWN":        "network is down",
+	"ENETUNREACH":     "network is unreachable",
+	"ENFILE":          "file table overflow",
+	"ENOBUFS":         "no buffer space available",
+	"ENODEV":          "no such device",
+	"ENOENT":          "no such file or directory",
+	"ENOMEM":          "not enough memory",
+	"ENONET":          "machine is not on the network",
+	"ENOPROTOOPT":     "protocol not available",
+	"ENOSPC":          "no space left on device",
+	"ENOSYS":          "function not implemented",
+	"ENOTCONN":        "socket is not connected",
+	"ENOTDIR":         "not a directory",
+	"ENOTEMPTY":       "directory not empty",
+	"ENOTSOCK":        "socket operation on non-socket",
+	"ENOTSUP":         "operation not supported on socket",
+	"ENXIO":           "no such device or address",
+	"EOF":             "end of file",
+	"EPERM":           "operation not permitted",
+	"EPIPE":           "broken pipe",
+	"EPROTO":          "protocol error",
+	"EPROTONOSUPPORT": "protocol not supported",
+	"EPROTOTYPE":      "protocol wrong type for socket",
+	"ERANGE":          "result too large",
+	"EREMOTEIO":       "remote I/O error",
+	"EROFS":           "read-only file system",
+	"ESHUTDOWN":       "cannot send after transport endpoint shutdown",
+	"ESPIPE":          "invalid seek",
+	"ESRCH":           "no such process",
+	"ESOCKTNOSUPPORT": "socket type not supported",
+	"ETIMEDOUT":       "connection timed out",
+	"ETXTBSY":         "text file is busy",
+	"EXDEV":           "cross-device link not permitted",
+	"EDQUOT":          "disk quota exceeded",
+	"ENOTTY":          "inappropriate ioctl for device",
+	"EILSEQ":          "illegal byte sequence",
+	"EOVERFLOW":       "value too large for defined data type",
+	"ENODATA":         "no data available",
+	"EUNATCH":         "protocol driver not attached",
+	"ENOEXEC":         "exec format error",
+	"UNKNOWN":         "unknown error",
 }
 
 func errDesc(code string) string {

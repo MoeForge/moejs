@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -24,11 +25,15 @@ type fsys struct {
 	hostRoot string
 	mount    string // the absolute, clean path JavaScript sees the root at
 	cwdRel   string // the working directory relative to the mount; "" for the mount
+	cwdAbs   string // on Windows, the working directory: the mount joined with cwdRel
 	write    bool
 	allow    func(op, path string) error
 	// halt reports the error that stops a long walk: the runtime's
 	// interrupt, or Close's. It is safe on any goroutine.
 	halt func() error
+	// win32 is set on Windows for the Windows path forms, lexical
+	// cleaning and case-insensitive mount check.
+	win32 bool
 }
 
 func openFS(o *FSOptions) (*fsys, error) {
@@ -45,6 +50,7 @@ func openFS(o *FSOptions) (*fsys, error) {
 	}
 	f := &fsys{root: root, hostRoot: filepath.ToSlash(abs), write: o.Write, allow: o.Allow,
 		halt: func() error { return nil }}
+	f.win32 = runtime.GOOS == "windows" || win32ForTest
 	if !noFast {
 		f.fast = newFastRoot(abs)
 		if f.fast != nil {
@@ -52,6 +58,13 @@ func openFS(o *FSOptions) (*fsys, error) {
 		}
 	}
 	f.mount = f.hostRoot
+	if f.win32 {
+		if err := f.openWin32(o); err != nil {
+			root.Close()
+			return nil, err
+		}
+		return f, nil
+	}
 	if o.Mount != "" {
 		if !strings.HasPrefix(o.Mount, "/") {
 			root.Close()
@@ -77,6 +90,9 @@ func openFS(o *FSOptions) (*fsys, error) {
 
 // noFast turns the openat2 path off, for the tests of the os.Root path.
 var noFast bool
+
+// win32ForTest turns the Windows path forms on elsewhere, for the tests.
+var win32ForTest bool
 
 func (f *fsys) close() error {
 	f.fast.close()
@@ -114,9 +130,8 @@ func (f *fsys) rel(p string) (string, error) {
 	if p == "" {
 		return "", syscall.ENOENT
 	}
-	if filepath.Separator == '\\' {
-		// Node.js on Windows takes either separator.
-		p = strings.ReplaceAll(p, "\\", "/")
+	if f.win32 {
+		return f.relWin32(p)
 	}
 	if strings.HasPrefix(p, "/") {
 		rest, ok := under(f.mount, p)
@@ -145,6 +160,9 @@ func (f *fsys) rel(p string) (string, error) {
 // jsPath returns the absolute path JavaScript sees for rel, a clean path
 // relative to the root.
 func (f *fsys) jsPath(rel string) string {
+	if f.win32 {
+		return f.jsPathWin32(rel)
+	}
 	if rel == "." || rel == "" {
 		return f.mount
 	}
@@ -263,8 +281,7 @@ func (f *fsys) resolveWith(rel string, o resolveOpts) (string, error) {
 				link, rest = cand, len(parts)
 			}
 			target = filepath.ToSlash(target)
-			if filepath.IsAbs(target) || strings.HasPrefix(target, "/") {
-				rest, ok := under(f.hostRoot, path.Clean(target))
+			if abs, rest, ok := f.linkTarget(target); abs {
 				if !ok {
 					return "", errEscape
 				}
@@ -488,7 +505,7 @@ func (f *fsys) listRaw(rel string) ([]dirent, error) {
 	defer file.Close()
 	ents, err := file.ReadDir(-1)
 	if err != nil {
-		return nil, err
+		return nil, f.listError(err)
 	}
 	out := make([]dirent, len(ents))
 	for i, d := range ents {
@@ -693,7 +710,7 @@ func (f *fsys) readdirTypes(rel string, types bool) ([]dirent, error) {
 		defer file.Close()
 		ents, err := file.ReadDir(-1)
 		if err != nil {
-			return err
+			return f.listError(err)
 		}
 		out = make([]dirent, len(ents))
 		for i, d := range ents {
@@ -782,11 +799,8 @@ func (f *fsys) readlink(rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	t := filepath.ToSlash(target)
-	if filepath.IsAbs(target) || strings.HasPrefix(t, "/") {
-		if rest, ok := under(f.hostRoot, path.Clean(t)); ok {
-			return f.jsPath(rest), nil
-		}
+	if abs, rest, ok := f.linkTarget(filepath.ToSlash(target)); abs && ok {
+		return f.jsPath(rest), nil
 	}
 	return target, nil
 }
@@ -935,8 +949,15 @@ func (f *fsys) rename(from, to string) error {
 
 // renameRaw renames as rename(2) does. Go refuses to rename onto an
 // existing directory: a directory may replace an empty one, as on Linux,
-// and fails with ENOTEMPTY for one that is not.
+// and fails with ENOTEMPTY for one that is not. On Windows, renaming onto
+// a directory fails with EPERM, as MoveFileEx's ERROR_ACCESS_DENIED does
+// in Node.js.
 func (f *fsys) renameRaw(from, to string) error {
+	if f.win32 {
+		if dst, err := f.root.Lstat(native(to)); err == nil && dst.IsDir() {
+			return syscall.EPERM
+		}
+	}
 	err := f.root.Rename(native(from), native(to))
 	if err == nil || !errors.Is(err, syscall.EEXIST) {
 		return err

@@ -21,4 +21,6 @@ func TestRootPath(t *testing.T) {
 	t.Run("ConcurrentOps", TestConcurrentOps)
 	t.Run("CacheOwnChanges", TestCacheOwnChanges)
 	t.Run("CacheSwapRace", TestCacheSwapRace)
+	t.Run("Win32Paths", TestWin32Paths)
+	t.Run("NativePortable", TestNativePortable)
 }

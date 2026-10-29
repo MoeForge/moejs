@@ -43,8 +43,8 @@ const unsupportedSuffix = " is not supported yet"
 // await compiles as an async function body (Function.Async): the call
 // returns the promise of its evaluation.
 func CompileModule(m *syntax.Module) (*bytecode.Function, error) {
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileModuleWith(m, nil, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileModuleWith(m, nil, noHoist, spill)
 	})
 }
 
@@ -57,19 +57,19 @@ func CompileModuleStop(m *syntax.Module, stop func() error) (*bytecode.Function,
 	if stop == nil {
 		return CompileModule(m) // whose closure holds less
 	}
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileModuleWith(m, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileModuleWith(m, stop, noHoist, spill)
 	})
 }
 
 // compileModuleWith is CompileModuleStop without hoisting in the functions
 // of noHoist.
-func compileModuleWith(m *syntax.Module, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
+func compileModuleWith(m *syntax.Module, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
 	var sc *scriptState // a module needs none, but to hold stop
 	if stop != nil {
 		sc = &scriptState{stop: stop}
 	}
-	c := newCompiler(m.File, sc, noHoist)
+	c := newCompiler(m.File, sc, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	f := c.newFuncState(nil, nil, bytecode.KindModule, m.Scope)
@@ -153,15 +153,15 @@ func CompileScript(s *syntax.Script) (*bytecode.Function, error) {
 // CompileScriptStop is CompileScript calling stop as CompileModuleStop
 // does.
 func CompileScriptStop(s *syntax.Script, stop func() error) (*bytecode.Function, error) {
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileScriptWith(s, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileScriptWith(s, stop, noHoist, spill)
 	})
 }
 
 // compileScriptWith is CompileScriptStop without hoisting in the functions
 // of noHoist.
-func compileScriptWith(s *syntax.Script, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
-	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist)
+func compileScriptWith(s *syntax.Script, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
+	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	f := c.newFuncState(nil, nil, bytecode.KindScript, s.Scope)
@@ -251,13 +251,14 @@ type compiler struct {
 }
 
 // newCompiler returns the compiler of one compilation of file, which
-// hoists no constants in the functions of noHoist. The compilation ends
-// with release.
-func newCompiler(file *syntax.File, script *scriptState, noHoist map[*syntax.Function]bool) *compiler {
+// hoists no constants in the functions of noHoist and spills the bindings
+// of spill. The compilation ends with release.
+func newCompiler(file *syntax.File, script *scriptState, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) *compiler {
 	c := &compiler{file: file, script: script}
-	if noHoist != nil {
+	if noHoist != nil || spill != nil {
 		c.hoist = getHoistState()
 		c.hoist.noHoist = noHoist
+		c.hoist.spill = spill
 	}
 	return c
 }
@@ -292,6 +293,8 @@ func (c *compiler) recover(err *error) {
 		case stopped:
 			*err = r.err
 		case *hoistRetry:
+			*err = r
+		case *spillRetry:
 			*err = r
 		default:
 			panic(r)
@@ -511,6 +514,9 @@ func (f *funcState) alloc() int {
 	if r > bytecode.MaxRegister {
 		if f.hoisted {
 			panic(&hoistRetry{fn: f.fn})
+		}
+		if _, done := f.c.spilled(f.fn); !done && spillable(f.fn) {
+			panic(&spillRetry{fn: f.fn})
 		}
 		f.c.fail(f.curPos, "SyntaxError: function needs more than 256 registers"+unsupportedSuffix)
 	}
@@ -1084,11 +1090,19 @@ func (f *funcState) compileBody() {
 		f.c.locs[b] = location{reg: nparams}
 	}
 
-	// Own environment for captured bindings, with parameters boxed by layout.
-	if scopeNeedsEnv(s) {
+	// Own environment for captured bindings, with parameters boxed by layout,
+	// and the spilled ones after them (spill.go).
+	spilled, _ := f.c.spilled(fn)
+	if scopeNeedsEnv(s) || len(spilled) > 0 {
 		es := &envScope{scope: s}
 		for _, b := range s.Bindings {
 			if b.Captured {
+				f.c.locs[b] = location{env: es, slot: es.size, reg: -1}
+				es.size++
+			}
+		}
+		for _, b := range s.Bindings {
+			if spilled[b] {
 				f.c.locs[b] = location{env: es, slot: es.size, reg: -1}
 				es.size++
 			}

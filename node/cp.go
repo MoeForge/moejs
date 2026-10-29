@@ -73,7 +73,7 @@ func (f *fsys) cp(from, to string, o cpOptions) error {
 	// Node.js makes the destination's missing parents.
 	if dir := path.Dir(b); dir != "." && !f.exists(dir) {
 		if err := f.mkdirAll(dir, 0o777); err != nil {
-			return newSysError(err, "mkdir", path.Dir(to))
+			return newSysError(err, "mkdir", f.dirJS(to))
 		}
 	}
 	info, err := f.stat(a, false)
@@ -147,7 +147,7 @@ func (f *fsys) cpDir(a, b, from, to string, o cpOptions) error {
 			return err
 		}
 		ca, cb := a+"/"+d.name, b+"/"+d.name
-		cf, ct := path.Join(from, d.name), path.Join(to, d.name)
+		cf, ct := f.joinJS(from, d.name), f.joinJS(to, d.name)
 		isDir := d.typ.IsDir()
 		if d.typ&fs.ModeSymlink != 0 {
 			info, err := f.stat(ca, false)

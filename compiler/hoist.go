@@ -74,7 +74,10 @@ type hoistState struct {
 	// noHoist lists the functions that compile without hoisting; nil is
 	// the key of top-level code.
 	noHoist map[*syntax.Function]bool
-	scan    hoistScan
+	// spill lists the bindings each function that ran out of registers
+	// spills (spill.go).
+	spill map[*syntax.Function]map[*syntax.Binding]bool
+	scan  hoistScan
 }
 
 // spareHoist keeps one hoistState, with its slices, from one compilation
@@ -104,6 +107,7 @@ func (c *compiler) release() {
 	clear(h.regs[:cap(h.regs)])
 	h.regs = h.regs[:0]
 	h.noHoist = nil
+	h.spill = nil
 	h.scan.reset()
 	spareHoist.Store(h)
 }
@@ -117,19 +121,27 @@ func (r *hoistRetry) Error() string { return "compiler: out of registers with ho
 
 // compileUnit runs compile, a whole compilation with a fresh compiler, and
 // runs it again without hoisting in each function that ran out of
-// registers with it.
-func compileUnit(compile func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error)) (*bytecode.Function, error) {
+// registers with it, and with bindings spilled in each function that ran
+// out of registers without (spillRetry, spill.go).
+func compileUnit(compile func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error)) (*bytecode.Function, error) {
 	var noHoist map[*syntax.Function]bool
+	var spill map[*syntax.Function]map[*syntax.Binding]bool
 	for {
-		fn, err := compile(noHoist)
-		r, ok := err.(*hoistRetry)
-		if !ok {
+		fn, err := compile(noHoist, spill)
+		switch r := err.(type) {
+		case *hoistRetry:
+			if noHoist == nil {
+				noHoist = make(map[*syntax.Function]bool)
+			}
+			noHoist[r.fn] = true
+		case *spillRetry:
+			if spill == nil {
+				spill = make(map[*syntax.Function]map[*syntax.Binding]bool)
+			}
+			spill[r.fn] = spillVictims(r.fn)
+		default:
 			return fn, err
 		}
-		if noHoist == nil {
-			noHoist = make(map[*syntax.Function]bool)
-		}
-		noHoist[r.fn] = true
 	}
 }
 
