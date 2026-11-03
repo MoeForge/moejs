@@ -710,7 +710,7 @@ func (s *String) IndexOf(sub *String, from int) int {
 	if int(sub.n) == 0 {
 		return min(from, int(s.n))
 	}
-	if from+int(sub.n) > int(s.n) {
+	if from > (int(s.n)-int(sub.n)) {
 		return -1
 	}
 	f := s
@@ -731,21 +731,38 @@ func (s *String) IndexOf(sub *String, from int) int {
 	if f.kind == strASCII && fsub.kind == strUTF16 {
 		return -1
 	}
+	m := int(fsub.n)
 	first := fsub.at(0)
-	last := int(f.n) - int(fsub.n)
+	last := int(f.n) - m
 	u := f.units()
+	hits := 0
 outer:
+
 	for i := from; i <= last; i++ {
+		
 		if u[i] != first {
 			continue
 		}
-		for j := 1; j < int(fsub.n); j++ {
+
+		for j := 1; j < m; j++ {
+
 			if u[i+j] != fsub.at(j) {
+
+				hits += j
+
+				// Repeated partial matches pay for preprocessing; easy
+				// searches keep the direct scan and its immediate hits.
+				if m >= 16 && hits > m && last-i > 16 {
+					return searchFlatUnits(f, fsub, i+1, false)
+				}
+
 				continue outer
 			}
 		}
+
 		return i
 	}
+
 	return -1
 }
 
