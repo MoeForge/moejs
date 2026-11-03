@@ -98,8 +98,10 @@ var (
 	Int       = engine.Int64Value
 )
 
-// String converts a Go string.
-func String(s string) Value { return engine.StringValue(engine.FromGoString(s)) }
+// String converts a Go string. One that is not ASCII, or is at least 64 KiB
+// long, keeps its bytes until its content is first read; its length is known
+// without decoding. Invalid UTF-8 bytes read as U+FFFD.
+func String(s string) Value { return engine.StringValue(engine.FromHostString(s)) }
 
 var (
 	// ErrHookNotFound is returned when a hook's export or one of its members

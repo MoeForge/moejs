@@ -97,10 +97,10 @@ type hostHeap struct {
 	used hostCounts // handed out in the current period
 	hint hostCounts // chunk sizing: the recent periods' usage
 
-	// strs holds ASCII strings of the current strings chunk, indexed by a
-	// hash of their content (strSlot): a hook argument often holds one Go
-	// string in several places (new-api copies the model into
-	// upstreamModel), and sharing an immutable String is unobservable.
+	// strs holds the strings converted since the current strings chunk
+	// began, indexed by a hash of their content (strSlot): a hook argument
+	// often holds one Go string in several places (new-api copies the model
+	// into upstreamModel), and sharing an immutable String is unobservable.
 	strs [hostStrSlots]*String
 
 	// shapes predicts the host shape of the next map from its size: the
@@ -260,9 +260,10 @@ func strSlot(g string) int {
 	return int(k * 0x9E3779B97F4A7C15 >> (64 - hostStrBits))
 }
 
-// str is FromGoString with the String header carved from a chunk; an ASCII
-// Go string already converted this period yields the same String. A long
-// one leaves its scan for JSON to its first use (jsonDeferred).
+// str is FromHostString with a short ASCII String's header carved from a
+// chunk; a Go string already converted this period yields the same String.
+// Any other is a lazy string, charged as decoded (accountLazy), as its
+// conversion was.
 func (h *hostHeap) str(g string) *String {
 	if len(g) == 0 {
 		return emptyString
@@ -271,28 +272,25 @@ func (h *hostHeap) str(g string) *String {
 	if s := h.strs[slot]; s != nil && sameGoString(s.s, g) {
 		return s
 	}
-	if len(h.strings) == cap(h.strings) {
-		h.strings = make([]String, 0, chunkCap(1, h.hint.strings, h.used.strings, minChunkStrings, maxChunkStrings))
-		h.strs = [hostStrSlots]*String{} // point into the current chunk only
-	}
-	n := len(h.strings)
-	h.strings = h.strings[:n+1]
-	h.used.strings++
-	s := &h.strings[n]
-	if len(g) >= jsonPlainMin {
-		if isASCIILong(g) {
-			*s = String{s: g, n: int32(len(g)), kind: strASCII, flags: strHost, json: jsonDeferred}
-			h.strs[slot] = s
-			return s
+	var s *String
+	if len(g) < jsonPlainMin && isASCII(g) {
+		if len(h.strings) == cap(h.strings) {
+			h.strings = make([]String, 0, chunkCap(1, h.hint.strings, h.used.strings, minChunkStrings, maxChunkStrings))
+			h.strs = [hostStrSlots]*String{} // keep no old chunk alive
 		}
-	} else if isASCII(g) {
+		n := len(h.strings)
+		h.strings = h.strings[:n+1]
+		h.used.strings++
+		s = &h.strings[n]
 		*s = String{s: g, n: int32(len(g)), kind: strASCII, flags: strHost}
-		h.strs[slot] = s
-		return s
+	} else {
+		s = newHostLazyString(g)
+		// A substring shares none of it, as one of a carved string
+		// (shareRoot): the host owns the text.
+		s.flags |= strHost
+		h.r.accountLazy(s)
 	}
-	u := appendUTF16(make([]uint16, 0, len(g)), g)
-	h.r.charge(2 * cap(u))
-	*s = String{p: unitsPtr(u), n: int32(len(u)), kind: strUTF16, flags: strHost}
+	h.strs[slot] = s
 	return s
 }
 
@@ -1015,10 +1013,14 @@ func hostLen(src any) int {
 
 // hostStringEquals is EqualsGoString without the allocation of a UTF-16
 // string's Go form; like it, it is false for a g that is not valid UTF-8
-// (materialization replaced its bad bytes).
+// (materialization replaced its bad bytes). A lazy string whose source is
+// valid UTF-8 compares the source.
 func hostStringEquals(s *String, g string) bool {
+	if src, ok := s.sourceUTF8(); ok {
+		return src == g
+	}
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

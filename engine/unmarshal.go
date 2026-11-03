@@ -671,9 +671,6 @@ func (d *jsonDecoder) plain(v Value, depth int) bool {
 		}
 	case k == jkString:
 		s := v.AsString()
-		if int8(s.json) < 0 { // jsonDeferred: the bound asks first
-			s.scanJSON()
-		}
 		d.size += jsonQuotedMax(s)
 	case k == jkHost && !d.copyHosts:
 		return d.hostPlain(v.AsObject().hostSrc(), depth)
@@ -741,7 +738,14 @@ const jsonScalarMax = 25
 
 // jsonQuotedMax is the most bytes AppendJSON writes for s quoted: six a code
 // unit (\uXXXX), one for a string known plain.
+// A lazy string's length is known without decoding it.
 func jsonQuotedMax(s *String) int64 {
+	if s.isLazy() {
+		if s.plainLazyJSON() {
+			return int64(s.n) + 2
+		}
+		return 6*int64(s.n) + 2
+	}
 	if s.json == jsonPlain {
 		return int64(s.n) + 2
 	}

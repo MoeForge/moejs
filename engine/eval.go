@@ -177,7 +177,7 @@ func (r *Realm) sourceText(strs []*String, sep int, out []string) ([]string, err
 	}
 	n := sep
 	for _, s := range strs {
-		src := s.wtf8()
+		src, _ := s.wtf8()
 		n += len(src)
 		out = append(out, src)
 	}

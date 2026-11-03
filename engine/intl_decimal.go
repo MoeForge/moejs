@@ -151,7 +151,7 @@ func (d *intlDecimal) reserve(n int) {
 // whose Number would be a zero (at most 2^-1075) is that zero.
 func (d *intlDecimal) setString(s *String) {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

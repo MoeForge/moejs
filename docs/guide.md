@@ -44,8 +44,11 @@ types it converts from their `json.Marshal` text. The live heap therefore
 grows with the number of requests in flight times the size of one request,
 on top of what the host itself keeps of each request. `ParseJSONString`,
 and `FromGo` of the host's maps, slices and strings, add no copy of the
-input's ASCII strings that have no escapes, such as base64 data. Strings
-that are not ASCII are held as UTF-16 either way.
+input's ASCII strings that have no escapes, such as base64 data. A string
+that is not ASCII, or is at least 64 KiB long, keeps its UTF-8 bytes until
+JavaScript first reads its content, and is then held as UTF-16 as well;
+its length is known without decoding it. Under a memory limit it is charged
+as if decoded when it is made.
 
 Under the default `GOGC=100`, a Go process's resident memory runs at
 roughly twice its live heap, because the collector lets the heap grow by
@@ -1547,8 +1550,10 @@ through handler tables.
 
 ### Strings
 
-A string is ASCII (a Go string, used without copying), UTF-16, or a rope
-that is flattened when needed. Builtin property names are static atoms.
+A string is ASCII (a Go string, used without copying), UTF-16, a rope that
+is flattened when needed, or a lazy string that keeps the UTF-8 or JSON
+text it came from and decodes it once, when its content is first read.
+Builtin property names are static atoms.
 
 ### Locks
 

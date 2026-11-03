@@ -130,7 +130,7 @@ func writeSlice(sb *StringBuilder, s *String, start, end int) {
 	if start >= end {
 		return
 	}
-	if s.kind == strRope {
+	if s.needsFlat() {
 		writeRopeSlice(sb, s, start, end)
 		return
 	}
@@ -142,8 +142,8 @@ func writeSlice(sb *StringBuilder, s *String, start, end int) {
 	sb.u = append(sb.u, s.units()[start:end]...)
 }
 
-// writeRopeSlice is writeSlice of a rope, out of line so that the view
-// (flat) does not grow writeSlice's frame.
+// writeRopeSlice is writeSlice of a rope or lazy string, out of line so
+// that the view (flat) does not grow writeSlice's frame.
 //
 //go:noinline
 func writeRopeSlice(sb *StringBuilder, s *String, start, end int) {
@@ -214,22 +214,22 @@ func hasSubstringAt(s, sub *String, at int) bool {
 	if at < 0 || at+n > s.Len() {
 		return false
 	}
-	if s.kind == strRope || sub.kind == strRope {
+	if s.needsFlat() || sub.needsFlat() {
 		return ropeSubstringAt(s, sub, at)
 	}
 	return substringAt(s, sub, at)
 }
 
-// ropeSubstringAt is hasSubstringAt with a rope, out of line so that the
-// views (flat) do not grow hasSubstringAt's frame.
+// ropeSubstringAt is hasSubstringAt with a rope or lazy string, out of line
+// so that the views (flat) do not grow hasSubstringAt's frame.
 //
 //go:noinline
 func ropeSubstringAt(s, sub *String, at int) bool {
 	a, b := s, sub
-	if s.kind == strRope {
+	if s.needsFlat() {
 		a = s.flat(new(String))
 	}
-	if sub.kind == strRope {
+	if sub.needsFlat() {
 		b = sub.flat(new(String))
 	}
 	return substringAt(a, b, at)
@@ -257,11 +257,11 @@ func lastIndexOfString(s, sub *String, start int) int {
 		return -1
 	}
 	a := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		a = s.flat(new(String))
 	}
 	b := sub
-	if sub.kind == strRope {
+	if sub.needsFlat() {
 		b = sub.flat(new(String))
 	}
 	if a.kind == strASCII && b.kind == strASCII {
@@ -580,7 +580,7 @@ func stringProtoToUpperCase(r *Realm, this Value, args []Value) (Value, error) {
 // and the Final_Sigma context rule.
 func stringToLower(r *Realm, s *String) (*String, error) {
 	f := s // s is returned, f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
@@ -640,7 +640,7 @@ func stringToLower(r *Realm, s *String) (*String, error) {
 // ypogegrammeni, ...).
 func stringToUpper(r *Realm, s *String) (*String, error) {
 	f := s // s is returned, f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
@@ -784,7 +784,7 @@ var specialUpperTable = map[rune]string{
 // trimString implements the TrimString abstract operation.
 func trimString(s *String, start, end bool) *String {
 	f := s // s is returned (Substring), f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	n := s.Len()
@@ -894,7 +894,7 @@ func repeatString(r *Realm, s *String, count int) (*String, error) {
 		return s, nil
 	}
 	f := s // s is returned above, f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	total := s.Len() * count
@@ -1168,11 +1168,11 @@ func stringProtoSplit(r *Realm, this Value, args []Value) (Value, error) {
 // the interrupt flag every interruptStride pieces.
 func splitByString(r *Realm, s, sep *String, lim uint32) (*Object, error) {
 	f := s // s's pieces may be s itself (Substring), f's never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	fsep := sep // IndexOf takes sep: a view stays on the stack
-	if sep.kind == strRope {
+	if sep.needsFlat() {
 		fsep = sep.flat(new(String))
 	}
 	if f.kind == strASCII && fsep.kind == strASCII {
@@ -1189,7 +1189,7 @@ func splitByString(r *Realm, s, sep *String, lim uint32) (*Object, error) {
 		items := make([]Value, count)
 		pieces := make([]String, count) // one allocation for every piece
 		root := s                       // the string the pieces share (shareRoot)
-		if s.kind != strRope {
+		if !s.needsFlat() {
 			root = s.shareRoot()
 		}
 		start := 0

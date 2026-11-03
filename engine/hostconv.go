@@ -120,7 +120,9 @@ func (r *Realm) fromGoOther(v any, h *hostHeap) (Value, error) {
 	}
 	switch x := v.(type) {
 	case string:
-		return StringValue(FromGoString(x)), nil
+		// Charged nothing, as the eager conversion was; a measurement
+		// counts a lazy string as decoded.
+		return StringValue(FromHostString(x)), nil
 	case NativeFunc:
 		return ObjectValue(r.NewHostFunction(AtomEmpty, 0, x)), nil
 	case func(*Realm, Value, []Value) (Value, error):

@@ -1653,7 +1653,9 @@ func (w *liveWalker) buffer(b *arrayBuffer) {
 // str counts a string: its header and its units, once for the strings of
 // an append buffer and for the strings that share another's units (its
 // share root, which counts them). A rope not flattened queues its
-// children. A constant of shared compiled code counts for nothing.
+// children. A lazy string counts its block, its source or share root, and
+// its decoded storage, as decoded until it is. A constant of shared
+// compiled code counts for nothing.
 func (w *liveWalker) str(s *String) {
 	if s == nil || s.flags&strConst != 0 || !w.mark(unsafe.Pointer(s)) {
 		return
@@ -1694,6 +1696,34 @@ func (w *liveWalker) str(s *String) {
 		}
 		if l, r := s.children(); l != nil {
 			w.ropes = append(w.ropes, l, r)
+		}
+	case strLazy:
+		// Its data, its source (or the text it was parsed from, its share
+		// root) and what it decoded to, which another goroutine may be
+		// publishing meanwhile (resolved). A host's Go text that decodes
+		// to UTF-16 is the host's, uncounted as main's conversion left it:
+		// only the units it decodes to count.
+		w.size += int64(s.lazyBlockSize() - stringHeaderSize)
+		switch root := s.lazyShareRoot(); {
+		case root != nil:
+			w.str(root)
+		case s.lazyMode() == lazyText && s.lazyWide():
+		default:
+			w.size += int64(len(s.s))
+		}
+		f := s.lazyPublished()
+		switch {
+		case f == nil:
+			// Not decoded yet: counted as decoded, as the eager
+			// conversion would be, so a measurement keeps what the
+			// string was charged (accountLazy).
+			w.size += int64(s.lazyDecodedSize())
+		case f.kind == strASCII && f.flags&strInBuf == 0 && unsafe.StringData(f.s) == unsafe.StringData(s.s):
+			if w.mark(unsafe.Pointer(f)) { // its units are the source
+				w.size += int64(stringHeaderSize)
+			}
+		default:
+			w.str(f)
 		}
 	}
 }

@@ -9,10 +9,7 @@ package engine
 // The calendar is the proleptic Gregorian one (V8 moves ICU's Gregorian
 // change to the start of ECMAScript time); a year is its era's year.
 
-import (
-	"unicode/utf8"
-	"unsafe"
-)
+import "unicode/utf8"
 
 // intlDateItem is a compiled pattern item: a literal (ch 0) or a field of
 // a pattern letter repeated count times.
@@ -321,7 +318,7 @@ func (f *intlDateTimeFormat) appendNumber(b []byte, v int64, minDigits int) []by
 
 // intlUTF8String returns the String of UTF-8 bytes: an ASCII String
 // sharing its header's allocation (asciiStringCopy), else UTF-16 code
-// units sharing theirs (intlUTF16String).
+// units sharing theirs (newUTF16Buf).
 func intlUTF8String(b []byte) *String {
 	n := 0 // UTF-16 units
 	ascii := true
@@ -343,7 +340,7 @@ func intlUTF8String(b []byte) *String {
 	if ascii {
 		return asciiStringCopy(b)
 	}
-	s, u := intlUTF16String(n)
+	s, u := newUTF16Buf(n)
 	j := 0
 	for i := 0; i < len(b); {
 		c := b[i]
@@ -365,47 +362,4 @@ func intlUTF8String(b []byte) *String {
 		j++
 	}
 	return s
-}
-
-// The UTF-16 buffers of intlUTF16String: a String header and its code
-// units in one allocation.
-type (
-	utf16Buf16 struct {
-		s String
-		u [16]uint16
-	}
-	utf16Buf32 struct {
-		s String
-		u [32]uint16
-	}
-	utf16Buf64 struct {
-		s String
-		u [64]uint16
-	}
-)
-
-// intlUTF16String returns a UTF-16 String of n code units and the units to
-// fill (at least one of them must be >= 0x80); up to 64 units share the
-// header's allocation.
-//
-// GC safety: the String's p points at the first unit of an array that is
-// a field of the same allocation as the header, which keeps it alive.
-func intlUTF16String(n int) (*String, []uint16) {
-	var s *String
-	var u []uint16
-	switch {
-	case n <= 16:
-		x := &utf16Buf16{}
-		s, u = &x.s, x.u[:n:n]
-	case n <= 32:
-		x := &utf16Buf32{}
-		s, u = &x.s, x.u[:n:n]
-	case n <= 64:
-		x := &utf16Buf64{}
-		s, u = &x.s, x.u[:n:n]
-	default:
-		s, u = &String{}, make([]uint16, n)
-	}
-	*s = String{p: unsafe.Pointer(unsafe.SliceData(u)), n: int32(n), kind: strUTF16}
-	return s, u
 }

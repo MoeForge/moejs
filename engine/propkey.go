@@ -107,7 +107,7 @@ func parseArrayIndex(s string) (uint32, bool) {
 func (r *Realm) KeyFromString(s *String) PropertyKey {
 	if s.atom == 0 {
 		f := s // s is interned below, f never: a view stays on the stack
-		if s.kind == strRope {
+		if s.needsFlat() {
 			f = s.flat(new(String))
 		}
 		if f.kind == strASCII {

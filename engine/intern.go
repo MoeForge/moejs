@@ -151,7 +151,7 @@ func (r *Realm) Intern(s *String) *String {
 		return s
 	}
 	f := s // s is returned above, f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

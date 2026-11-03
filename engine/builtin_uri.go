@@ -86,7 +86,7 @@ func uriEncode(r *Realm, v Value, unescaped *uriSet) (Value, error) {
 		return Undefined(), err
 	}
 	f := s // s is returned, f never: a view stays on the stack
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

@@ -1059,17 +1059,17 @@ export function plain() {
 	assert.NotSame(t, &h.sentinel, lo.shape)
 }
 
-// TestHostLazySharedStrings: an ASCII Go string converted twice in a period
+// TestHostLazySharedStrings: the same Go string converted twice in a period
 // becomes one String (sharing an immutable string is unobservable); equal
-// contents in different Go strings, and non-ASCII strings, do not share.
-// The keys sort so that no ASCII string is converted between model and
+// contents in different Go strings do not share, for ASCII and non-ASCII alike.
+// The keys sort so that no other string is converted between model and
 // upstream: one whose cache slot collided would evict model.
 func TestHostLazySharedStrings(t *testing.T) {
 	r := NewRealm()
 	model := strings.Repeat("m", 3)
 	other := strings.Repeat("m", 3)
 	uni := "é" + model
-	x := mustFromGo(t, r, map[string]any{"model": model, "upstream": model, "zother": other, "u1": uni, "u2": uni})
+	x := mustFromGo(t, r, map[string]any{"model": model, "upstream": model, "zother": other, "v1": uni, "v2": uni})
 	get := func(k string) *String {
 		v, err := x.AsObject().GetProp(r, key(r, k))
 		require.NoError(t, err)
@@ -1078,8 +1078,8 @@ func TestHostLazySharedStrings(t *testing.T) {
 	assert.Same(t, get("model"), get("upstream"))
 	assert.NotSame(t, get("model"), get("zother"))
 	assert.True(t, get("model").Equals(get("zother")))
-	assert.NotSame(t, get("u1"), get("u2"))
-	assert.True(t, get("u1").Equals(get("u2")))
+	assert.Same(t, get("v1"), get("v2"))
+	assert.True(t, get("v1").Equals(get("v2")))
 }
 
 // TestHostLazyShapePrediction: a map is laid out by the key set the heap
