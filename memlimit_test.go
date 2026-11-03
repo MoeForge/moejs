@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -401,6 +402,21 @@ export function setInside() { const a = []; for (let i = 0; i < 1000; i++) a.pus
 	rt4 := moejs.NewRuntime(moejs.Options{MemoryLimit: limit})
 	require.ErrorIs(t, rt4.Load(pending), moejs.ErrModulePending)
 	assert.Zero(t, rt4.Stats().RequestAllocatedBytes)
+}
+
+// TestMemoryLimitLazyModuleBody: JSON.parse in a module body charges the
+// strings it makes as decoded, and the hit becomes the load error.
+func TestMemoryLimitLazyModuleBody(t *testing.T) {
+	dep, err := moejs.Compile("dep.js", `export const y = 1;`)
+	require.NoError(t, err)
+	mod, err := moejs.Compile("entry.js", `import "dep"; JSON.parse(input);`)
+	require.NoError(t, err)
+	mod, err = moejs.Link(mod, func(moejs.Referrer, string) (*moejs.Module, error) { return dep, nil })
+	require.NoError(t, err)
+	rt := moejs.NewRuntime(moejs.Options{MemoryLimit: 64 << 10})
+	require.NoError(t, rt.SetGlobal("input", `"`+strings.Repeat("中", 40000)+`"`))
+	requireMemoryHit(t, rt.Load(mod), 64<<10)
+	assert.Equal(t, int64(1), rt.Stats().MemoryLimitHits)
 }
 
 // TestMemoryLimitOff: SetMemoryLimit(0) removes the limit and its counters.

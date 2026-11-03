@@ -202,6 +202,70 @@ func utf16String(u []uint16) *String {
 	return &String{p: unitsPtr(u), n: int32(len(u)), kind: strUTF16}
 }
 
+type utf16Buf8 struct {
+	s String
+	u [8]uint16
+}
+
+type utf16Buf16 struct {
+	s String
+	u [16]uint16
+}
+
+type utf16Buf24 struct {
+	s String
+	u [24]uint16
+}
+
+type utf16Buf32 struct {
+	s String
+	u [32]uint16
+}
+
+type utf16Buf64 struct {
+	s String
+	u [64]uint16
+}
+
+// utf16BufMax is the most code units newUTF16Buf allocates with their
+// String header.
+const utf16BufMax = 64
+
+// newUTF16Buf returns a UTF-16 String of n code units and the units, which
+// its caller fills before publishing s, at least one of them >= 0x80. Up
+// to utf16BufMax units share one typed allocation with their header, which
+// the units' interior pointer keeps alive. Capacity is the logical length,
+// as with newASCIIBuf, excluding size-class padding from the engine's
+// string accounting. Lazy decoding and Intl formatting both use it.
+func newUTF16Buf(n int) (*String, []uint16) {
+	if n == 0 {
+		return emptyString, nil
+	}
+	var s *String
+	var u []uint16
+	switch {
+	case n <= 8:
+		x := &utf16Buf8{}
+		s, u = &x.s, x.u[:n:n]
+	case n <= 16:
+		x := &utf16Buf16{}
+		s, u = &x.s, x.u[:n:n]
+	case n <= 24:
+		x := &utf16Buf24{}
+		s, u = &x.s, x.u[:n:n]
+	case n <= 32:
+		x := &utf16Buf32{}
+		s, u = &x.s, x.u[:n:n]
+	case n <= utf16BufMax:
+		x := &utf16Buf64{}
+		s, u = &x.s, x.u[:n:n]
+	default:
+		s, u = &String{}, make([]uint16, n)
+	}
+	*s = String{p: unitsPtr(u), n: int32(n), kind: strUTF16}
+	return s, u
+}
+
 // appendBuf heads an append buffer (string_append.go); its code units, ASCII
 // bytes or UTF-16 units, follow it directly.
 type appendBuf struct {

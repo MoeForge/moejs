@@ -13,6 +13,10 @@ const (
 	strASCII uint8 = iota // s holds bytes < 0x80; byte index == code unit index
 	strUTF16              // u holds code units, at least one >= 0x80
 	strRope               // left/right children; flattened lazily, never in place (flatten)
+	// strLazy retains immutable source bytes in s (Go text, WTF-8 or JSON
+	// contents) and its length in n, counted when it was made; p points to a
+	// lazyStringData, which publishes the decoded flat String on demand.
+	strLazy
 )
 
 // String.flags.
@@ -27,19 +31,23 @@ const (
 	// running it shares (funcMeta): the live measurement does not count it,
 	// as it does not count the shared shapes (memlive.go).
 	strConst
-	// strHost marks a string FromGo carved from its slab of Strings
-	// (hostHeap.str): a string that shares its units does not keep it
-	// (shareRoot), which would keep the slab and its other strings.
+	// strHost marks a string FromGo made for a field of a host's container
+	// (hostHeap.str), carved from its slab of Strings or lazy: a string
+	// that shares its units does not keep it (shareRoot, unflatRoot),
+	// which would keep the slab and its other strings.
 	strHost
+	// Lazy modes occupy bits 4 and 5; bit 6 says that the content decodes
+	// to UTF-16 rather than ASCII.
+	lazyModeShift = 4
+	strLazyWide   = 1 << 6
+	// strLazyRooted marks a lazy string a parse under a memory limit made:
+	// its p points at a rootedLazyData, which holds its share root
+	// (string_lazy.go).
+	strLazyRooted = 1 << 7
 )
 
-// String.json states; 0 is nothing known. jsonDeferred is the top bit, so
-// that quote tells the three apart with one test of the byte (int8(json)
-// < 0 once it is not 0).
-const (
-	jsonPlain    uint8 = 1    // no byte JSON quoting escapes
-	jsonDeferred uint8 = 0x80 // a long FromGo string not scanned yet
-)
+// jsonPlain marks ASCII bytes with nothing JSON quoting escapes; 0 is unknown.
+const jsonPlain uint8 = 1
 
 // ropeThreshold is the combined length at or above which Concat builds a
 // rope instead of copying.
@@ -62,38 +70,39 @@ var maxStringLength = MaxStringLength
 // rope's flattened contents, which leaves the fields its readers read as
 // they were (flatten), and the caching of hash/atom, both of which preserve
 // the logical value. Concat writes past the end of a string in an append
-// buffer, never into it.
+// buffer, never into it. A lazy string publishes its decoded String in
+// right, once (resolved); its source, kind, n and flags never change.
 type String struct {
-	// s is the strASCII payload; a strRope publishes its flattened
-	// contents in it (flatten).
+	// s is the strASCII payload or the strLazy source; a strRope
+	// publishes its flattened contents in it (flatten).
 	s string
 	// p is the strUTF16 payload, the first of n code units (never all
-	// ASCII), or a strRope's left child; one field for both keeps String
-	// in the 48-byte size class. units and children read it.
+	// ASCII), a strLazy's lazyStringData, or a strRope's left child; one
+	// field for all keeps String in the 48-byte size class. units and
+	// children read it.
 	p unsafe.Pointer
-	// right is a strRope's right child. A flat string that shares the
+	// right publishes a strLazy's decoded cache atomically, or is a
+	// strRope's right child. A flat string that shares the
 	// units of another, a substring or a value JSON.parse read out of a
 	// text, keeps that string here (its share root, shareRoot): the units
 	// it shares keep the whole of the root's alive, which the live
 	// measurement counts once (memlive.go).
 	right *String
-	n     int32  // length in code units
+	n     int32  // length in code units; a lazy string's is counted when it is made
 	hash  uint32 // 0 = not computed
 	atom  uint32 // 0 = not interned
 	kind  uint8
-	// flags holds strInBuf, strCharged, strConst and strHost, set when the
-	// String is made and never changed.
+	// flags holds strInBuf, strCharged, strConst and strHost, and a lazy
+	// string's mode, strLazyWide and strLazyRooted, set before the String
+	// is published and never changed.
 	flags uint8
 	// numeric marks an atom that is a canonical numeric string other than
 	// an array index ("-0", "1.5", "NaN"): the keys a typed array answers
 	// itself (typedArrayKey). It is set before the atom is published.
 	numeric bool
-	// json is what is known of the bytes JSON quoting escapes in an ASCII
-	// string: jsonPlain, none, found by the scan that made it (a JSON.parse
-	// literal) or by the first use that asked, and quote copies the string
-	// without scanning it again; jsonDeferred, a long FromGo string
-	// (jsonPlainMin) not scanned yet, which the first use that needs to
-	// know, quote or Unmarshal's bound, scans (scanJSON); 0, nothing.
+	// jsonPlain records that parsing found no bytes to escape in this ASCII
+	// string, so quote can copy it without scanning; 0 means unknown.
+	// Lazy strings keep theirs in lazyStringData's facts instead.
 	json uint8
 }
 
@@ -105,7 +114,7 @@ func EmptyString() *String { return emptyString }
 
 // FromGoString converts a Go (UTF-8) string. ASCII input is zero-copy;
 // anything else is decoded to UTF-16 once, with invalid UTF-8 bytes becoming
-// U+FFFD (Go's range semantics).
+// U+FFFD (Go's range semantics). FromHostString defers the decoding.
 func FromGoString(s string) *String {
 	if len(s) == 0 {
 		return emptyString
@@ -156,13 +165,14 @@ func asciiString(s string) *String {
 	return &String{s: s, n: int32(len(s)), kind: strASCII}
 }
 
-// Len returns the length in UTF-16 code units.
+// Len returns the length in UTF-16 code units. A lazy string's is known
+// from its creation, so reading it decodes nothing.
 func (s *String) Len() int { return int(s.n) }
 
 // IsASCII reports whether the string (after flattening) is ASCII-only.
 func (s *String) IsASCII() bool {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	return f.kind == strASCII
@@ -193,17 +203,17 @@ func (s *String) at(i int) uint16 {
 // ASCII returns the underlying Go string and true when the string is ASCII.
 func (s *String) ASCII() (string, bool) {
 	f := s
-	if s.kind == strRope {
+	if s.kind >= strRope { // needsFlat, spelled out to stay inlinable
 		f = s.flat(new(String))
 	}
-	return f.s, f.kind == strASCII // a UTF-16 string's s is ""
+	return f.s, f.kind == strASCII // a resolved UTF-16 string's s is ""
 }
 
 // UTF16 returns the code units. For ASCII strings a fresh slice is built;
 // for UTF-16 strings the internal slice is returned and must not be modified.
 func (s *String) UTF16() []uint16 {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strUTF16 {
@@ -216,11 +226,15 @@ func (s *String) UTF16() []uint16 {
 	return u
 }
 
-// GoString exports to a Go string. ASCII is zero-copy; UTF-16 is encoded to
-// UTF-8 with lone surrogates replaced by U+FFFD.
+// GoString exports to a Go string. ASCII, and a lazy string's source that
+// is valid UTF-8, are zero-copy; UTF-16 is encoded to UTF-8 with lone
+// surrogates replaced by U+FFFD.
 func (s *String) GoString() string {
+	if g, ok := s.sourceUTF8(); ok {
+		return g
+	}
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
@@ -231,16 +245,37 @@ func (s *String) GoString() string {
 
 // wtf8 is GoString with lone surrogates encoded as WTF-8 three-byte
 // sequences instead of U+FFFD: the source text of dynamic code, whose
-// literals keep them (fromWTF8Text).
-func (s *String) wtf8() string {
+// literals keep them (fromWTF8Text). knownUTF8 lets JSON reuse validation;
+// false means unknown, not necessarily invalid.
+func (s *String) wtf8() (text string, knownUTF8 bool) {
+	text, _, knownUTF8 = s.wtf8Root()
+	return text, knownUTF8
+}
+
+// wtf8Root is wtf8 that also returns the String whose bytes text is, the
+// share root of a parse of text (memAccount.shareText): s when text is its
+// units, a rope's flattening included, or its UTF-8 source; the decoded
+// String of a lazy string whose source is not, when that decoded to ASCII;
+// nil for a copy. s's kind decides, not where text's bytes are: a rope's s
+// is written by flatten and read only through published, and a parse
+// rooted at no String would keep a decoded String's bytes in a String of
+// its own, which the live measurement counts again.
+func (s *String) wtf8Root() (text string, root *String, knownUTF8 bool) {
+	if g, ok := s.sourceUTF8(); ok {
+		return g, s, true
+	}
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
-		return f.s
+		root = s
+		if s.isLazy() {
+			root = s.resolved() // decoded already: f is that String
+		}
+		return f.s, root, true
 	}
-	return wtf8FromUTF16(f.units())
+	return wtf8FromUTF16(f.units()), nil, false
 }
 
 func utf16ToGoString(u []uint16) string {
@@ -266,15 +301,14 @@ func utf16ToGoString(u []uint16) string {
 	return b.String()
 }
 
-// flat returns a flat string of the contents of the rope s, flattening it
-// on first use, in *v, which the caller provides: a read that needs a
-// rope's units reads them through this view, as a rope's own fields never
-// change (flatten). Allocated with new in the branch that found the rope,
-// v costs nothing for a flat string, and stays on the caller's stack
+// flat returns a lazy string's decoded String, decoding it on first use, or
+// a flat view of a rope in *v. A read that needs a rope's units uses this
+// view; flatten leaves kind, n and flags unchanged. Allocated with new in the branch that found the rope, v
+// costs nothing for a flat string and stays on the caller's stack
 // (TestRopeReadNoAlloc) when the caller keeps it in a variable of its own,
 //
 //	f := s
-//	if s.kind == strRope {
+//	if s.needsFlat() {
 //		f = s.flat(new(String))
 //	}
 //
@@ -283,6 +317,9 @@ func utf16ToGoString(u []uint16) string {
 // rope's words take its address), and so does any method that may call
 // it, so f must reach neither, nor be returned or kept.
 func (s *String) flat(v *String) *String {
+	if s.isLazy() {
+		return s.resolved()
+	}
 	f, ok := s.published()
 	if !ok {
 		s.flatten()
@@ -291,6 +328,10 @@ func (s *String) flat(v *String) *String {
 	*v = f
 	return v
 }
+
+// needsFlat reports a rope or a lazy string, whose units are read through
+// flat; their kind never changes.
+func (s *String) needsFlat() bool { return s.kind >= strRope }
 
 // flatten copies the leaves of the rope s into one allocation and publishes
 // it, unless a flattening did already.
@@ -455,13 +496,20 @@ func (s *String) copyFlatUnits(u []uint16) {
 // step). A result longer than the string length limit is RangeError:
 // Invalid string length, raised before anything is allocated (`s = s + s`
 // builds ropes without copying, so the limit must be enforced on the length
-// arithmetic itself).
+// arithmetic itself). A lazy operand is decoded first, so a rope's leaves
+// are flat strings or ropes, whose units flattening copies as it finds them.
 func (r *Realm) Concat(a, b *String) (*String, error) {
 	if a.n == 0 {
 		return b, nil
 	}
 	if b.n == 0 {
 		return a, nil
+	}
+	if a.isLazy() {
+		a = a.resolved()
+	}
+	if b.isLazy() {
+		b = b.resolved()
 	}
 	n := int(a.n) + int(b.n) // both <= MaxStringLength: cannot overflow
 	if n > maxStringLength {
@@ -517,7 +565,7 @@ func (s *String) Substring(start, end int) *String {
 	if start >= end {
 		return emptyString
 	}
-	if s.kind == strRope {
+	if s.needsFlat() {
 		return s.ropeSubstring(start, end)
 	}
 	if s.kind == strASCII {
@@ -551,8 +599,8 @@ const shareMin = 64
 // (FromUTF16 keeps the units of a string that is not all ASCII).
 func (s *String) shareUnits(sub *String) *String {
 	if sub.kind == strUTF16 {
-		if s.kind == strRope {
-			sub.right = s
+		if s.needsFlat() { // a rope, or a lazy string: they count what they decode
+			sub.right = s.unflatRoot()
 		} else {
 			sub.right = s.shareRoot()
 		}
@@ -568,13 +616,26 @@ func (s *String) shareUnits(sub *String) *String {
 func (s *String) ropeSubstring(start, end int) *String {
 	f := s.flat(new(String))
 	if f.kind == strASCII {
-		return &String{s: f.s[start:end], n: int32(end - start), kind: strASCII, right: s}
+		return &String{s: f.s[start:end], n: int32(end - start), kind: strASCII, right: s.unflatRoot()}
 	}
 	return s.shareUnits(FromUTF16(f.units()[start:end]))
 }
 
+// unflatRoot is the share root of a substring of the rope or lazy string s:
+// s, which counts what it decodes, but none for a field of a host's
+// container, as for a string FromGo carved (strHost, shareRoot).
+func (s *String) unflatRoot() *String {
+	if s.flags&strHost != 0 {
+		return nil
+	}
+	return s
+}
+
 // Hash returns the cached content hash (never 0).
 func (s *String) Hash() uint32 {
+	if s.isLazy() {
+		return s.lazyHash()
+	}
 	if s.hash != 0 {
 		return s.hash
 	}
@@ -586,6 +647,13 @@ func (s *String) Hash() uint32 {
 	h := s.contentHash()
 	s.hash = h
 	return h
+}
+
+func (s *String) cachedHash() uint32 {
+	if s.isLazy() {
+		return atomic.LoadUint32(&s.hash)
+	}
+	return s.hash
 }
 
 // contentHash computes the hash of the flat string s (never 0).
@@ -614,22 +682,37 @@ func (s *String) Equals(t *String) bool {
 	if s.n != t.n {
 		return false
 	}
+	if s.needsFlat() || t.needsFlat() {
+		return unflatEquals(s, t)
+	}
 	if s.hash != 0 && t.hash != 0 && s.hash != t.hash {
 		return false
 	}
-	if s.kind == strRope || t.kind == strRope {
-		return ropeEquals(s, t)
-	}
 	return flatEquals(s, t)
+}
+
+// unflatEquals is Equals of strings of one length where s or t is a rope or
+// lazy: two lazy strings of the same source compare without decoding, and
+// a lazy string's hash is read atomically (cachedHash).
+//
+//go:noinline
+func unflatEquals(s, t *String) bool {
+	if s.isLazy() && t.isLazy() && s.s == t.s && sameLazyContent(s, t) {
+		return true
+	}
+	if sh, th := s.cachedHash(), t.cachedHash(); sh != 0 && th != 0 && sh != th {
+		return false
+	}
+	return ropeEquals(s, t)
 }
 
 //go:noinline
 func ropeEquals(s, t *String) bool {
 	a, b := s, t
-	if s.kind == strRope {
+	if s.needsFlat() {
 		a = s.flat(new(String))
 	}
-	if t.kind == strRope {
+	if t.needsFlat() {
 		b = t.flat(new(String))
 	}
 	return flatEquals(a, b)
@@ -655,7 +738,7 @@ func flatEquals(s, t *String) bool {
 // EqualsGoString compares against an ASCII/UTF-8 Go string.
 func (s *String) EqualsGoString(g string) bool {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
@@ -673,11 +756,11 @@ func (s *String) Compare(t *String) int {
 		return 0
 	}
 	x := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		x = s.flat(new(String))
 	}
 	y := t
-	if t.kind == strRope {
+	if t.needsFlat() {
 		y = t.flat(new(String))
 	}
 	if x.kind == strASCII && y.kind == strASCII {
@@ -714,11 +797,11 @@ func (s *String) IndexOf(sub *String, from int) int {
 		return -1
 	}
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	fsub := sub
-	if sub.kind == strRope {
+	if sub.needsFlat() {
 		fsub = sub.flat(new(String))
 	}
 	if f.kind == strASCII && fsub.kind == strASCII {
@@ -755,7 +838,7 @@ func (s *String) String() string { return s.GoString() }
 // IsWellFormed reports whether the string has no lone surrogates.
 func (s *String) IsWellFormed() bool {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

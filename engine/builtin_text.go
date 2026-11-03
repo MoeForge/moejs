@@ -194,7 +194,7 @@ func textEncoderEncodeInto(r *Realm, this Value, args []Value) (Value, error) {
 // counted as U+FFFD, honouring the interrupt flag on long strings.
 func (r *Realm) utf8Length(s *String) (int, error) {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
@@ -231,7 +231,7 @@ func (r *Realm) utf8Length(s *String) (int, error) {
 // long strings.
 func (r *Realm) encodeUTF8(dst []byte, s *String) (read, written int, err error) {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {

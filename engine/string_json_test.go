@@ -550,7 +550,11 @@ func TestJSONParseEscapedStrings(t *testing.T) {
 						for _, c := range want {
 							wide = wide || c >= 0x80
 						}
-						require.Equal(t, wide, s.kind == strUTF16, "%q", text)
+						decoded := s
+						if s.isLazy() {
+							decoded = cacheOf(s)
+						}
+						require.Equal(t, wide, decoded.kind == strUTF16, "%q", text)
 					}
 				}
 			}
@@ -559,8 +563,8 @@ func TestJSONParseEscapedStrings(t *testing.T) {
 }
 
 // TestJSONParseEscapedStringErrors checks the errors of literals with an
-// escape before the error, which jsonStrEnd finds no closing quote for or
-// strSlow's decoding meets first.
+// escape before the error, which strSlow reports while checking their
+// syntax.
 func TestJSONParseEscapedStringErrors(t *testing.T) {
 	r := NewRealm()
 	for _, c := range []struct{ text, msg string }{
@@ -632,68 +636,56 @@ func TestJSONParseBadLaterKey(t *testing.T) {
 	}
 }
 
-// TestJSONParseEscapedStringAllocs checks that an escaped literal is decoded
-// once into one buffer: a short ASCII one into a string co-allocated with
-// its header, a long one into a buffer of its literal's length besides the
-// header, one whose value is not ASCII into its code units, and one that a
-// \u escape widens within its first 64 value bytes into exactly its units.
-// One that widens later drops the byte buffer it began in.
-func TestJSONParseEscapedStringAllocs(t *testing.T) {
+// TestJSONParseEscapedStringDecodesOnce checks that parsing an escaped
+// literal keeps its contents and decodes them once, on the first read of
+// the content.
+func TestJSONParseEscapedStringDecodesOnce(t *testing.T) {
 	r := NewRealm()
-	for _, c := range []struct {
-		text   string
-		allocs float64
-	}{
-		{`"ab\ncd"`, 1},
-		{`"` + strings.Repeat(`abc\n\t\"def`, 1000) + `"`, 2},
-		{`"` + strings.Repeat(`中文\n`, 1000) + `"`, 2},
-		{`"` + strings.Repeat(`中文`, 1000) + `"`, 2},
-		{`"` + strings.Repeat(`abc\n`, 1000) + `\u00e9"`, 3},
-		{`"Please summarize:\n` + strings.Repeat(`\u4f60`, 500) + `"`, 2},
-		{`"` + strings.Repeat(`\u0041`, 1000) + `"`, 2},
-		{`"` + strings.Repeat(`\u4f60\u597d\uff0c ok\n`, 500) + `"`, 2},
-		{`"` + strings.Repeat(`\u4f60\u597d中\n`, 500) + `"`, 2},
-		{`"ab\u00e9"`, 2},
+	for _, text := range []string{
+		`"ab\ncd"`,
+		`"` + strings.Repeat(`abc\n\t\"def`, 1000) + `"`,
+		`"` + strings.Repeat(`中文\n`, 1000) + `"`,
+		`"` + strings.Repeat(`中文`, 1000) + `"`,
+		`"` + strings.Repeat(`abc\n`, 1000) + `\u00e9"`,
+		`"Please summarize:\n` + strings.Repeat(`\u4f60`, 500) + `"`,
+		`"` + strings.Repeat(`\u0041`, 1000) + `"`,
+		`"ab\u00e9"`,
 	} {
-		_, err := r.JSONParseGoString(c.text)
+		v, err := r.JSONParseGoString(text)
 		require.NoError(t, err)
-		require.Equal(t, c.allocs, testing.AllocsPerRun(10, func() { r.JSONParseGoString(c.text) }), c.text[:min(20, len(c.text))])
+		s := v.AsString()
+		require.True(t, s.isLazy(), text[:min(20, len(text))])
+		require.Nil(t, cacheOf(s))
+		_ = s.UTF16()
+		decoded := cacheOf(s)
+		require.NotNil(t, decoded)
+		_ = s.UTF16()
+		require.Same(t, decoded, cacheOf(s))
 	}
 }
 
-// TestJSONParseEscapedStringCharge checks what a parse of an escaped
-// literal charges to a memory limit: the buffers it allocated and the
-// header.
+// TestJSONParseEscapedStringCharge checks that parsing an escaped literal
+// charges the lazy block and the units it decodes to, which reading then
+// charges no more.
 func TestJSONParseEscapedStringCharge(t *testing.T) {
-	r := NewRealmWith(RealmOptions{MemoryLimit: 1 << 30})
-	long := strings.Repeat(`abc\n\t\"def`, 1000)
-	units := strings.Repeat(`中文\n`, 1000)
-	for _, c := range []struct {
-		text string
-		want int
-	}{
-		{`"ab\ncd"`, stringHeaderSize + 5},
-		{`"` + long + `"`, stringHeaderSize + len(long) - 16}, // less the escapes of the first 64 bytes, decoded on the stack
-		{`"` + units + `"`, stringHeaderSize + 2*4000},        // the literal's units: an escape's two bytes count two
-		{`"` + strings.Repeat(`中文`, 1000) + `"`, stringHeaderSize + 2*2000},
-		// \u escapes: measured, so the value's own length; widened past the
-		// first 64 bytes, the byte buffer besides (the literal less the 13
-		// escapes decoded on the stack).
-		{`"` + strings.Repeat(`abc\n`, 1000) + `\u00e9"`, 5006 - 13 + stringHeaderSize + 2*4001},
-		{`"Please summarize:\n` + strings.Repeat(`\u4f60`, 500) + `"`, stringHeaderSize + 2*518},
-		// Not ASCII, its \u escapes past 64 bytes from its first escape: the
-		// loose bound of 696 units, copied to the 195 it holds (416 bytes,
-		// their size class).
-		{`"` + strings.Repeat("中", 30) + `\n` + strings.Repeat("x", 64) + strings.Repeat(`\u4f60`, 100) + `"`, 2*(30+2+64+600) + stringHeaderSize + 416},
-		{`"` + strings.Repeat(`\u4f60\u597d\uff0c ok\n`, 1000) + `"`, stringHeaderSize + 2*7000},
-		{`"` + strings.Repeat(`\u4f60\u597d中\n`, 1000) + `"`, stringHeaderSize + 2*4000},
-		{`"` + strings.Repeat(`\u0041b`, 1000) + `"`, stringHeaderSize + 2000},
-		{`"ab\u00e9"`, stringHeaderSize + 2*3},
+	block := int64(unsafe.Sizeof(rootedLazyStringBlock{}))
+	for _, text := range []string{
+		`"ab\ncd"`,
+		`"` + strings.Repeat(`abc\n\t\"def`, 1000) + `"`,
+		`"` + strings.Repeat(`中文\n`, 1000) + `"`,
+		`"` + strings.Repeat(`\u4f60`, 500) + `"`,
+		`"ab\u00e9"`,
 	} {
+		r := NewRealmWith(RealmOptions{MemoryLimit: 1 << 30})
 		before := r.Stats().RequestAllocatedBytes
-		_, err := r.JSONParseGoString(c.text)
+		v, err := r.JSONParseGoString(text)
 		require.NoError(t, err)
-		require.Equal(t, int64(c.want), r.Stats().RequestAllocatedBytes-before, c.text[:min(20, len(c.text))])
+		s := v.AsString()
+		require.Nil(t, cacheOf(s))
+		require.Equal(t, block+int64(s.lazyDecodedSize()), r.Stats().RequestAllocatedBytes-before, text[:min(20, len(text))])
+		parsed := r.Stats().RequestAllocatedBytes
+		_ = s.UTF16()
+		require.Equal(t, parsed, r.Stats().RequestAllocatedBytes, text[:min(20, len(text))])
 	}
 }
 
@@ -767,12 +759,24 @@ func TestFromGoLongStringJSON(t *testing.T) {
 			v, err := o.AsObject().GetProp(r, r.KeyFromGoString("s"))
 			require.NoError(t, err)
 			s := v.AsString()
-			deferred := n >= jsonPlainMin && s.kind == strASCII
-			require.Equal(t, deferred, s.json == jsonDeferred, "n=%d", n)
-			require.Equal(t, deferred, s.json != 0, "n=%d", n)
+			lazy := len(g) >= jsonPlainMin || !isASCII(g)
+			require.Equal(t, lazy, s.isLazy(), "n=%d", n)
+			jsonFacts := func() uint32 {
+				if !lazy {
+					return 0
+				}
+				return s.lazyData().facts.Load() & (factJSONPlain | factJSONEscapes)
+			}
+			require.Zero(t, jsonFacts(), "n=%d", n)
 			require.Equal(t, want, stringifyUnits(t, r, s), "n=%d", n)
-			require.Equal(t, deferred && i == 0, s.json == jsonPlain, "n=%d", n) // variants[0] has no escape
-			require.Equal(t, deferred && i == 0, s.json != 0, "n=%d", n)
+			var facts uint32
+			if len(g) >= jsonPlainMin {
+				facts = factJSONEscapes
+				if i == 0 { // variants[0] has no escape or non-ASCII byte
+					facts = factJSONPlain
+				}
+			}
+			require.Equal(t, facts, jsonFacts(), "n=%d", n)
 			out, ok, err := r.AppendJSON(nil, v)
 			require.NoError(t, err)
 			require.True(t, ok)
@@ -788,7 +792,7 @@ func TestFromGoLongStringJSON(t *testing.T) {
 
 // TestJSONParseSharesShortLiterals checks that repeated short plain
 // literals are one String, and that literals of the same slot but other
-// content, long ones and escaped ones are not merged.
+// content and long ones are not merged.
 func TestJSONParseSharesShortLiterals(t *testing.T) {
 	r := NewRealm()
 	long := strings.Repeat("x", jsonShortMax+1)

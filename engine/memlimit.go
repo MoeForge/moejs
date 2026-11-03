@@ -488,17 +488,18 @@ func (r *Realm) memoryLimitHit(m *memAccount) {
 }
 
 // shareText sets the share root of the strings a parse reads out of src
-// (jsonParser.plain): text, whose units src is, or a String of its own for
-// the host's text, a working copy or a text FromGo carved (shareRoot),
-// which keeps its bytes for the live measurement to count; its kind is
-// strASCII whatever the bytes, and it is never a value.
+// (jsonParser.plain, Realm.lazyStringSized): text, whose units or lazy source src
+// is, or a String of its own for the host's text, a working copy or a text
+// FromGo carved (shareRoot), which keeps its bytes for the live measurement
+// to count; its kind is strASCII whatever the bytes, and it is never a
+// value.
 func (m *memAccount) shareText(src string, text *String) {
 	switch {
 	case len(src) < shareMin:
 		text = nil // values count their own units (shareRoot)
 	case text == nil:
 		text = &String{s: src, kind: strASCII}
-	case text.kind != strRope:
+	case !text.needsFlat():
 		if text = text.shareRoot(); text == nil {
 			text = &String{s: src, kind: strASCII}
 		}
@@ -511,11 +512,11 @@ func (m *memAccount) shareText(src string, text *String) {
 // units.
 func (r *Realm) substring(s *String, start, end int) *String {
 	if lz := r.lazy; lz != nil && lz.mem != nil && start < end && (start > 0 || end < s.Len()) {
-		// A rope's kind never changes: its contents are read through a
-		// view (flat), which only its kind is read of, so it stays on the
-		// stack.
+		// A rope's or lazy string's kind never changes: its contents are
+		// read through flat, of whose result only the kind is read, so a
+		// rope's view stays on the stack.
 		f := s
-		if s.kind == strRope {
+		if s.needsFlat() {
 			f = s.flat(new(String))
 		}
 		n := 0

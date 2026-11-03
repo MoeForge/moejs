@@ -77,117 +77,13 @@ func jsonScan(s string, i int, high uint64) int {
 	return len(s)
 }
 
-// jsonQuoteSpecial is jsonSpecial without the backslash: the top bit of
-// each byte of x that is a control character or '"', or >= 0x80 when high
-// is swarMSB. Only the lowest flag is exact.
-func jsonQuoteSpecial(x, high uint64) uint64 {
-	q := x ^ ('"' * swarLSB)
-	return ((x-0x20*swarLSB)&^x | (q-swarLSB)&^q | x&high) & swarMSB
-}
-
-// jsonQuoteScan is jsonScan for jsonQuoteSpecial's bytes.
+// wtf8Units returns the number of UTF-16 code units of the well-formed
+// WTF-8 text s: one per byte that is not a continuation byte (10xxxxxx),
+// and two for a four-byte sequence (its lead is 11110xxx). Eight bytes a
+// step, the flags in the top bit of each byte summed by a multiplication.
 //
-// GC safety: as in isASCII, the []byte view of s is read-only and local.
-func jsonQuoteScan(s string, i int, high uint64) int {
-	b := unsafe.Slice(unsafe.StringData(s), len(s))[i:]
-	for len(b) >= 32 {
-		m0 := jsonQuoteSpecial(binary.LittleEndian.Uint64(b), high)
-		m1 := jsonQuoteSpecial(binary.LittleEndian.Uint64(b[8:]), high)
-		m2 := jsonQuoteSpecial(binary.LittleEndian.Uint64(b[16:]), high)
-		m3 := jsonQuoteSpecial(binary.LittleEndian.Uint64(b[24:]), high)
-		if m0|m1|m2|m3 != 0 {
-			at := len(s) - len(b)
-			switch {
-			case m0 != 0:
-				return at + bits.TrailingZeros64(m0)>>3
-			case m1 != 0:
-				return at + 8 + bits.TrailingZeros64(m1)>>3
-			case m2 != 0:
-				return at + 16 + bits.TrailingZeros64(m2)>>3
-			}
-			return at + 24 + bits.TrailingZeros64(m3)>>3
-		}
-		b = b[32:]
-	}
-	for len(b) >= 8 {
-		if m := jsonQuoteSpecial(binary.LittleEndian.Uint64(b), high); m != 0 {
-			return len(s) - len(b) + bits.TrailingZeros64(m)>>3
-		}
-		b = b[8:]
-	}
-	for j, c := range b {
-		if c < 0x20 || c == '"' || c&byte(high) != 0 {
-			return len(s) - len(b) + j
-		}
-	}
-	return len(s)
-}
-
-// jsonStrEnd returns the index of the quote that closes the string literal
-// of s with an escape at i, and whether the literal has a byte >= 0x80 (high
-// is as for strSlow); -1 when a control character or the end of s comes
-// first. A quote after an odd number of backslashes is escaped: in a valid
-// literal the backslashes in a row pair up from the first, the last one
-// escaping the quote when they are odd. It stops at quotes, not at each
-// escape, so it costs a fraction of decoding.
-func jsonStrEnd(s string, i int, high uint64) (end int, wide bool) {
-	wide = high == 0
-	for i = jsonQuoteScan(s, i, high); i < len(s); i = jsonQuoteScan(s, i+1, high) {
-		switch c := s[i]; {
-		case c == '"':
-			k := i - 1 // the opening quote stops it
-			for s[k] == '\\' {
-				k--
-			}
-			if (i-k)&1 != 0 {
-				return i, wide
-			}
-		case c >= 0x80:
-			wide, high = true, 0
-		default:
-			return -1, wide
-		}
-	}
-	return -1, wide
-}
-
-// jsonHasEscapeU reports whether s has a backslash followed by a 'u': a \u
-// escape, or the u after an escaped backslash. Eight pairs a step: the
-// word at a byte is compared with backslashes and the word one byte on with
-// u's, and their OR has a zero byte where a pair matches (the test for a
-// zero byte in a word is exact).
-//
-// GC safety: as in isASCII, the []byte view of s is read-only and local.
-func jsonHasEscapeU(s string) bool {
-	b := unsafe.Slice(unsafe.StringData(s), len(s))
-	pair := func(b []byte) uint64 {
-		z := (binary.LittleEndian.Uint64(b) ^ '\\'*swarLSB) | (binary.LittleEndian.Uint64(b[1:]) ^ 'u'*swarLSB)
-		return (z - swarLSB) &^ z
-	}
-	for len(b) >= 33 {
-		if (pair(b)|pair(b[8:])|pair(b[16:])|pair(b[24:]))&swarMSB != 0 {
-			return true
-		}
-		b = b[32:]
-	}
-	for len(b) >= 9 {
-		if pair(b)&swarMSB != 0 {
-			return true
-		}
-		b = b[8:]
-	}
-	for k := 0; k+1 < len(b); k++ {
-		if b[k] == '\\' && b[k+1] == 'u' {
-			return true
-		}
-	}
-	return false
-}
-
-// wtf8Units returns the number of UTF-16 code units of the WTF-8 text s:
-// one per byte that is not a continuation byte (10xxxxxx), and two for a
-// four-byte sequence (its lead is 11110xxx). Eight bytes a step, the flags
-// in the top bit of each byte summed by a multiplication.
+// It does not validate multi-byte sequences: its text is well-formed, and
+// appendWellFormed decodes it to exactly this many units.
 //
 // GC safety: as in isASCII, the []byte view of s is read-only and local.
 func wtf8Units(s string) int {
@@ -211,15 +107,99 @@ func wtf8Units(s string) int {
 	return n
 }
 
-// jsonPlainMin is the length from which a FromGo string remembers its scan
-// for the bytes JSON quoting escapes (jsonDeferred): a payload (an image, a
-// document) a hook forwards. A shorter one is scanned each time it is
-// quoted, which costs little.
+// utf8Units reports whether s is valid UTF-8 and, if it is, the number of
+// UTF-16 code units it encodes, in one pass: each sequence is checked as
+// utf8.ValidString checks it (no overlong form, no surrogate, nothing above
+// U+10FFFF), and a four-byte one counts two units. A run of ASCII is taken
+// eight bytes a step. The count of invalid text is meaningless.
 //
-// FromGo tests such a string for ASCII only (isASCIILong): a host that
-// releases its call data after each hook converts the payload again for
-// every hook that reads it, and most hooks never quote it. The scan waits
-// for the first use that needs it, quote or Unmarshal's bound.
+// GC safety: as in isASCII, the []byte view of s is read-only and local.
+func utf8Units(s string) (n int, valid bool) {
+	b := unsafe.Slice(unsafe.StringData(s), len(s))
+	for i := 0; i < len(b); {
+		c := b[i]
+		switch {
+		case c < 0x80:
+			// An ASCII byte may begin a run: take it eight bytes a step.
+			n++
+			i++
+			for i+8 <= len(b) && binary.LittleEndian.Uint64(b[i:])&swarMSB == 0 {
+				n += 8
+				i += 8
+			}
+		case c < 0xC2: // a continuation byte, or an overlong two-byte lead
+			return n, false
+		case c < 0xE0:
+			if i+1 >= len(b) || b[i+1]&0xC0 != 0x80 {
+				return n, false
+			}
+			n++
+			i += 2
+		case c < 0xF0:
+			lo, hi := byte(0x80), byte(0xBF)
+			switch c {
+			case 0xE0:
+				lo = 0xA0 // not overlong
+			case 0xED:
+				hi = 0x9F // not a surrogate
+			}
+			if i+2 >= len(b) || b[i+1] < lo || b[i+1] > hi || b[i+2]&0xC0 != 0x80 {
+				return n, false
+			}
+			n++
+			i += 3
+		case c < 0xF5:
+			lo, hi := byte(0x80), byte(0xBF)
+			switch c {
+			case 0xF0:
+				lo = 0x90 // not overlong
+			case 0xF4:
+				hi = 0x8F // not above U+10FFFF
+			}
+			if i+3 >= len(b) || b[i+1] < lo || b[i+1] > hi || b[i+2]&0xC0 != 0x80 || b[i+3]&0xC0 != 0x80 {
+				return n, false
+			}
+			n += 2
+			i += 4
+		default:
+			return n, false
+		}
+	}
+	return n, true
+}
+
+// appendWellFormed appends the UTF-16 code units of s, which must be valid
+// UTF-8 or well-formed WTF-8, without checking it: the lead byte of each
+// sequence gives its length, and a three-byte one encoding a surrogate
+// decodes to the surrogate, as appendWTF8Units decodes it. It writes what
+// wtf8Units counts, and decodes faster than appendWTF8Units, which accepts
+// any bytes.
+func appendWellFormed(u []uint16, s string) []uint16 {
+	for i := 0; i < len(s); {
+		c := s[i]
+		switch {
+		case c < 0x80:
+			u = append(u, uint16(c))
+			i++
+		case c < 0xE0:
+			u = append(u, uint16(c&0x1F)<<6|uint16(s[i+1]&0x3F))
+			i += 2
+		case c < 0xF0:
+			u = append(u, uint16(c&0x0F)<<12|uint16(s[i+1]&0x3F)<<6|uint16(s[i+2]&0x3F))
+			i += 3
+		default:
+			r := (rune(c&0x07)<<18 | rune(s[i+1]&0x3F)<<12 | rune(s[i+2]&0x3F)<<6 | rune(s[i+3]&0x3F)) - 0x10000
+			u = append(u, uint16(0xD800+(r>>10)), uint16(0xDC00+(r&0x3FF)))
+			i += 4
+		}
+	}
+	return u
+}
+
+// jsonPlainMin is the byte length from which lazy text strings cache whether
+// they are ASCII with nothing to escape. Quoting or a JSON size bound first
+// records the result; shorter strings use the ordinary quoting path. It is
+// also the length from which FromHostString keeps ASCII text lazy.
 const jsonPlainMin = 64 << 10
 
 // isASCIILong is isASCII for a long string: 32 bytes a step, tested
@@ -275,18 +255,6 @@ func jsonASCII(g string) (ascii, plain bool) {
 		return true, true
 	}
 	return g[i] < 0x80 && isASCII(g[i:]), false
-}
-
-// scanJSON scans the jsonDeferred string s for the bytes JSON quoting
-// escapes, records what it found in json and reports whether there are
-// none.
-func (s *String) scanJSON() bool {
-	s.json = 0
-	if _, plain := jsonASCII(s.s); plain {
-		s.json = jsonPlain
-		return true
-	}
-	return false
 }
 
 // jsonShortMax is the longest literal JSON.parse shares between repeats.
@@ -572,6 +540,7 @@ func ownCap(n int) int { return max(256, 2*n) }
 func (r *Realm) JSONParseGoString(text string) (Value, error) {
 	p := jsonParser{r: r}
 	if isASCII(text) || utf8.ValidString(text) {
+		p.knownUTF8 = true
 		return p.parseText(text, nil)
 	}
 	return p.parse(FromGoString(text))

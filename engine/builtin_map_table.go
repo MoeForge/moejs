@@ -107,7 +107,7 @@ func collHash(v Value) uint32 {
 	case v.IsString():
 		s := v.AsString()
 		f := s
-		if s.kind == strRope {
+		if s.needsFlat() {
 			f = s.flat(new(String))
 		}
 		if f.kind == strASCII {

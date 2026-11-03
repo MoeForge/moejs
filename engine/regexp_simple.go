@@ -401,7 +401,7 @@ func (p *simpleParser) decimal() (int, bool) {
 // positions, or ok == false.
 func (c *simpleClass) find(s *String, from int) (start, end int, ok bool) {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	n := int(f.n)

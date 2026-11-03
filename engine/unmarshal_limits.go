@@ -282,7 +282,7 @@ func (m *decodeMeasure) togoObject(o *Object, depth int) bool {
 	return jsonMembers(o, func(key PropertyKey, e Value) bool {
 		k := key.String()
 		f := k // goQuotedLenJS takes k: a view stays on the stack
-		if k.kind == strRope {
+		if k.needsFlat() {
 			f = k.flat(new(String))
 		}
 		if f.kind != strASCII && hasLoneSurrogate(f.units()) {
@@ -636,14 +636,17 @@ func jsEscapeLen(c byte) int64 {
 }
 
 // jsQuotedLen is the length of AppendJSON's text of the string s: UTF-8,
-// a lone surrogate escaped.
+// a lone surrogate escaped. A lazy string's text whose length its source
+// gives is measured without decoding (jsQuotedLenLazy).
 func jsQuotedLen(s *String) int64 {
-	f := s
-	if s.kind == strRope {
-		f = s.flat(new(String))
+	if s.isLazy() {
+		if n, ok := jsQuotedLenLazy(s); ok {
+			return n
+		}
 	}
-	if int8(f.json) < 0 { // jsonDeferred: scan it now, as plain does, and keep the answer
-		f.scanJSON()
+	f := s
+	if s.needsFlat() {
+		f = s.flat(new(String))
 	}
 	if f.json == jsonPlain {
 		return int64(f.n) + 2
@@ -673,6 +676,20 @@ func jsQuotedLen(s *String) int64 {
 		}
 	}
 	return n
+}
+
+// jsQuotedLenLazy is jsQuotedLen of a lazy string from its source, as
+// quoteLazy writes it: copied when plain or verbatim, and Go text, whose
+// invalid bytes decode to U+FFFD, measured as jsQuotedLenGo measures it.
+// WTF-8 that may encode a surrogate and escaped JSON need decoding.
+func jsQuotedLenLazy(s *String) (int64, bool) {
+	switch {
+	case s.plainLazyJSON() || s.lazyMode() == lazyJSONVerbatim:
+		return int64(len(s.s)) + 2, true
+	case s.lazyMode() == lazyText || s.validLazyUTF8():
+		return jsQuotedLenGo(s.s), true
+	}
+	return 0, false
 }
 
 // jsQuotedLenGo is jsQuotedLen of FromGoString(g): an invalid byte is
@@ -757,8 +774,11 @@ func goQuotedLen(g string) int64 {
 // goQuotedLenJS is goQuotedLen of the Go string of s (GoString: a lone
 // surrogate is U+FFFD).
 func goQuotedLenJS(s *String) int64 {
+	if g, ok := s.sourceUTF8(); ok {
+		return goQuotedLen(g)
+	}
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
