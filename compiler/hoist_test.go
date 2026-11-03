@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

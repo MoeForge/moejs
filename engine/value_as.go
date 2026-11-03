@@ -14,6 +14,10 @@ func (v Value) importTarget() *Value { return (*Value)(v.ptr) }
 // asPrivate returns the *PrivateName payload. Only valid when isPrivate.
 func (v Value) asPrivate() *PrivateName { return (*PrivateName)(v.ptr) }
 
+// asAsyncFrame returns the *asyncFrame payload. Only valid when
+// isAsyncFrame.
+func (v Value) asAsyncFrame() *asyncFrame { return (*asyncFrame)(v.ptr) }
+
 // AsString returns the *String payload. Only valid when IsString.
 func (v Value) AsString() *String { return (*String)(v.ptr) }
 

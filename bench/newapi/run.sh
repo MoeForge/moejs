@@ -74,7 +74,11 @@ set -eu
 # The new-api commit the gate runs; bump it when new-api's suite changes.
 NEWAPI_REPO=https://github.com/QuantumNous/new-api
 NEWAPI_REV=b48b74ab77cf289ccaaa8d99c067ce50cced4a82
-MODULE=github.com/Calcium-Ion/moejs
+# The moejs module path new-api imports at NEWAPI_REV. moejs's own path is
+# read from the go.mod of the commit tested: where the two differ (moejs
+# moved from github.com/Calcium-Ion/moejs to github.com/MoeForge/moejs),
+# prepare rewrites the imports of its copy of new-api to moejs's path.
+NEWAPI_MOEJS=github.com/Calcium-Ion/moejs
 PACKAGES="./pkg/jsplugin/... ./relay/channel/task/jsplugin/... ./plugins/..."
 HTTP_PACKAGES="./middleware/ ./router/ ./controller/"
 HTTP_RUN='TaskPlugin|PluginRouter|Distributor|BuiltIn'
@@ -152,7 +156,14 @@ prepare() {
 	mkdir -p "$tree/moejs" "$tree/newapi"
 	git -C "$REPO" archive "$sha" | tar -x -C "$tree/moejs"
 	git --git-dir="$NEWAPI_CACHE" archive "$NEWAPI_REV" | tar -x -C "$tree/newapi"
-	(cd "$tree/newapi" && "$GO" mod edit -replace "$MODULE=$tree/moejs")
+	mod=$(sed -n 's/^module[[:space:]]*//p' "$tree/moejs/go.mod")
+	[ -n "$mod" ] || die "$sha: go.mod has no module line"
+	if [ "$mod" != "$NEWAPI_MOEJS" ]; then
+		find "$tree/newapi" -name '*.go' -exec sed -i.orig -e "s#\"$NEWAPI_MOEJS\"#\"$mod\"#g" -e "s#\"$NEWAPI_MOEJS/#\"$mod/#g" {} +
+		find "$tree/newapi" -name '*.go.orig' -exec rm -f {} +
+		(cd "$tree/newapi" && "$GO" mod edit -droprequire "$NEWAPI_MOEJS" -require "$mod@v0.0.0-00010101000000-000000000000")
+	fi
+	(cd "$tree/newapi" && "$GO" mod edit -replace "$mod=$tree/moejs")
 	: >"$tree/ready"
 }
 

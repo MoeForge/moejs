@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Per-realm module instances and their evaluation (ECMA-262 §16.2.1.5.3).
@@ -392,8 +392,9 @@ func (r *Realm) runModuleBody(m *moduleInstance) (Value, error) {
 
 // noBodyPromise is the internal TypeError of a module with top-level
 // await whose body returned no promise: bytecode no compiler made (the
-// compiler starts the body with AsyncStart, whose promise the call
-// returns), which a Go caller would otherwise read as one.
+// compiler ends the body with AsyncReturn and AsyncThrow, and the call
+// returns the promise they or its first Await make), which a Go caller
+// would otherwise read as one.
 func (r *Realm) noBodyPromise() error {
 	return r.TypeError("internal: an async module body returned no promise")
 }
@@ -665,7 +666,7 @@ func (r *Realm) stopModules(reaction *promiseReaction, dropped []job, err error)
 		switch x := re.reactor.(type) {
 		case *moduleInstance:
 			r.asyncModuleStopped(x, err)
-		case *asyncFunction:
+		case *asyncFrame:
 			if bodies == nil {
 				bodies = make(map[*Object]*moduleInstance)
 				for _, m := range r.lazy.modules.instances {

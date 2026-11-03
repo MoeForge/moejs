@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
-	"github.com/Calcium-Ion/moejs/webapi"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
+	"github.com/MoeForge/moejs/webapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -339,8 +339,8 @@ func TestFetchCancelReachesServer(t *testing.T) {
 }
 
 // TestFetchBackpressure checks that a slow reader holds the server back:
-// Go reads only when JavaScript asks, so the server blocks once the
-// socket buffers are full.
+// Go reads at most one chunk ahead of what JavaScript took, so the server
+// blocks once the socket buffers are full.
 func TestFetchBackpressure(t *testing.T) {
 	srv := newServer(t)
 	h := fetchHarness(t, srv, webapi.Options{})
@@ -357,6 +357,108 @@ await rd.cancel(); return [read, a, b]`)
 	t.Logf("read %v bytes; server wrote %v then %v", v[0], v[1], v[2])
 	assert.Equal(t, v[1], v[2], "the server kept writing while JavaScript did not read")
 	assert.Less(t, v[1], float64(64<<20), "the Go side read far ahead")
+}
+
+// TestFetchPartlyReadBodyCollected checks that a body whose stream was
+// read, then dropped, is closed once it is collected, whether the
+// goroutine reading it waits in a read or holds the chunk it read ahead.
+func TestFetchPartlyReadBodyCollected(t *testing.T) {
+	for _, path := range []string{"/stall", "/infinite"} {
+		t.Run(path, func(t *testing.T) {
+			srv := newServer(t)
+			h := fetchHarness(t, srv, webapi.Options{})
+			h.run(`const rd = (await fetch(BASE + "` + path + `")).body.getReader(); await rd.read();
+await new Promise(r => setTimeout(r, 50)); return 1`)
+			h.run(`let x = 0; for (let i = 0; i < 1000; i++) x += [i].length; return x`)
+			deadline := time.Now().Add(10 * time.Second)
+			for srv.open.Load() > 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("the partly read body was not closed after it was collected")
+				}
+				runtime.GC()
+				time.Sleep(50 * time.Millisecond)
+			}
+		})
+	}
+}
+
+// readCounter counts the Read calls of a response body as they start.
+type readCounter struct {
+	io.ReadCloser
+	n *atomic.Int64
+}
+
+func (r readCounter) Read(p []byte) (int, error) {
+	r.n.Add(1)
+	return r.ReadCloser.Read(p)
+}
+
+type countingTransport struct {
+	http.RoundTripper
+	reads atomic.Int64
+}
+
+func (t *countingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.RoundTripper.RoundTrip(req)
+	if err == nil {
+		resp.Body = readCounter{resp.Body, &t.reads}
+	}
+	return resp, err
+}
+
+// TestFetchReadAheadReported checks that the chunk Go reads ahead counts in
+// the measurements of the memory limit while JavaScript reaches the
+// stream, though only Go holds it, and no longer once the stream is
+// canceled. The goroutine's buffer counts from before the read ahead
+// starts, which the measurement waits for.
+func TestFetchReadAheadReported(t *testing.T) {
+	srv := newServer(t)
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	ct := &countingTransport{RoundTripper: tr}
+	h := newHarnessRT(t, moejs.NewRuntime(moejs.Options{MemoryLimit: 64 << 20}), webapi.Options{Client: &http.Client{Transport: ct}})
+	require.NoError(t, h.rt.SetGlobal("BASE", srv.URL))
+	var kept, dropped int64
+	require.NoError(t, h.rt.SetGlobal("measure", moejs.NativeFunc(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+		if moejs.Arg(args, 0).String() == "kept" {
+			// Eight reads handed their chunks over; the ninth reads ahead.
+			deadline := time.Now().Add(10 * time.Second)
+			for ct.reads.Load() < 9 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			kept = h.rt.Realm().MeasureLive(nil)
+		} else {
+			dropped = h.rt.Realm().MeasureLive(nil)
+		}
+		return moejs.Undefined(), nil
+	})))
+	got := h.run(`const rd = (await fetch(BASE + "/infinite")).body.getReader(); let max = 0;
+for (let i = 0; i < 8; i++) max = Math.max(max, (await rd.read()).value.buffer.byteLength);
+measure("kept"); await rd.cancel(); measure("dropped"); return max`)
+	t.Logf("largest chunk %s; %d reads; measured %d with the reader, %d after its cancel", got, ct.reads.Load(), kept, dropped)
+	max, err := strconv.Atoi(got)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, kept-dropped, int64(max), "the chunk read ahead")
+}
+
+// TestFetchEndedReaderNotReported checks that a stream read to its end
+// stops reporting the goroutine's buffer: bodies kept after their end
+// count little more than their objects.
+func TestFetchEndedReaderNotReported(t *testing.T) {
+	srv := newServer(t)
+	h := limitHarness(t, srv, 1<<30)
+	var m [2]int64
+	require.NoError(t, h.rt.SetGlobal("measure", moejs.NativeFunc(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+		i, _ := strconv.Atoi(moejs.Arg(args, 0).String())
+		runtime.GC()
+		m[i] = h.rt.Realm().MeasureLive(nil)
+		return moejs.Undefined(), nil
+	})))
+	h.run(`globalThis.kept = []; measure(0);
+for (let i = 0; i < 64; i++) { const r = await fetch(BASE + "/chunks?n=1&size=100"); const rd = r.body.getReader(); while (!(await rd.read()).done); kept.push(r, rd) }
+measure(1); return 1`)
+	t.Logf("64 streamed bodies of 100 bytes, read to their end and kept: measured %d bytes more (%d per body)", m[1]-m[0], (m[1]-m[0])/64)
+	assert.Less(t, m[1]-m[0], int64(64*4<<10), "the measurements count the read buffers of ended bodies")
 }
 
 // TestFetchClose checks that Close ends fetches in flight and open bodies.

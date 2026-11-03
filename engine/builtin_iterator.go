@@ -95,9 +95,29 @@ type iterResultObject struct {
 	slots [2]Value
 }
 
-// iterResultShape returns the realm's cached shape for {value, done}
-// objects (two transitions from the plain root, cached by the tree).
+// iterResultShape returns the realm's shape for {value, done} objects:
+// two cached transitions from the plain root, or the template's
+// process-wide shape in a shared realm (the same shared shape, without the
+// two lookups).
 func (r *Realm) iterResultShape() *Shape {
+	if r.sharedIntrinsics {
+		return sharedTpl.iterResultShape
+	}
+	return iterResultShapeFrom(r)
+}
+
+// iterResultFields returns the value and done properties of the iterator
+// result o when it is an ordinary object of the realm's iterator result
+// shape, whose two data properties [[Get]] would read from their slots.
+func (r *Realm) iterResultFields(o *Object) (value, done Value, ok bool) {
+	if o.flags&(flagDict|flagHasLazy) != 0 || o.class != ClassObject || o.shape != r.iterResultShape() {
+		return Undefined(), Undefined(), false
+	}
+	return o.slots[0], o.slots[1], true
+}
+
+// iterResultShapeFrom returns the shape of {value, done} objects in r.
+func iterResultShapeFrom(r *Realm) *Shape {
 	return r.plainRoot.addProperty(r, StringKey(AtomValue), attrDefault).addProperty(r, StringKey(AtomDone), attrDefault)
 }
 

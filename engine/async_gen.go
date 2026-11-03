@@ -19,12 +19,13 @@ import "unsafe"
 // function's promise.
 
 // asyncGenerator is the internal payload of a ClassAsyncGenerator object:
-// the frame and the request queue (AsyncGeneratorRequest records, head
-// first).
+// the frame, the request queue (AsyncGeneratorRequest records, head first)
+// and the reaction record of the frame's awaits (async.go).
 type asyncGenerator struct {
 	obj   Object
 	g     genFrame
 	queue []asyncGenRequest
+	re    promiseReaction
 }
 
 // asyncGenRequest is an AsyncGeneratorRequest: the completion (value and
@@ -48,6 +49,7 @@ func (r *Realm) newAsyncGenerator(fn *Object, fd *FunctionData, this Value) (*Ob
 	}
 	r.markPrototype(proto)
 	ag := &asyncGenerator{g: genFrame{fn: fn, fd: fd, this: this, regs: make([]Value, fd.code.NumRegs)}}
+	ag.re.reactor = ag
 	r.chargeObject(unsafe.Sizeof(asyncGenerator{}) + uintptr(len(ag.g.regs)*valueSize))
 	o := initObject(&ag.obj, ClassAsyncGenerator, r.rootShapeFor(proto))
 	o.internal = ag

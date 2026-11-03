@@ -1,6 +1,6 @@
 package moejs
 
-import "github.com/Calcium-Ion/moejs/engine"
+import "github.com/MoeForge/moejs/engine"
 
 // CallFunction calls the function fn with this and args, for a host that
 // calls a function JavaScript gave it, such as a callback passed to a host

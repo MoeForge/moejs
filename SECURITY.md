@@ -4,7 +4,7 @@
 
 Report it privately through GitHub: open the Security tab of this repository
 and choose "Report a vulnerability", or go straight to
-https://github.com/Calcium-Ion/moejs/security/advisories/new. Only you and
+https://github.com/MoeForge/moejs/security/advisories/new. Only you and
 the maintainers can see the report. Include the JavaScript and the Go code
 that reproduce the problem.
 

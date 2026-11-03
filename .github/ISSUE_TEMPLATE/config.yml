@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/Calcium-Ion/moejs/security/advisories/new
+    url: https://github.com/MoeForge/moejs/security/advisories/new
     about: Report it privately, so the details stay hidden until a fix is out.

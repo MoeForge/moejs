@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Calcium-Ion/moejs/bytecode"
+import "github.com/MoeForge/moejs/bytecode"
 
 // coldOp executes one op that the interpreter loop leaves to its default
 // case, and returns the next pc. These are ops that are rare in loops (TDZ
@@ -14,6 +14,20 @@ import "github.com/Calcium-Ion/moejs/bytecode"
 // Everything here may re-enter the interpreter: a result is written through
 // st.stack after any call, never through a register slice taken before it.
 func (r *Realm) coldOp(fd *FunctionData, base int, env *Env, w uint32, pc int) (int, error) {
+	// The async function ops first: they use none of the operands below.
+	if op := bytecode.Op(w); op-bytecode.AsyncGenStart <= bytecode.AsyncThrow-bytecode.AsyncGenStart {
+		switch op {
+		case bytecode.Await:
+			g, regs, err := r.await(fd, base, w)
+			if g == nil {
+				return pc, err
+			}
+			return pc, g.save(regs, pc)
+		case bytecode.AsyncReturn, bytecode.AsyncThrow:
+			return pc, r.asyncEnd(fd, base, w)
+		}
+		return r.asyncOp(fd, base, w, pc)
+	}
 	st := &r.interp
 	code, meta := fd.code, fd.meta
 	insns := code.Code
@@ -219,6 +233,9 @@ func (r *Realm) coldOp(fd *FunctionData, base int, env *Env, w uint32, pc int) (
 		}
 		return pc, err
 
+	// --- async functions ---
+	// The ops every call of an async function runs and every await: here,
+	// they skip the class and generator ops' hops on the way to asyncOp.
 	// --- iteration ---
 	case bytecode.ForInInit:
 		keys, obj, err := r.forInInit(regs[b])

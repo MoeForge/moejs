@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs/internal/regexpsyntax"
+	"github.com/MoeForge/moejs/internal/regexpsyntax"
 )
 
 // bailout is the panic value used to abort parsing at the first error. The

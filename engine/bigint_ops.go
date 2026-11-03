@@ -5,7 +5,7 @@ import (
 	"math/bits"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // The BigInt operators. The interpreter's number fast paths never reach

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bench/engines"
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/bench/engines"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // TestICCensus reports the inline-cache misses of the plugins (loading and

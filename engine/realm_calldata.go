@@ -22,8 +22,10 @@ const (
 // finished calls, so a pooled realm does not keep the last request alive:
 // the host conversion's chunks, whose placeholders hold the Go maps, slices
 // and strings of the arguments (hostHeap); the registers and frame records
-// the finished calls left above the live ones; the RegExp working copies
-// of their subjects; and the last match, which the legacy RegExp statics
+// the finished calls left above the live ones, and the RegExp working
+// copies of their subjects (ReleaseScratch), which keep what the calls
+// made and dropped reachable for Go's collector until later calls
+// overwrite them; and the last match, which the legacy RegExp statics
 // (RegExp.$1, RegExp.input and the rest) describe: they read "" again, as
 // in a new realm. Values already returned stay valid: their nodes keep
 // their own storage. It also starts a new memory budget (ResetAllocation).
@@ -44,10 +46,45 @@ func (r *Realm) ReleaseCallData() {
 	if h := r.fromGo.heap; h != nil {
 		h.seal()
 	}
-	// No frame is live at depth 0, so sp and nframes are 0; the registers
-	// and records below them would be kept all the same. Of the register
-	// stack only the extent the calls used, its length (growStack), holds
-	// anything to clear.
+	r.releaseScratch()
+	if rs := r.regexps; rs != nil {
+		rs.lastS, rs.lastC = nil, nil
+	}
+	if lz := r.lazy; lz != nil {
+		lz.statics = nil
+		if lz.mem != nil {
+			r.ResetAllocation()
+		}
+	}
+}
+
+// ReleaseScratch drops what finished calls left in the interpreter's
+// working state, the part of ReleaseCallData that neither the host nor
+// JavaScript can observe: the registers and frame records above the live
+// frames, which keep the values the calls used, and the functions they ran
+// with their scopes, reachable for Go's collector until later calls
+// overwrite them, and the RegExp working copies of their subjects. Calls
+// do not do it themselves, which would tax every call: a host that keeps
+// a realm after the code it ran is done calls it, as package eventloop
+// does at the end of a run of its loop, or ReleaseCallData, which does it
+// too.
+//
+// Between calls only; a no-op inside one (from a native function).
+func (r *Realm) ReleaseScratch() {
+	if r.callDepth == 0 {
+		r.releaseScratch()
+	}
+}
+
+// releaseScratch is ReleaseScratch, at depth 0. No frame is live there, so
+// sp and nframes are 0; the registers and records below them would be kept
+// all the same. Of the register stack only the extent the calls used, its
+// length (growStack), holds anything to clear, and of the frame table the
+// records the calls wrote, a prefix: records are written from the bottom
+// up, every one with its function, and releaseScratch leaves the rest
+// zero. So the release costs what the calls used, not the capacity the
+// stack and the table keep.
+func (r *Realm) releaseScratch() {
 	st := &r.interp
 	if st.sp == 0 && cap(st.stack) > maxRetainedStack {
 		st.stack = nil
@@ -58,17 +95,12 @@ func (r *Realm) ReleaseCallData() {
 	if st.nframes == 0 && len(st.frames) > maxRetainedFrames {
 		st.frames = nil
 	} else {
-		clear(st.frames[st.nframes:])
+		for i := st.nframes; i < len(st.frames) && st.frames[i].fn != nil; i++ {
+			st.frames[i] = frameInfo{}
+		}
 	}
 	if rs := r.regexps; rs != nil {
 		rs.subjNext = 0
 		clear(rs.subjects[:])
-		rs.lastS, rs.lastC = nil, nil
-	}
-	if lz := r.lazy; lz != nil {
-		lz.statics = nil
-		if lz.mem != nil {
-			r.ResetAllocation()
-		}
 	}
 }

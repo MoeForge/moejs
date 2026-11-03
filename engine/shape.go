@@ -130,6 +130,11 @@ func codeKey(key PropertyKey) bool {
 const (
 	noFillAll     uint8 = 1 << iota // no entry is filled on the shape
 	noFillStatics                   // none for a static while %RegExp% has the shape with them pending
+	// noFillAdd: no add is cached from the shape, an owned one (addOwned).
+	// The adds that probe a shape with Shape.has (setNamedAdd,
+	// defineFieldSlow) leave it to the generic path, which finds a key
+	// through the lookup table: has would walk a chain of any length.
+	noFillAdd
 )
 
 // Shape is an immutable node of a realm's transition tree. A shape encodes
@@ -151,8 +156,12 @@ type Shape struct {
 	// noFill marks the shape of an object with properties pending, which
 	// an inline cache filled on another object of this shape would hit:
 	// noFillAll for a deferred install (deferInstall), noFillStatics for
-	// %RegExp% with its statics pending (installRegExpStatics).
+	// %RegExp% with its statics pending (installRegExpStatics); and an
+	// owned shape, from which no add is cached (noFillAdd).
 	noFill uint8
+	// owned marks a shape of the chain a global object continues in past
+	// maxShapeProps (addOwned) instead of moving to dictionary mode.
+	owned bool
 
 	transSmall []transition
 	transMap   map[transitionKey]*Shape
@@ -349,7 +358,8 @@ func (s *Shape) Lookup(key PropertyKey) (slot uint32, attrs uint8, ok bool) {
 // never looked up again once the literal is complete). It walks the chain
 // even past a table: a chain is at most maxShapeProps long, and the walk
 // keeps has inlined where an add probes a shape, most often one without a
-// table.
+// table. An owned chain (Shape.addOwned) can be any length: its shapes are
+// noFillAdd, so the adds that probe with has leave them alone.
 func (s *Shape) has(key PropertyKey) bool {
 	for n := s; n.count != 0; n = n.parent {
 		if n.key == key {
@@ -395,15 +405,47 @@ func newShapeTable(props []shapeProp) *shapeIndex {
 		size *= 2
 	}
 	t := &shapeIndex{slots: make([]uint32, size)}
-	mask := uint32(size - 1)
 	for i := range props {
-		j := keyHash(props[i].key) & mask
-		for t.slots[j] != 0 {
-			j = (j + 1) & mask
-		}
-		t.slots[j] = uint32(i) + 1
+		t.put(props[i].key, uint32(i))
 	}
 	return t
+}
+
+// put indexes key at slot; the table has room.
+func (t *shapeIndex) put(key PropertyKey, slot uint32) {
+	mask := uint32(len(t.slots) - 1)
+	j := keyHash(key) & mask
+	for t.slots[j] != 0 {
+		j = (j + 1) & mask
+	}
+	t.slots[j] = slot + 1
+}
+
+// remove drops slot, which the table indexes, from the table built over
+// props, moving the entries after it in its run back where their probe
+// would have started looking for them (no tombstones).
+func (t *shapeIndex) remove(props []shapeProp, slot uint32) {
+	mask := uint32(len(t.slots) - 1)
+	i := keyHash(props[slot].key) & mask
+	for t.slots[i] != slot+1 {
+		i = (i + 1) & mask
+	}
+	for j := i; ; {
+		t.slots[i] = 0
+		for {
+			j = (j + 1) & mask
+			e := t.slots[j]
+			if e == 0 {
+				return
+			}
+			// An entry whose home h lies cyclically in (i, j] stays.
+			if h := keyHash(props[e-1].key) & mask; (j-h)&mask >= (j-i)&mask {
+				t.slots[i] = e
+				i = j
+				break
+			}
+		}
+	}
 }
 
 // find returns the slot of key among props, the properties the index was
@@ -944,6 +986,83 @@ func (s *Shape) rebase(r *Realm, root *Shape) *Shape {
 	n := root
 	for _, p := range s.Props() {
 		n = n.addProperty(r, p.key, p.attrs)
+	}
+	return n
+}
+
+// addOwned returns the child of s for key/attrs in an owned chain. A global
+// object continues there past maxShapeProps, where any other object moves
+// to dictionary mode, so that its global variables keep their inline caches
+// however many it has (a host's lazy globals, a script's top-level
+// functions). The chain is the object's alone and changes only at its end:
+// no transition leads to its shapes, an add makes a new shape and deleting
+// the last property another (ownedPop), so an inline cache filled on an
+// earlier one misses and the object never returns to one. Any other change
+// (a deletion before the end, new attributes, a new prototype, freezing)
+// moves the object to dictionary mode, as it would any other object past
+// maxShapeProps.
+//
+// An add costs one shape: the props list and the lookup table grow in
+// place. The child of an owned shape extends its props (an earlier shape
+// never looks past its count) and takes its table, adding its key, while
+// the table stays at most half full. The first owned shape copies the props
+// of its parent in the tree, which other objects may share.
+func (s *Shape) addOwned(r *Realm, key PropertyKey, attrs uint8) *Shape {
+	r.chargeShape()
+	child := &Shape{
+		parent: s,
+		proto:  s.proto,
+		key:    key,
+		slot:   s.count,
+		attrs:  attrs,
+		count:  s.count + 1,
+		noFill: noFillAdd,
+		owned:  true,
+	}
+	p := shapeProp{key, attrs}
+	if s.owned {
+		child.props = append(s.props, p)
+		if t := s.table; t != nil && 2*int(child.count) <= len(t.slots) {
+			t.put(key, s.count)
+			child.table, s.table = t, nil
+		}
+	} else {
+		props := s.Props()
+		child.props = append(props[:s.count:s.count], p)
+	}
+	if child.table == nil {
+		child.buildTable()
+	}
+	return child
+}
+
+// ownedPop returns the shape of an object of the owned shape s without its
+// last property: a copy of s's parent, which takes s's table without the
+// key, so that the object never returns to a shape it had (addOwned). A
+// parent in the tree is returned as it is. The copy's props end at its
+// count: the next addOwned appends to a new array, not over the popped
+// key in the array s's props share, which a snapshot of s's keys (an
+// Object.assign, a for-in, a spread under way) may still be reading.
+func (s *Shape) ownedPop(r *Realm) *Shape {
+	q := s.parent
+	if !q.owned {
+		return q
+	}
+	r.chargeShape()
+	n := &Shape{
+		parent: q.parent,
+		proto:  q.proto,
+		key:    q.key,
+		slot:   q.slot,
+		attrs:  q.attrs,
+		count:  q.count,
+		noFill: noFillAdd,
+		owned:  true,
+		props:  q.props[:q.count:q.count],
+	}
+	if t := s.table; t != nil {
+		t.remove(s.props, s.slot)
+		n.table, s.table = t, nil
 	}
 	return n
 }

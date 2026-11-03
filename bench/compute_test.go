@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // computeModule holds CPU-bound kernels outside the plugin corpus: each

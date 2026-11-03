@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Calcium-Ion/moejs/bytecode"
+import "github.com/MoeForge/moejs/bytecode"
 
 // Private names (ECMA-262 §6.2.12) are a property-key kind of their own. A
 // PropertyKey holding a *PrivateName never equals a string, symbol or index

@@ -3,10 +3,10 @@ package moejs
 import (
 	"context"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // The engine compiles the source text of eval, the Function constructors
@@ -120,8 +120,12 @@ func (*Script) referrer() {}
 // throws before anything runs. The jobs the script queued run before
 // RunScript returns. A throw is an *Exception, an interrupt an
 // *InterruptedError; a script whose bytecode the engine's verifier
-// rejects (a compiler bug) does not run, and the error says why.
+// rejects (a compiler bug) does not run, and the error says why. A nil s,
+// what a failed CompileScript returns, is an error.
 func (rt *Runtime) RunScript(s *Script) (res Value, err error) {
+	if s == nil {
+		return engine.Undefined(), errNilScript
+	}
 	r := rt.realm
 	defer func() {
 		if err != nil {

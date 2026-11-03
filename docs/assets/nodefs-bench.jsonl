@@ -1,0 +1,260 @@
+{"meta": {"date": "2026-10-25", "node": "v24.22.0 icu 78.3", "go": "go1.26.6", "cpu": "Intel(R) Xeon(R) CPU E5-2667 v4 @ 3.20GHz", "cpus": "0-7", "canaries": [{"name": "cpu", "floor": 248000.0}, {"name": "mem", "floor": 525.0}], "tree_files": 2142}}
+{"round": 1, "canary": "cpu", "when": "before", "value": 261777.033}
+{"round": 1, "canary": "mem", "when": "before", "value": 544.7186100950067}
+{"round": 1, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 8.321, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 8.551, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 487.532, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 319.846, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 20.824, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_read_4k_buf", "value": 24.086, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 451.066, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_read_1m_buf", "value": 298.376, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readdirsync", "value": 509.625, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readdir", "value": 542.647, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2629.898, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_statsync", "value": 2.452, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_stat", "value": 12.064, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "fs_globsync", "value": 2805.813, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "buf_from_base64", "value": 66.184, "unit": "us"}
+{"round": 1, "engine": "moejs", "row": "buf_to_base64", "value": 82.408, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.623, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readsync_4k_buf", "value": 7.278, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 746.403, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readsync_1m_buf", "value": 301.946, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_read_4k_utf8", "value": 138.87, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_read_4k_buf", "value": 130.252, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_read_1m_utf8", "value": 1083.197, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_read_1m_buf", "value": 477.183, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readdirsync", "value": 506.253, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readdir", "value": 545.956, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12260.859, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_statsync", "value": 1.761, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_stat", "value": 35.763, "unit": "us"}
+{"round": 1, "engine": "node", "row": "fs_globsync", "value": 9979.157, "unit": "us"}
+{"round": 1, "engine": "node", "row": "buf_from_base64", "value": 16.278, "unit": "us"}
+{"round": 1, "engine": "node", "row": "buf_to_base64", "value": 23.343, "unit": "us"}
+{"round": 1, "canary": "cpu", "when": "after", "value": 262182.802}
+{"round": 1, "canary": "mem", "when": "after", "value": 547.9480423379536}
+{"round": 1, "status": "kept", "foreign": 0.004, "start": "12:43:09", "end": "12:43:52", "why": []}
+{"round": 2, "canary": "cpu", "when": "before", "value": 261474.752}
+{"round": 2, "canary": "mem", "when": "before", "value": 587.7398296760208}
+{"round": 2, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.458, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.745, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 745.731, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readsync_1m_buf", "value": 300.7, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_read_4k_utf8", "value": 150.651, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_read_4k_buf", "value": 140.552, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_read_1m_utf8", "value": 1034.415, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_read_1m_buf", "value": 484.496, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readdirsync", "value": 505.738, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readdir", "value": 552.211, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12564.888, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_statsync", "value": 1.724, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_stat", "value": 37.076, "unit": "us"}
+{"round": 2, "engine": "node", "row": "fs_globsync", "value": 9872.351, "unit": "us"}
+{"round": 2, "engine": "node", "row": "buf_from_base64", "value": 15.881, "unit": "us"}
+{"round": 2, "engine": "node", "row": "buf_to_base64", "value": 23.523, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 7.639, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 7.988, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 452.791, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 312.993, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 20.333, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_read_4k_buf", "value": 19.562, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 459.725, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_read_1m_buf", "value": 282.118, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readdirsync", "value": 541.713, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readdir", "value": 581.277, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2680.214, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_statsync", "value": 2.278, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_stat", "value": 11.489, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "fs_globsync", "value": 2887.912, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "buf_from_base64", "value": 59.618, "unit": "us"}
+{"round": 2, "engine": "moejs", "row": "buf_to_base64", "value": 74.954, "unit": "us"}
+{"round": 2, "canary": "cpu", "when": "after", "value": 257154.23}
+{"round": 2, "canary": "mem", "when": "after", "value": 545.6823422183932}
+{"round": 2, "status": "kept", "foreign": -0.002, "start": "12:46:46", "end": "12:47:28", "why": []}
+{"round": 3, "canary": "cpu", "when": "before", "value": 263108.494}
+{"round": 3, "canary": "mem", "when": "before", "value": 592.2748621098201}
+{"round": 3, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 7.962, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 8.183, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 464.685, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 310.999, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 20.747, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_read_4k_buf", "value": 21.981, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 470.412, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_read_1m_buf", "value": 302.061, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readdirsync", "value": 503.413, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readdir", "value": 552.21, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2732.736, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_statsync", "value": 2.415, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_stat", "value": 12.236, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "fs_globsync", "value": 2761.101, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "buf_from_base64", "value": 55.84, "unit": "us"}
+{"round": 3, "engine": "moejs", "row": "buf_to_base64", "value": 68.884, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.41, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.843, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 742.169, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readsync_1m_buf", "value": 329.357, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_read_4k_utf8", "value": 149.259, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_read_4k_buf", "value": 138.124, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_read_1m_utf8", "value": 1062.169, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_read_1m_buf", "value": 496.926, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readdirsync", "value": 508.876, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readdir", "value": 534.666, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12525.821, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_statsync", "value": 1.723, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_stat", "value": 33.663, "unit": "us"}
+{"round": 3, "engine": "node", "row": "fs_globsync", "value": 10533.167, "unit": "us"}
+{"round": 3, "engine": "node", "row": "buf_from_base64", "value": 17.362, "unit": "us"}
+{"round": 3, "engine": "node", "row": "buf_to_base64", "value": 25.048, "unit": "us"}
+{"round": 3, "canary": "cpu", "when": "after", "value": 261302.508}
+{"round": 3, "canary": "mem", "when": "after", "value": 554.7797807278107}
+{"round": 3, "status": "kept", "foreign": 0.012, "start": "12:49:55", "end": "12:50:38", "why": []}
+{"round": 4, "canary": "cpu", "when": "before", "value": 260851.284}
+{"round": 4, "canary": "mem", "when": "before", "value": 554.2857626091603}
+{"round": 4, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.682, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.992, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 748.647, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readsync_1m_buf", "value": 291.615, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_read_4k_utf8", "value": 150.56, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_read_4k_buf", "value": 138.844, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_read_1m_utf8", "value": 1116.723, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_read_1m_buf", "value": 513.621, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readdirsync", "value": 498.516, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readdir", "value": 545.097, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12308.973, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_statsync", "value": 1.703, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_stat", "value": 33.853, "unit": "us"}
+{"round": 4, "engine": "node", "row": "fs_globsync", "value": 9878.628, "unit": "us"}
+{"round": 4, "engine": "node", "row": "buf_from_base64", "value": 15.827, "unit": "us"}
+{"round": 4, "engine": "node", "row": "buf_to_base64", "value": 22.791, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 8.115, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 8.413, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 460.265, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 333.603, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 19.965, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_read_4k_buf", "value": 21.12, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 479.994, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_read_1m_buf", "value": 313.852, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readdirsync", "value": 513.945, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readdir", "value": 546.964, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2643.264, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_statsync", "value": 2.382, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_stat", "value": 12.326, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "fs_globsync", "value": 2765.76, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "buf_from_base64", "value": 59.501, "unit": "us"}
+{"round": 4, "engine": "moejs", "row": "buf_to_base64", "value": 70.522, "unit": "us"}
+{"round": 4, "canary": "cpu", "when": "after", "value": 261387.162}
+{"round": 4, "canary": "mem", "when": "after", "value": 575.6892530447759}
+{"round": 4, "status": "kept", "foreign": 0.012, "start": "12:53:00", "end": "12:53:42", "why": []}
+{"round": 5, "canary": "cpu", "when": "before", "value": 262172.084}
+{"round": 5, "canary": "mem", "when": "before", "value": 571.7371619966382}
+{"round": 5, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 7.973, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 9.072, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 510.597, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 341.761, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 20.249, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_read_4k_buf", "value": 21.01, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 437.071, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_read_1m_buf", "value": 300.666, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readdirsync", "value": 561.563, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readdir", "value": 552.732, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2666.784, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_statsync", "value": 2.38, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_stat", "value": 12.308, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "fs_globsync", "value": 3030.221, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "buf_from_base64", "value": 70.256, "unit": "us"}
+{"round": 5, "engine": "moejs", "row": "buf_to_base64", "value": 81.948, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.435, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.839, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 741.781, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readsync_1m_buf", "value": 293.677, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_read_4k_utf8", "value": 135.918, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_read_4k_buf", "value": 127.74, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_read_1m_utf8", "value": 1101.098, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_read_1m_buf", "value": 466.789, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readdirsync", "value": 499.069, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readdir", "value": 549.428, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12661.775, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_statsync", "value": 1.755, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_stat", "value": 35.603, "unit": "us"}
+{"round": 5, "engine": "node", "row": "fs_globsync", "value": 9736.146, "unit": "us"}
+{"round": 5, "engine": "node", "row": "buf_from_base64", "value": 15.556, "unit": "us"}
+{"round": 5, "engine": "node", "row": "buf_to_base64", "value": 22.757, "unit": "us"}
+{"round": 5, "canary": "cpu", "when": "after", "value": 259495.589}
+{"round": 5, "canary": "mem", "when": "after", "value": 556.4014046434934}
+{"round": 5, "status": "kept", "foreign": 0.004, "start": "12:56:06", "end": "12:56:48", "why": []}
+{"round": 6, "canary": "cpu", "when": "before", "value": 262251.208}
+{"round": 6, "canary": "mem", "when": "before", "value": 592.7751467782758}
+{"round": 6, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.393, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.959, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 752.208, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readsync_1m_buf", "value": 309.559, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_read_4k_utf8", "value": 142.226, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_read_4k_buf", "value": 145.289, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_read_1m_utf8", "value": 1178.704, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_read_1m_buf", "value": 516.889, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readdirsync", "value": 493.935, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readdir", "value": 565.999, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12685.65, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_statsync", "value": 1.724, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_stat", "value": 35.947, "unit": "us"}
+{"round": 6, "engine": "node", "row": "fs_globsync", "value": 10018.33, "unit": "us"}
+{"round": 6, "engine": "node", "row": "buf_from_base64", "value": 16.788, "unit": "us"}
+{"round": 6, "engine": "node", "row": "buf_to_base64", "value": 24.347, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 7.793, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 8.951, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 473.082, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 325.975, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 19.51, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_read_4k_buf", "value": 20.191, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 474.461, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_read_1m_buf", "value": 311.887, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readdirsync", "value": 511.862, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readdir", "value": 531.8, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2588.004, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_statsync", "value": 2.301, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_stat", "value": 11.119, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "fs_globsync", "value": 2703.019, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "buf_from_base64", "value": 54.362, "unit": "us"}
+{"round": 6, "engine": "moejs", "row": "buf_to_base64", "value": 68.925, "unit": "us"}
+{"round": 6, "canary": "cpu", "when": "after", "value": 261164.62}
+{"round": 6, "canary": "mem", "when": "after", "value": 579.8842457329863}
+{"round": 6, "status": "kept", "foreign": -0.002, "start": "12:59:16", "end": "12:59:58", "why": []}
+{"round": 7, "canary": "cpu", "when": "before", "value": 260184.906}
+{"round": 7, "canary": "mem", "when": "before", "value": 551.199592088315}
+{"round": 7, "engine": "moejs", "row": "fs_readsync_4k_utf8", "value": 8.086, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readsync_4k_buf", "value": 8.309, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readsync_1m_utf8", "value": 490.529, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readsync_1m_buf", "value": 335.909, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_read_4k_utf8", "value": 21.438, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_read_4k_buf", "value": 23.193, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_read_1m_utf8", "value": 495.389, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_read_1m_buf", "value": 326.365, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readdirsync", "value": 497.292, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readdir", "value": 529.252, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_readdirsync_recursive", "value": 2760.219, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_statsync", "value": 2.448, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_stat", "value": 11.189, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "fs_globsync", "value": 2869.192, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "buf_from_base64", "value": 58.443, "unit": "us"}
+{"round": 7, "engine": "moejs", "row": "buf_to_base64", "value": 69.921, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readsync_4k_utf8", "value": 6.327, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readsync_4k_buf", "value": 6.745, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readsync_1m_utf8", "value": 748.765, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readsync_1m_buf", "value": 319.906, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_read_4k_utf8", "value": 139.377, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_read_4k_buf", "value": 140.072, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_read_1m_utf8", "value": 1095.966, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_read_1m_buf", "value": 477.907, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readdirsync", "value": 500.348, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readdir", "value": 533.623, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_readdirsync_recursive", "value": 12408.848, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_statsync", "value": 1.724, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_stat", "value": 32.612, "unit": "us"}
+{"round": 7, "engine": "node", "row": "fs_globsync", "value": 10024.731, "unit": "us"}
+{"round": 7, "engine": "node", "row": "buf_from_base64", "value": 15.138, "unit": "us"}
+{"round": 7, "engine": "node", "row": "buf_to_base64", "value": 23.825, "unit": "us"}
+{"round": 7, "canary": "cpu", "when": "after", "value": 261570.847}
+{"round": 7, "canary": "mem", "when": "after", "value": 576.2535673298611}
+{"round": 7, "status": "kept", "foreign": 0.012, "start": "13:02:19", "end": "13:03:01", "why": []}

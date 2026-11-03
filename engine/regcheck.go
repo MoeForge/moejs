@@ -12,7 +12,7 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // The checked build of the interpreter (go test -tags moejsregcheck): run

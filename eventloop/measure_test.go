@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

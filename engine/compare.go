@@ -4,7 +4,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // SameValue implements SameValue (NaN equals NaN, +0 differs from -0).

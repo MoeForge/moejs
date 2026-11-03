@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -247,9 +247,10 @@ func TestModulePrologueKinds(t *testing.T) {
 }
 
 // TestAsyncModuleBodyPromise runs modules with top-level await whose body
-// returns no promise (its AsyncStart replaced: bytecode no compiler
-// makes), standalone and as a one-module graph: each ends in the internal
-// TypeError, not a value read as the body's promise.
+// returns no promise (its first instruction, the LoadThis of the async
+// body, replaced: bytecode no compiler makes), standalone and as a
+// one-module graph: each ends in the internal TypeError, not a value read
+// as the body's promise.
 func TestAsyncModuleBodyPromise(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -267,10 +268,10 @@ func TestAsyncModuleBodyPromise(t *testing.T) {
 				require.NotNil(t, code)
 				require.True(t, code.Async)
 				pc := code.Module.BodyPC
-				for pc < len(code.Code) && bytecode.DecodeOp(code.Code[pc]) != bytecode.AsyncStart {
+				for pc < len(code.Code) && bytecode.DecodeOp(code.Code[pc]) != bytecode.LoadThis {
 					pc += 1 + bytecode.DecodeOp(code.Code[pc]).ExtraWords()
 				}
-				require.Less(t, pc, len(code.Code), "the body starts with AsyncStart")
+				require.Less(t, pc, len(code.Code), "the body starts with LoadThis")
 				c.edit(code.Code, pc)
 				require.NoError(t, bytecode.VerifyRegisters(code))
 				g, err := LinkModules(code, LinkOptions{})
@@ -342,7 +343,10 @@ func TestSuspendIntoAnotherFrame(t *testing.T) {
 		r := NewRealm()
 		state, err := r.RunScript(verifyScript(t, c.src))
 		require.NoError(t, err)
-		f, _ := testClosure(r, &bytecode.Function{Name: "f", NumParams: 1, NumRegs: 3, Strict: true, Code: []uint32{
+		// Await takes R[B] as the async generator in an async generator's
+		// frame.
+		async := c.op == bytecode.Await
+		f, _ := testClosure(r, &bytecode.Function{Name: "f", NumParams: 1, NumRegs: 3, Strict: true, Async: async, Generator: async, Code: []uint32{
 			abc(bytecode.LoadUndef, 1, 0, 0), abc(c.op, 1, 0, 0), abc(bytecode.RetUndef, 0, 0, 0)}})
 		_, err = r.CallObject(f, Undefined(), []Value{state})
 		require.Error(t, err, "%s", c.op)

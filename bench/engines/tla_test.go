@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"github.com/grafana/sobek"
 	"github.com/grafana/sobek/parser"
 	"github.com/stretchr/testify/assert"

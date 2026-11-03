@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // heapInuse returns the Go heap in use after two full collections.

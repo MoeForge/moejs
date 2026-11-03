@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync/atomic"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // Constants out of loops. An operand that is a number, string or BigInt

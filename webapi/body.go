@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // The Fetch Standard's Body mixin, Request and Response.

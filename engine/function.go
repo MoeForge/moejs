@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // NativeFunc is the Go signature of a builtin function. args may alias the
@@ -99,7 +99,12 @@ func (fd *FunctionData) Env() *Env { return fd.env }
 
 // ThisValue returns the lexically captured this of an arrow function (the
 // bound this of a bound function).
-func (fd *FunctionData) ThisValue() Value { return fd.thisValue }
+func (fd *FunctionData) ThisValue() Value {
+	if _, ok := fd.data.(*resolvingFns); ok {
+		return Undefined() // the promise it settles (resolvingFns)
+	}
+	return fd.thisValue
+}
 
 // HomeObject returns the [[HomeObject]] of a method (nil otherwise).
 func (fd *FunctionData) HomeObject() *Object {
@@ -370,11 +375,18 @@ func (r *Realm) CallState() CallState {
 // RestoreCallState resets the call bookkeeping to a snapshot taken at the
 // same host boundary. At the outermost boundary, DropJobs then discards the
 // jobs the call left queued, and no builtin or parse is left holding values
-// or bytes for a memory limit's measurements (holding, holdBytes).
+// or bytes for a memory limit's measurements (holding, holdBytes), nor the
+// job state the async function call a job had resumed (jobState.af).
 func (r *Realm) RestoreCallState(cs CallState) {
 	r.callDepth, r.interp.sp, r.interp.nframes = int32(cs.depth), cs.sp, cs.nframes
-	if m := r.mem(); m != nil && cs.depth == 0 {
+	if cs.depth != 0 {
+		return
+	}
+	if m := r.mem(); m != nil {
 		m.holding, m.held = 0, 0
+	}
+	if lz := r.lazy; lz != nil && lz.jobs != nil {
+		lz.jobs.af = nil
 	}
 }
 

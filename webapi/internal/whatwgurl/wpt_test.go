@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // newOptions returns an Options whose NFC hook normalizes through a moejs

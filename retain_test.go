@@ -1,11 +1,13 @@
 package moejs_test
 
 import (
+	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,6 +67,18 @@ func scriptRetained(t *testing.T, src string, n int) uint64 {
 // 20,000 such requests retained 25 to 90 MiB, and with the key sets bounded
 // by their count alone, the 40-id maps kept about 60 MiB.
 func TestRequestsRetained(t *testing.T) {
+	// The measurement reads the whole process's heap, to which the state
+	// the package's other tests leave behind (the name and key-set caches,
+	// shared shapes) adds a few MiB at moments that depend on the order the
+	// tests ran in, so it runs alone in a fresh process.
+	if os.Getenv("MOEJS_RETAIN_CHILD") == "" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRequestsRetained$", "-test.v")
+		cmd.Env = append(os.Environ(), "MOEJS_RETAIN_CHILD=1")
+		out, err := cmd.CombinedOutput()
+		t.Logf("%s", out)
+		require.NoError(t, err, "the measurement in a fresh process failed")
+		return
+	}
 	ids := func(i, n int) map[string]any {
 		m := make(map[string]any, n)
 		for j := range n {

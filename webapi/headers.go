@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // The Fetch Standard's Headers. Names are kept lowercase, values as byte

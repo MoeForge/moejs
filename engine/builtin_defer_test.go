@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -460,5 +460,181 @@ func TestLateGroupsConcurrent(t *testing.T) {
 			assert.Equal(t, w, v, "one %s per process", k.GoString())
 			assert.NotZero(t, v.AsObject().flags&flagShared)
 		}
+	}
+}
+
+// TestLazyGlobalsKeepCold checks that a host's lazy globals leave the
+// builtin globals the realm has yet to define (coldGlobalKeys) pending,
+// and that the two keep the semantics of each: a read defines the binding
+// alone, in the order of first use, and the key list defines the pending
+// cold bindings, in their order, then the pending lazy properties, in
+// registration order.
+func TestLazyGlobalsKeepCold(t *testing.T) {
+	for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
+		t.Run(fmt.Sprint(opts.SharedIntrinsics), func(t *testing.T) {
+			r := NewRealmWith(opts)
+			g := r.Global
+			cold := r.coldGlobals
+			count := g.shape.count
+			keys := make([]PropertyKey, 30)
+			for i := range keys {
+				keys[i] = r.KeyFromGoString(fmt.Sprintf("lazy%d", i))
+			}
+			calls := 0
+			g.DefineLazyProperties(r, keys, func(r *Realm, i int) Value {
+				calls++
+				return IntValue(i)
+			})
+			assert.Equal(t, cold, r.coldGlobals, "the cold bindings stay pending")
+			assert.Equal(t, count, g.shape.count, "nothing is defined yet")
+			assert.Zero(t, calls)
+
+			lateProxy := lateIndex(StringKey(AtomProxy))
+			assert.Equal(t, "10,function", runScriptsIn(t, r, "[lazy7 + lazy3, typeof Proxy].join()"))
+			assert.Equal(t, 2, calls)
+			assert.Equal(t, cold&^(1<<lateProxy), r.coldGlobals)
+			assert.True(t, globalCached(r, "lazy7"))
+			assert.False(t, globalCached(r, "lazy8"), "a pending lazy property fills no cache")
+			assert.False(t, globalCached(r, "Intl"), "nor a pending cold binding")
+			d, ok := g.GetOwnProperty(keys[9])
+			assert.True(t, ok)
+			assert.True(t, d.Writable() && d.Configurable() && !d.Enumerable())
+			assert.Equal(t, 3, calls)
+
+			// The key list defines the rest: the cold bindings, then the
+			// lazy properties.
+			pending := r.coldGlobals
+			want := []string{"lazy7", "lazy3", "Proxy", "lazy9"}
+			for i, k := range coldGlobalKeys {
+				if pending&(1<<i) != 0 {
+					want = append(want, k.GoString())
+				}
+			}
+			for i := range 30 {
+				if i != 3 && i != 7 && i != 9 {
+					want = append(want, fmt.Sprintf("lazy%d", i))
+				}
+			}
+			var names []string
+			for _, k := range g.OwnPropertyKeys() {
+				names = append(names, k.GoString())
+			}
+			require.GreaterOrEqual(t, len(names), len(want))
+			assert.Equal(t, want, names[len(names)-len(want):])
+			assert.Equal(t, 30, calls)
+			assert.Zero(t, g.flags&flagHasLazy)
+			assert.Nil(t, g.internal)
+			assert.Zero(t, r.coldGlobals)
+			assert.Equal(t, "function,29", runScriptsIn(t, r, "[typeof Intl.NumberFormat, lazy29].join()"))
+		})
+	}
+}
+
+// TestLazyGlobalsSemantics checks in, deletion, redefinition and
+// assignment to a pending lazy global and to a pending cold binding while
+// both kinds are pending.
+func TestLazyGlobalsSemantics(t *testing.T) {
+	for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
+		r := NewRealmWith(opts)
+		keys := []PropertyKey{r.KeyFromGoString("lzA"), r.KeyFromGoString("lzB"), r.KeyFromGoString("lzC"), r.KeyFromGoString("lzD")}
+		calls := 0
+		r.Global.DefineLazyProperties(r, keys, func(r *Realm, i int) Value {
+			calls++
+			return IntValue(i + 1)
+		})
+		// A shared realm's builtins are frozen, a mutable realm's writable.
+		ro := "ok"
+		if opts.SharedIntrinsics {
+			ro = "TypeError"
+		}
+		for _, c := range []struct{ src, want string }{
+			{"['lzA' in globalThis, 'Intl' in globalThis, 'lzE' in globalThis].join()", "true,true,false"},
+			{"[delete globalThis.lzB, typeof lzB, 'lzB' in globalThis].join()", "true,undefined,false"},
+			{"Object.defineProperty(globalThis, 'lzC', {value: 'c', enumerable: true}), [lzC, Object.keys(globalThis).includes('lzC')].join()", "c,true"},
+			{"(() => { 'use strict'; lzD = 'd'; return lzD })()", "d"},
+			{"(() => { 'use strict'; try { DataView = 1; return 'ok' } catch (e) { return e.name } })()", ro},
+			{"[typeof Uint8Array, typeof Intl.Segmenter].join()", "function,function"},
+		} {
+			assert.Equal(t, c.want, runScriptsIn(t, r, c.src), c.src)
+		}
+		assert.Equal(t, 4, calls, "each init runs once")
+		assert.Equal(t, "1", runScriptsIn(t, r, "lzA"))
+		assert.Equal(t, 4, calls)
+	}
+}
+
+// TestLazyPropertiesDuplicate registers keys more than once, in one
+// DefineLazyProperties call and in a later DefineLazyProperty, with few
+// keys and with enough for the index (lazyLinear): each key is registered
+// once, in the place of its first registration, with the init of its last,
+// each init runs at most once, and a value a script stores stays.
+func TestLazyPropertiesDuplicate(t *testing.T) {
+	for _, n := range []int{3, 100} {
+		for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
+			r := NewRealmWith(opts)
+			keys := make([]PropertyKey, 0, n+2)
+			for i := range n {
+				keys = append(keys, r.KeyFromGoString(fmt.Sprintf("dup%d", i)))
+			}
+			keys = append(keys, keys[0], keys[1])
+			calls := map[int]int{}
+			r.Global.DefineLazyProperties(r, keys, func(r *Realm, i int) Value {
+				calls[i]++
+				return IntValue(i)
+			})
+			r.Global.DefineLazyProperty(r, keys[2], func(*Realm) Value {
+				calls[-1]++
+				return IntValue(-1)
+			})
+			assert.Equal(t, fmt.Sprintf("%d,%d,-1", n, n+1), runScriptsIn(t, r, "[dup0, dup1, dup2].join()"))
+			assert.Equal(t, "x,y,true", runScriptsIn(t, r, "dup0 = 'x'; globalThis.dup1 = 'y'; [dup0, dup1, 'dup1' in globalThis].join()"))
+			var names []string
+			for _, k := range r.Global.OwnPropertyKeys() {
+				if k.IsString() && strings.HasPrefix(k.GoString(), "dup") {
+					names = append(names, k.GoString())
+				}
+			}
+			var want []string
+			for i := range n {
+				want = append(want, fmt.Sprintf("dup%d", i))
+			}
+			assert.Equal(t, want, names, "once each, in registration order")
+			assert.Equal(t, "x,y,-1", runScriptsIn(t, r, "[dup0, dup1, dup2].join()"))
+			for i := range n + 2 {
+				want := 1
+				if i < 3 {
+					want = 0
+				}
+				assert.Equal(t, want, calls[i], "n=%d init(%d)", n, i)
+			}
+			assert.Equal(t, 1, calls[-1])
+			assert.Zero(t, r.Global.flags&flagHasLazy)
+		}
+	}
+}
+
+// TestLazyGlobalOverridesBuiltin defines lazy globals under the keys of
+// builtin ones, a pending cold binding (TextEncoder) and, in a mutable
+// realm, a defined one (Map): the lazy value replaces the builtin, which
+// the realm still defines first, so its other bindings and the intrinsics
+// the engine needs stay as they were.
+func TestLazyGlobalOverridesBuiltin(t *testing.T) {
+	for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
+		r := NewRealmWith(opts)
+		g := r.Global
+		g.DefineLazyProperty(r, StringKey(AtomTextEncoder), func(*Realm) Value { return IntValue(1) })
+		g.DefineLazyProperty(r, StringKey(AtomMapName), func(*Realm) Value { return IntValue(2) })
+		assert.Equal(t, "1,function,2,1", runScriptsIn(t, r, `
+[TextEncoder, typeof TextDecoder, Map, new Set([1]).size].join()`))
+		r.ensureLate(StringKey(AtomTextEncoder))
+		n := 0
+		for _, k := range g.OwnPropertyKeys() {
+			if k == StringKey(AtomTextEncoder) || k == StringKey(AtomMapName) {
+				n++
+			}
+		}
+		assert.Equal(t, 2, n, "each key once")
+		v, _ := g.GetOwnDataValue(StringKey(AtomTextEncoder))
+		assert.Equal(t, IntValue(1), v)
 	}
 }

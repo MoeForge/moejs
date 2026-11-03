@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // formCases are WPT's url/urlencoded-parser.any.js cases.

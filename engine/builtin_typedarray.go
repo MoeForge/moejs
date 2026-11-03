@@ -953,3 +953,25 @@ func typedArrayOf(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	return ObjectValue(o), nil
 }
+
+// NewUint8Array creates a Uint8Array over a new ArrayBuffer that adopts
+// data, as NewArrayBuffer does, without calling the constructor: the
+// object new Uint8Array(buffer) gives, whose [[Prototype]] is proto, or
+// Uint8Array.prototype when proto is nil (proto is a subclass's
+// prototype for an instance of the subclass, as a constructor's
+// newTarget would give it). The array views all of data, which it does
+// not copy: JavaScript reads and writes data itself, so the host must not
+// modify data, or hand it to another buffer, while JavaScript may read it.
+// The two objects are charged to the memory limit; the bytes of data,
+// which the host allocated, are the host's to charge (ChargeMemory), as
+// for NewArrayBuffer. A data longer than 2 GiB - 1 bytes is a RangeError.
+func (r *Realm) NewUint8Array(data []byte, proto *Object) (*Object, error) {
+	ab, err := r.NewArrayBuffer(data)
+	if err != nil {
+		return nil, err
+	}
+	if proto == nil {
+		proto = r.binaryIntr().typedArrayPrototypes[elemUint8]
+	}
+	return r.newTypedArrayObject(proto, elemUint8, ab, 0, len(data)), nil
+}

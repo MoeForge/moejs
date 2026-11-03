@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

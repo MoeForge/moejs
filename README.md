@@ -31,7 +31,7 @@ embed: small task-plugin calls, 100k-token coding-agent requests that a plugin
 rewrites for the upstream, and requests that carry an 8 MiB image. QuickJS
 called straight from C is shown in grey for reference. The chart was
 measured on 2026-10-21 with moejs v0.1.0-alpha.9 on 8 vCPUs of an Intel
-Xeon E5-2667 v4; the setup is in
+Xeon E5-2667 v4, and the setup is in
 [docs/performance.md](docs/performance.md#plugin-scenarios).
 
 The table below times single calls on new-api's 10 task plugins and 269
@@ -101,8 +101,8 @@ the Streams, `AbortController`, `URL` and `performance` on a runtime with an
 event loop, for SDKs written against fetch. The host decides which network
 fetch reaches through its `http.Client` and an allow hook: without a client
 there is none, and without a hook every address the client reaches, so
-give untrusted scripts a host list. Response bodies stream: Go reads a
-chunk only when JavaScript asks for one, each byte is charged to the
+give untrusted scripts a host list. Response bodies stream: Go reads at
+most one chunk ahead of what JavaScript took, each byte is charged to the
 runtime's memory limit, and cancel and abort reach the Go request. See
 the [guide](docs/guide.md#web-apis).
 
@@ -111,9 +111,21 @@ the [guide](docs/guide.md#web-apis).
 </p>
 
 The chart runs the same fetch script in moejs and in Node.js 24 against a
-local loopback server, measured on 2026-10-24 on 8 vCPUs of an Intel Xeon
+local loopback server, measured on 2026-10-25 on 8 vCPUs of an Intel Xeon
 E5-2667 v4. moejs is faster on small requests and on a streamed body, and
 server-sent events are the row where it is slower.
+
+### Node.js file system
+
+The `node` package gives a runtime `node:fs`, `node:fs/promises` and
+`node:buffer`, for programs that read and write the files of a sandbox.
+Every path resolves inside one host directory through `os.Root` (and
+`openat2` with `RESOLVE_BENEATH` on Linux), so neither `..` nor a link
+leaves it. The file system is read-only unless the host allows writes, an
+allow hook sees each access, and what a program reads counts against its
+memory limit. Errors carry Node's codes and messages, which the tests
+compare with Node.js 24 case by case. See the
+[guide](docs/guide.md#nodejs-modules).
 
 ### Timeouts and errors
 
@@ -132,11 +144,13 @@ counters.
 ## Quick start
 
 ```sh
-go get github.com/Calcium-Ion/moejs
+go get github.com/MoeForge/moejs
 ```
 
 moejs needs Go 1.25 or later and depends only on the standard library (tests
-use testify).
+use testify). Releases up to v0.1.0-alpha.10 have the module path
+`github.com/Calcium-Ion/moejs`, and later ones `github.com/MoeForge/moejs`, so
+upgrading from them changes the import path once.
 
 ```go
 package main
@@ -149,7 +163,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 )
 
 const source = `
@@ -332,7 +346,7 @@ Taking a runtime from the pool is one channel receive, while a new runtime
 with the largest plugin loaded takes about 71 µs. The [guide](docs/guide.md)
 covers pools, module graphs, TypeScript, value conversion, promises, errors
 and the event loop, and the
-[package documentation](https://pkg.go.dev/github.com/Calcium-Ion/moejs)
+[package documentation](https://pkg.go.dev/github.com/MoeForge/moejs)
 describes every function.
 
 moejs ships a `default.pgo` profile recorded from the plugin workload. Go
@@ -340,7 +354,7 @@ applies a profile automatically only from the main package's directory, so
 pass it when you build:
 
 ```sh
-go build -pgo="$(go list -m -f '{{.Dir}}' github.com/Calcium-Ion/moejs)/default.pgo" .
+go build -pgo="$(go list -m -f '{{.Dir}}' github.com/MoeForge/moejs)/default.pgo" .
 ```
 
 ## JavaScript support

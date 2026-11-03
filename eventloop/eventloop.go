@@ -121,7 +121,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 )
 
 var (
@@ -211,6 +211,9 @@ type Loop struct {
 	// batch is the immediates phase's last batch: the immediates still
 	// pending in it are taken off l.immediates, but not settled.
 	batch []*immediate
+	// spare is the tasks phase's last batch, emptied, which the next
+	// phase gives l.tasks so that posting reuses it; only runTasks uses it.
+	spare []func(*moejs.Runtime) error
 	// pending lists the promises of NewPromise of a loop with a memory
 	// limit, which only their settle functions keep otherwise, for the
 	// measurements (roots); a settled one stays until the list is
@@ -252,7 +255,12 @@ func (l *Loop) Runtime() *moejs.Runtime { return l.rt }
 // anything after a stop, an error or an interrupt, stays pending: the next
 // Run or Start continues it, and JavaScript the host runs on the runtime
 // between them (Call) can set more. The runtime is the host's again between
-// them.
+// them. Run ends by releasing what would keep the values the callbacks and
+// tasks made and dropped reachable for Go's collector until the runtime
+// runs code again: the engine's scratch (engine Realm.ReleaseScratch), the
+// registers and frame records they used, and the loop's own last batch of
+// immediates and settled promises. A loop started with Start does the same
+// when it ends.
 //
 // A panic in fn or in a host task (the functions of RunOnLoop, of done and
 // of settle, and OnError) is not recovered: it unwinds through Run, or
@@ -272,6 +280,7 @@ func (l *Loop) Run(fn func(*moejs.Runtime) error) (err error) {
 	if err == nil {
 		err = l.loop()
 	}
+	l.rt.Realm().ReleaseScratch()
 	l.mu.Lock()
 	if l.terminated {
 		err = ErrTerminated
@@ -294,6 +303,7 @@ func (l *Loop) Start() error {
 		var err error
 		defer func() { l.exit(err) }()
 		err = l.loop()
+		l.rt.Realm().ReleaseScratch()
 	}()
 	return nil
 }
@@ -598,6 +608,16 @@ func (l *Loop) exit(err error) {
 			l.reg = nil
 		}
 		err = ErrTerminated
+	} else {
+		// What the run's last batch of immediates and its settled
+		// promises still keep: a settled immediate its Immediate object,
+		// which JavaScript may have given properties, and a settled
+		// promise's entry, until the list is compacted, its resolving
+		// functions and so its result. The next run needs neither.
+		l.batch = nil
+		if len(l.pending) != 0 {
+			l.compact()
+		}
 	}
 	l.cur.err = err
 	close(l.cur.done)
@@ -747,7 +767,7 @@ func (l *Loop) runTimers() bool {
 func (l *Loop) runTasks() bool {
 	l.mu.Lock()
 	batch := l.tasks
-	l.tasks = nil
+	l.tasks, l.spare = l.spare, nil
 	l.mu.Unlock()
 	i := 0
 	// What a stop, an error or a panic of a task leaves of the batch goes
@@ -770,6 +790,9 @@ func (l *Loop) runTasks() bool {
 			return true
 		}
 	}
+	if cap(batch) <= 64 {
+		l.spare = batch[:0]
+	}
 	return false
 }
 
@@ -787,7 +810,8 @@ func (l *Loop) runImmediates() bool {
 	l.mu.Lock()
 	batch := l.immediates
 	l.immediates = nil
-	// Settled or requeued as the batch runs; the next batch replaces it.
+	// Settled or requeued as the batch runs; the next batch replaces it,
+	// and the end of the run drops it (exit).
 	l.batch = batch
 	l.mu.Unlock()
 	i := 0

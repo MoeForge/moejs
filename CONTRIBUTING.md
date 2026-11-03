@@ -9,13 +9,13 @@ Open an issue with the bug report form. The most useful reports have:
 - the smallest JavaScript that shows the problem
 - the Go code that runs it, when the bug is in how moejs takes or returns
   values
-- the moejs version (`go list -m github.com/Calcium-Ion/moejs`), the Go
+- the moejs version (`go list -m github.com/MoeForge/moejs`), the Go
   version (`go version`) and your OS and architecture
 - what Node prints for the same JavaScript, when it differs from moejs
 
-Features listed in [TODO.md](TODO.md) fail with an error that ends in
-"is not supported yet (see TODO.md)". To ask for one of them, use the
-feature request form and describe the plugin code that needs it. Code that
+Features listed in [TODO.md](TODO.md) fail with an error that names the
+feature and says it "is not supported yet". To ask for one of them, use
+the feature request form and describe the plugin code that needs it. Code that
 runs and gives a different result than Node is a bug, unless TODO.md lists
 it under "Known wrong results".
 
@@ -72,7 +72,11 @@ test262 directory and how to update the baseline.
 - When it changes what runs, update TODO.md and, for the Go API,
   docs/guide.md.
 - For a performance change, include the benchmark numbers before and after
-  and the command that produced them.
+  and the command that produced them. A change to strings, JSON or the
+  interpreter loop should also show the plugin scenarios, which
+  `bench/scripts/plugin_ab.sh` runs with moejs before and after the change
+  ([docs/performance.md](docs/performance.md#reproducing) shows how to set
+  them up).
 
 We squash a pull request into one commit when we merge it, so the branch's
 commit history can stay as it is.

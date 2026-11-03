@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Calcium-Ion/moejs/internal/regexpsyntax"
+import "github.com/MoeForge/moejs/internal/regexpsyntax"
 
 // Pattern parsing lives in internal/regexpsyntax, which the syntax package
 // shares to reject invalid regexp literals at parse time. The aliases below

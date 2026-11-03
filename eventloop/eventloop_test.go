@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -537,6 +537,37 @@ func TestTerminateRunFn(t *testing.T) {
 	e.rt.ClearInterrupt()
 	assert.ErrorIs(t, e.loop.Run(nil), eventloop.ErrTerminated)
 	assert.Empty(t, e.log())
+}
+
+// TestTerminateResumedAsync checks Terminate while an async function call a
+// job resumed runs: the call's promise stays pending, and async function
+// calls whose this is that promise, with or without an await, settle their
+// own promises once the runtime is used again.
+func TestTerminateResumedAsync(t *testing.T) {
+	e := newEnv(t, eventloop.Options{})
+	started := make(chan struct{})
+	require.NoError(t, e.rt.SetGlobal("started", moejs.NativeFunc(func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
+		close(started)
+		return moejs.Undefined(), nil
+	})))
+	go func() {
+		<-started
+		e.loop.Terminate()
+	}()
+	err := e.loop.Run(script(t, `globalThis.held = (async () => { await null; started(); for (;;) {} })();`))
+	assert.ErrorIs(t, err, eventloop.ErrTerminated)
+	e.rt.ClearInterrupt()
+
+	loop, err := eventloop.New(e.rt, eventloop.Options{})
+	require.NoError(t, err)
+	require.NoError(t, loop.Run(script(t, `
+held.then(() => log("held fulfilled"), () => log("held rejected"));
+async function probe() { return "probe"; }
+async function probeAwait() { await null; return "probeAwait"; }
+const a = probe.call(held), b = probeAwait.call(held);
+Promise.all([a, b]).then((v) => log(v.join(" "), a !== held, b !== held));
+`)))
+	assert.Equal(t, []string{"probe probeAwait true true"}, e.log())
 }
 
 // TestStartStop checks a loop started with Start: it runs posted tasks

@@ -1,19 +1,22 @@
 package compiler
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
-// Async lowering. An async function body runs from AsyncStart, which
-// creates the promise the call returns, to an epilogue that resolves it:
-// every return jumps there through retReg/retLbl, as a derived
-// constructor's returns do, and a catch-all handler covering the body
-// rejects it with what the body threw. Parameter binding runs inside that
-// handler, so its errors reject the promise too. `await x` suspends the
-// frame at Await like a yield; the resumption hands the code after it the
-// value in R[A] and, in R[A+1], undefined (fulfilled) or true (rejected),
-// and a rejection throws where the await stands.
+// Async lowering. An async function body runs from a LoadThis of the
+// call's this into genReg to an AsyncReturn that resolves the
+// call's promise: every return runs one before its Ret (emitReturn), and
+// the body's end jumps to the one of an epilogue through retReg/retLbl.
+// A catch-all handler covering the body rejects the promise with what the
+// body threw. Parameter binding runs inside that handler, so its errors
+// reject the promise too. The engine makes the promise and the call's
+// state at the first Await, or the promise at the end of a call that
+// never awaited. `await x` suspends the frame at Await like a yield; the
+// resumption hands the code after it the value in R[A] and, in R[A+1],
+// undefined (fulfilled) or true (rejected), and a rejection throws where
+// the await stands.
 //
 // An async generator starts like a generator (AsyncGenStart after its
 // declaration instantiation) and completes into the engine's request
@@ -26,26 +29,34 @@ import (
 // with the promise epilogue (a module with top-level await is one).
 func (f *funcState) asyncBody() bool { return f.out.Async && !f.out.Generator }
 
-// asyncStart begins an async function body after its prologue: AsyncStart
-// creates the call's state in genReg, and the catch-all handler covers the
-// code from here to the epilogue (asyncEnd).
+// asyncStart begins an async function body after its prologue: genReg
+// holds the call's this, where the first Await leaves the call's state,
+// and the catch-all handler covers the code from here to the epilogue
+// (asyncEnd).
 func (f *funcState) asyncStart() {
 	if !f.asyncBody() {
 		return
 	}
 	f.genReg = f.alloc()
 	f.emitA(bytecode.LoadThis, f.genReg)
-	f.emitA(bytecode.AsyncStart, f.genReg)
 	f.retReg, f.retLbl = f.alloc(), f.newLabel()
 	f.asyncTry = f.pc()
+}
+
+// asyncReturn returns R[reg] from an async function body: AsyncReturn
+// resolves the call's promise with it and leaves the promise in reg for
+// the Ret. It runs inside the catch-all handler, which it never reaches:
+// AsyncReturn throws nothing a handler catches.
+func (f *funcState) asyncReturn(reg int) {
+	f.emitAB(bytecode.AsyncReturn, reg, f.genReg)
+	f.emitA(bytecode.Ret, reg)
 }
 
 // asyncEnd emits the epilogue of an async function body at retLbl: the
 // promise resolves with retReg, and the catch-all handler rejects it.
 func (f *funcState) asyncEnd() {
 	end := f.pc()
-	f.emitAB(bytecode.AsyncReturn, f.retReg, f.genReg)
-	f.emitA(bytecode.Ret, f.retReg)
+	f.asyncReturn(f.retReg)
 	f.handlers = append(f.handlers, bytecode.Handler{
 		Start: uint32(f.asyncTry), End: uint32(end), Handler: uint32(f.pc()),
 		Kind: bytecode.HandlerCatch, Reg: uint16(f.retReg),

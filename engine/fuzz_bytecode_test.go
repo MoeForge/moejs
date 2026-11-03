@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // fuzzBytecodeSeeds are programs with control flow of every kind the

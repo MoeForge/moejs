@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // The runner compiles eval code and dynamic functions with the compiler

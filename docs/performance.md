@@ -114,10 +114,10 @@ Throughput of new-api's plugin workloads on the engines a Go program can embed, 
 
 - Intel Xeon E5-2667 v4 (Broadwell, 3.2 GHz), a KVM guest with 14 vCPUs and 15 GB of RAM, with the benchmark pinned to 8 of the vCPUs (taskset 0-7, GOMAXPROCS=8), Debian 13, Go 1.26.6, gcc 14.2.
 - One runtime per worker. A call hands JSON bytes to the engine to parse, calls the plugin, and serializes the result into bytes the host owns. Each run warms up for 2 s and measures 6 s (small and agent requests) or 8 s (large requests). Runs go back to back, the engine order changes for every cell, and every cell is the median of 3 rounds.
-- Each run records the CPU time other processes in the guest used while it ran; none averaged more than a quarter of a core. Load from other guests on the host does not show up there, so every run first waited for a short probe showing the host quiet, and a run more than 5 % slower than both other rounds of its cell was repeated.
+- Each run records the CPU time other processes in the guest used while it ran, and none averaged more than a quarter of a core. Load from other guests on the host does not show up there, so every run first waited for a short probe showing the host quiet, and a run more than 5 % slower than both other rounds of its cell was repeated.
 - Small requests are 269 real calls to new-api's 10 task plugins. Agent requests are 8 different coding sessions of 100k tokens each (o200k_base): a system prompt, 12 tool definitions, a user task and the results of 67 to 102 tool calls (Go source, grep hits and test output). The agent plugin was written for this benchmark against the interface of new-api's task plugin buildSubmitRequest: it converts every message, renames the model, prefixes the system prompt, drops parameters and JSON Schema keywords the upstream rejects, and returns url, headers and body. Large requests take 25 MB in and 17 MB out.
 - Memory is the Go heap still live after a GC plus the bytes glibc malloc has in use, read while every worker is stopped right after its last call. It includes the 32 runtimes and leaves out garbage waiting for collection.
-- quickjs-go v0.7.7 turns its goroutine check on by default, which reads a goroutine stack on every API call; the charts show both settings. Both serialize with JSON.stringify, because Value.JSONStringify leaks. Sobek is the 2026-07-08 version.
+- quickjs-go v0.7.7 turns its goroutine check on by default, which reads a goroutine stack on every API call. The charts show both settings. Both serialize with JSON.stringify, because Value.JSONStringify leaks. Sobek is the 2026-07-08 version.
 - modernc.org/quickjs v0.25.0 is QuickJS translated to pure Go by the modernc toolchain, with no cgo. It has no JSON API, so the argument goes in as text that JSON.parse reads inside the engine, and JSON.stringify writes the result. It allocates through its own allocator, which gives no in-use figure, so it has no memory number.
 - The C hosts are built with gcc 14.2: QuickJS 2026-06-04 with -O2, quickjs-ng 0.15.1 (the copy shipped in quickjs-go) with -O3.
 - ParseJSONString reads the caller's string in place, so the caller must not change those bytes while the call's values are in use.
@@ -150,34 +150,42 @@ Memory in use at 32 workers, MiB (modernc has no in-use figure):
 
 ![moejs Intl against Node.js](assets/intl-bench.en.png)
 
-Intl against Node.js 24.22 (V8, ICU 78.3), measured on 2026-10-24 with Go 1.26.6 on the machine of the plugin scenarios, pinned to the same 8 vCPUs. Both engines run the same modules of `bench/testdata` with TZ=UTC and the en-US locale: BenchmarkIntlFormat and BenchmarkIntlSegmenter for moejs, `bench/scripts/intl_format_node.mjs` and `intl_node.mjs` for Node.js. Every figure is the median of 7 rounds. A round runs moejs and Node.js in turn, the first engine alternating, between canary runs that catch load from other guests on the host.
+Intl against Node.js 24.22 (V8, ICU 78.3), measured on 2026-10-25 with Go 1.26.6 on the machine of the plugin scenarios, pinned to the same 8 vCPUs. Both engines run the same modules of `bench/testdata` with TZ=UTC and the en-US locale: BenchmarkIntlFormat and BenchmarkIntlSegmenter for moejs, `bench/scripts/intl_format_node.mjs` and `intl_node.mjs` for Node.js. Every figure is the median of 7 rounds. A round runs moejs and Node.js in turn, the first engine alternating, between canary runs that catch load from other guests on the host.
 
-moejs formats 1.2 to 3.4 times as fast as Node.js and creates a formatter 4 to 16 times as fast. Intl.Segmenter is slower than Node.js per segment, at 0.64x on graphemes, 0.95x on words and 0.77x on sentences.
+moejs formats 1.2 to 3.3 times as fast as Node.js and creates a formatter 4 to 15 times as fast. Per segment, Intl.Segmenter runs at 0.85x of Node.js on graphemes, 1.2x on words and 0.96x on sentences.
 
 Time per call, median of 7 rounds. Speed is Node.js's time over moejs's:
 
 | Case | moejs | Node.js | Speed |
 |---|--:|--:|--:|
-| NumberFormat ja-JP yen, format | 400 ns | 553 ns | 1.4x |
-| NumberFormat ja-JP yen, formatToParts | 1.34 µs | 2.34 µs | 1.8x |
-| NumberFormat de-DE decimal, format | 391 ns | 547 ns | 1.4x |
-| DateTimeFormat Asia/Tokyo, format | 406 ns | 1.26 µs | 3.1x |
-| DateTimeFormat Asia/Tokyo, formatToParts | 1.74 µs | 3.08 µs | 1.8x |
-| `(n).toLocaleString()` | 380 ns | 466 ns | 1.2x |
-| `date.toLocaleString()` | 451 ns | 1.54 µs | 3.4x |
-| `new Intl.NumberFormat` | 4.78 µs | 20.3 µs | 4.2x |
-| `new Intl.DateTimeFormat` | 5.53 µs | 86.3 µs | 16x |
-| `new Intl.Segmenter` | 1.17 µs | 13.8 µs | 12x |
-| Segmenter, per grapheme | 180 ns | 114 ns | 0.64x |
-| Segmenter, per word | 230 ns | 218 ns | 0.95x |
-| Segmenter, per sentence | 401 ns | 308 ns | 0.77x |
-| First `toLocaleString` in a fresh process | 229 µs | 17.2 ms | 75x |
+| NumberFormat ja-JP yen, format | 398 ns | 554 ns | 1.4x |
+| NumberFormat ja-JP yen, formatToParts | 1.36 µs | 2.36 µs | 1.7x |
+| NumberFormat de-DE decimal, format | 381 ns | 552 ns | 1.4x |
+| DateTimeFormat Asia/Tokyo, format | 393 ns | 1.25 µs | 3.2x |
+| DateTimeFormat Asia/Tokyo, formatToParts | 1.78 µs | 3.09 µs | 1.7x |
+| `(n).toLocaleString()` | 386 ns | 464 ns | 1.2x |
+| `date.toLocaleString()` | 462 ns | 1.54 µs | 3.3x |
+| `new Intl.NumberFormat` | 4.86 µs | 20.0 µs | 4.1x |
+| `new Intl.DateTimeFormat` | 5.66 µs | 86.4 µs | 15x |
+| `new Intl.Segmenter` | 1.18 µs | 13.0 µs | 11x |
+| Segmenter, per grapheme | 135 ns | 114 ns | 0.85x |
+| Segmenter, per word | 187 ns | 219 ns | 1.2x |
+| Segmenter, per sentence | 324 ns | 310 ns | 0.96x |
+| First `toLocaleString` in a fresh process | 224 µs | 17.3 ms | 77x |
 
 The same rounds measured the Web API chart in the README, with `bench/cmd/webapibench`. `bench/scripts/intl_webapi_bench.sh` builds the benchmarks and runs new rounds, and `uv run --with matplotlib bench/scripts/intl_webapi_chart.py` redraws both charts from `docs/assets/intl-webapi-bench.jsonl` (`--table` prints the numbers).
 
+## node:fs
+
+![moejs node:fs against Node.js](assets/nodefs-bench.en.png)
+
+The same script, `bench/cmd/nodefsbench/fs-bench.mjs`, runs in moejs with package `node` and in Node.js 24.22 over the same tree of files, measured on 2026-10-25 like the Intl rounds, every figure the median of 7 rounds. moejs runs it in the default sandbox, with every path confined to the tree's root through `openat2` (or `os.Root`) and a read-only file system. It is faster on the promise forms, on reading 1 MiB as text, on recursive listings and on glob, level with Node.js on a flat `readdir`, and slower on `statSync`, on `readFileSync` of a small file and on base64.
+
+`OUT=docs/assets/nodefs-bench.jsonl sh bench/scripts/intl_webapi_bench.sh -sections nodefs` runs new rounds, and `uv run --with matplotlib bench/scripts/intl_webapi_chart.py` redraws the chart from `docs/assets/nodefs-bench.jsonl` with the other two (`--table` prints the numbers).
+
 ## Another machine
 
-hanxi measured these numbers for [#1](https://github.com/Calcium-Ion/moejs/pull/1), which added modernc.org/quickjs to
+hanxi measured these numbers for [#1](https://github.com/MoeForge/moejs/pull/1), which added modernc.org/quickjs to
 the benchmarks: Intel Xeon E5-2650 v3 (2 × 10 cores, hyperthreaded to 40
 logical CPUs), Linux, go1.26.0 linux/amd64, medians of 3 runs on 2026-10-08.
 quickjs-go ran with its default settings, and V8 was not run.
@@ -207,10 +215,30 @@ go test -run TestFootprint -v .
 `bench/scripts/run_all.sh` runs the full set, including the parallel
 throughput and per-phase benchmarks.
 
+The plugin scenarios run in `bench/cmd/pluginbench`. `bench/scenarios/gen.py`
+writes their inputs into `bench/testdata/scenarios` (git-ignored) and checks
+them against `bench/scenarios/SHA256SUMS`, the hashes of the files the
+figures above were measured with. No input is kept as data: the small
+requests are the calls of `bench/testdata/fixtures`, the images are seeded
+random bytes, and the agent sessions' tool results are lines of the Go 1.26.6
+source tree, which gen.py finds with `GOTOOLCHAIN=go1.26.6 go env GOROOT`. It
+needs the plugins and Python 3.9 or later:
+
+```sh
+python3 bench/scenarios/gen.py
+cd bench
+go run ./cmd/pluginbench -engine moejs -scenario agent100k -workers 8
+```
+
+`bench/scripts/plugin_ab.sh <base> <head>` runs the scenarios with moejs at
+two git revisions or checkouts, after checking that both return the same
+results. The C QuickJS and quickjs-ng columns come from a C host that is not
+in the repository.
+
 ## PGO
 
-`default.pgo` is recorded from the whole hook workload (`go run ./cmd/pgo`
-in `bench/` regenerates it). Go applies a `default.pgo` automatically only
-in the main package's directory, so an embedding program passes
-`-pgo=<path to moejs>/default.pgo` or copies the profile into its own main
-package.
+`default.pgo` is recorded from the whole hook workload
+(`go run -trimpath ./cmd/pgo` in `bench/` regenerates it). Go applies a
+`default.pgo` automatically only in the main package's directory, so an
+embedding program passes `-pgo=<path to moejs>/default.pgo` or copies the
+profile into its own main package.

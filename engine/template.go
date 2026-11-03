@@ -3,7 +3,7 @@ package engine
 import (
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Tagged-template objects (GetTemplateObject). Each GetTemplate site owns one

@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Slow paths of the interpreter loop: inline-cache misses and fills, generic
@@ -189,7 +189,9 @@ func (r *Realm) setNamedAdd(o *Object, key PropertyKey, v Value, e *ICEntry) boo
 		return false
 	}
 	o.addNamed(r, key, propCell{value: v, attrs: attrDefault})
-	if s := o.shape; s.parent == before {
+	// An owned shape is its object's alone: no other object may take it
+	// through the cache.
+	if s := o.shape; s.parent == before && !s.owned {
 		*e = newICEntry(s, r.protoEpoch, s.slot, icAdd)
 	}
 	return true
@@ -307,9 +309,9 @@ func (r *Realm) globalStillExists(g *Object, key PropertyKey) error {
 func (r *Realm) defineFieldSlow(o *Object, key PropertyKey, v Value, e *ICEntry) error {
 	before := o.shape
 	if o.flags&(flagDict|flagHasLazy|flagShared) == 0 && o.flags&flagExtensible != 0 {
-		if !before.has(key) {
+		if before.noFill == 0 && !before.has(key) {
 			o.addNamed(r, key, propCell{value: v, attrs: attrDefault})
-			if o.flags&flagDict == 0 && o.shape.parent == before && o.flags&flagIsPrototype == 0 {
+			if o.flags&flagDict == 0 && o.shape.parent == before && !o.shape.owned && o.flags&flagIsPrototype == 0 {
 				e.Shape = o.shape
 			}
 			return nil
@@ -712,6 +714,19 @@ func (r *Realm) appendSpread(arr *Object, v Value) error {
 			}
 		}
 		return nil
+	}
+	if sg := r.segmentIterator(it, pos); sg != nil {
+		// iterStep's segment iterator case, checked once.
+		for k := int64(0); ; k++ {
+			if err := interruptEvery(r, k); err != nil {
+				return err
+			}
+			e, done := sg.step(r)
+			if done {
+				return nil
+			}
+			arr.Push(r, e)
+		}
 	}
 	for k := int64(0); ; k++ {
 		if err := interruptEvery(r, k); err != nil {

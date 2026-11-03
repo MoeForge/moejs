@@ -1,0 +1,176 @@
+{"meta": {"before": "2026-10-24", "after": "2026-10-25", "go": "go1.26.6", "cpu": "Intel(R) Xeon(R) CPU E5-2667 v4 @ 3.20GHz", "cpus": "0-7", "canaries": [{"name": "cpu", "floor": 248000.0}, {"name": "mem", "floor": 525.0}]}}
+{"round": 1, "canary": "cpu", "when": "before", "value": 262097.026}
+{"round": 1, "canary": "mem", "when": "before", "value": 538.2367649546322}
+{"round": 1, "build": "before", "row": "global_read_webapi", "value": 390.1, "unit": "ns"}
+{"round": 1, "build": "before", "row": "global_read_bare", "value": 28.56, "unit": "ns"}
+{"round": 1, "build": "before", "row": "install_total", "value": 16529.0, "unit": "ns"}
+{"round": 1, "build": "before", "row": "runtime_loop", "value": 4162.0, "unit": "ns"}
+{"round": 1, "build": "before", "row": "seg_graphemes", "value": 178.4, "unit": "ns"}
+{"round": 1, "build": "before", "row": "seg_words", "value": 230.4, "unit": "ns"}
+{"round": 1, "build": "before", "row": "seg_sentences", "value": 396.5, "unit": "ns"}
+{"round": 1, "build": "before", "row": "sse_memory", "value": 2942.0, "unit": "ns"}
+{"round": 1, "build": "before", "row": "sse_loopback", "value": 5.604, "unit": "us", "samples": [6.593, 5.604, 5.603]}
+{"round": 1, "build": "before", "row": "install_own", "value": 12367.0, "unit": "ns"}
+{"round": 1, "build": "after", "row": "global_read_webapi", "value": 28.59, "unit": "ns"}
+{"round": 1, "build": "after", "row": "global_read_bare", "value": 28.56, "unit": "ns"}
+{"round": 1, "build": "after", "row": "install_total", "value": 5567.0, "unit": "ns"}
+{"round": 1, "build": "after", "row": "runtime_loop", "value": 4414.0, "unit": "ns"}
+{"round": 1, "build": "after", "row": "seg_graphemes", "value": 141.7, "unit": "ns"}
+{"round": 1, "build": "after", "row": "seg_words", "value": 199.9, "unit": "ns"}
+{"round": 1, "build": "after", "row": "seg_sentences", "value": 314.4, "unit": "ns"}
+{"round": 1, "build": "after", "row": "sse_memory", "value": 2942.0, "unit": "ns"}
+{"round": 1, "build": "after", "row": "sse_loopback", "value": 5.67, "unit": "us", "samples": [5.184, 5.67, 5.693]}
+{"round": 1, "build": "after", "row": "install_own", "value": 1153.0, "unit": "ns"}
+{"round": 1, "canary": "cpu", "when": "after", "value": 251108.021}
+{"round": 1, "canary": "mem", "when": "after", "value": 548.8476817775846}
+{"round": 1, "status": "kept", "foreign": 0.043, "start": "12:43:57", "end": "12:44:33", "why": []}
+{"round": 2, "canary": "cpu", "when": "before", "value": 256728.633}
+{"round": 2, "canary": "mem", "when": "before", "value": 525.0799997454134}
+{"round": 2, "build": "after", "row": "global_read_webapi", "value": 29.07, "unit": "ns"}
+{"round": 2, "build": "after", "row": "global_read_bare", "value": 28.71, "unit": "ns"}
+{"round": 2, "build": "after", "row": "install_total", "value": 5781.0, "unit": "ns"}
+{"round": 2, "build": "after", "row": "runtime_loop", "value": 3986.0, "unit": "ns"}
+{"round": 2, "build": "after", "row": "seg_graphemes", "value": 133.8, "unit": "ns"}
+{"round": 2, "build": "after", "row": "seg_words", "value": 200.1, "unit": "ns"}
+{"round": 2, "build": "after", "row": "seg_sentences", "value": 343.3, "unit": "ns"}
+{"round": 2, "build": "after", "row": "sse_memory", "value": 2841.0, "unit": "ns"}
+{"round": 2, "build": "after", "row": "sse_loopback", "value": 5.429, "unit": "us", "samples": [5.468, 5.374, 5.429]}
+{"round": 2, "build": "after", "row": "install_own", "value": 1795.0, "unit": "ns"}
+{"round": 2, "build": "before", "row": "global_read_webapi", "value": 390.5, "unit": "ns"}
+{"round": 2, "build": "before", "row": "global_read_bare", "value": 28.89, "unit": "ns"}
+{"round": 2, "build": "before", "row": "install_total", "value": 16572.0, "unit": "ns"}
+{"round": 2, "build": "before", "row": "runtime_loop", "value": 4329.0, "unit": "ns"}
+{"round": 2, "build": "before", "row": "seg_graphemes", "value": 207.5, "unit": "ns"}
+{"round": 2, "build": "before", "row": "seg_words", "value": 247.3, "unit": "ns"}
+{"round": 2, "build": "before", "row": "seg_sentences", "value": 394.0, "unit": "ns"}
+{"round": 2, "build": "before", "row": "sse_memory", "value": 3101.0, "unit": "ns"}
+{"round": 2, "build": "before", "row": "sse_loopback", "value": 6.98, "unit": "us", "samples": [7.018, 5.575, 6.98]}
+{"round": 2, "build": "before", "row": "install_own", "value": 12243.0, "unit": "ns"}
+{"round": 2, "canary": "cpu", "when": "after", "value": 254884.595}
+{"round": 2, "canary": "mem", "when": "after", "value": 566.6698785288847}
+{"round": 2, "status": "kept", "foreign": 0.014, "start": "12:47:33", "end": "12:48:13", "why": []}
+{"round": 3, "canary": "cpu", "when": "before", "value": 260466.735}
+{"round": 3, "canary": "mem", "when": "before", "value": 591.7284228445875}
+{"round": 3, "build": "before", "row": "global_read_webapi", "value": 432.2, "unit": "ns"}
+{"round": 3, "build": "before", "row": "global_read_bare", "value": 28.86, "unit": "ns"}
+{"round": 3, "build": "before", "row": "install_total", "value": 16839.0, "unit": "ns"}
+{"round": 3, "build": "before", "row": "runtime_loop", "value": 4198.0, "unit": "ns"}
+{"round": 3, "build": "before", "row": "seg_graphemes", "value": 184.3, "unit": "ns"}
+{"round": 3, "build": "before", "row": "seg_words", "value": 232.7, "unit": "ns"}
+{"round": 3, "build": "before", "row": "seg_sentences", "value": 405.3, "unit": "ns"}
+{"round": 3, "build": "before", "row": "sse_memory", "value": 3135.0, "unit": "ns"}
+{"round": 3, "build": "before", "row": "sse_loopback", "value": 5.196, "unit": "us", "samples": [5.196, 7.014, 5.131]}
+{"round": 3, "build": "before", "row": "install_own", "value": 12641.0, "unit": "ns"}
+{"round": 3, "build": "after", "row": "global_read_webapi", "value": 28.81, "unit": "ns"}
+{"round": 3, "build": "after", "row": "global_read_bare", "value": 28.6, "unit": "ns"}
+{"round": 3, "build": "after", "row": "install_total", "value": 5485.0, "unit": "ns"}
+{"round": 3, "build": "after", "row": "runtime_loop", "value": 4256.0, "unit": "ns"}
+{"round": 3, "build": "after", "row": "seg_graphemes", "value": 133.6, "unit": "ns"}
+{"round": 3, "build": "after", "row": "seg_words", "value": 190.3, "unit": "ns"}
+{"round": 3, "build": "after", "row": "seg_sentences", "value": 315.0, "unit": "ns"}
+{"round": 3, "build": "after", "row": "sse_memory", "value": 2721.0, "unit": "ns"}
+{"round": 3, "build": "after", "row": "sse_loopback", "value": 5.04, "unit": "us", "samples": [5.032, 6.326, 5.04]}
+{"round": 3, "build": "after", "row": "install_own", "value": 1229.0, "unit": "ns"}
+{"round": 3, "canary": "cpu", "when": "after", "value": 262003.458}
+{"round": 3, "canary": "mem", "when": "after", "value": 560.6979215629168}
+{"round": 3, "status": "kept", "foreign": 0.039, "start": "12:50:43", "end": "12:51:18", "why": []}
+{"round": 4, "canary": "cpu", "when": "before", "value": 260265.31}
+{"round": 4, "canary": "mem", "when": "before", "value": 543.0697249658969}
+{"round": 4, "build": "after", "row": "global_read_webapi", "value": 28.53, "unit": "ns"}
+{"round": 4, "build": "after", "row": "global_read_bare", "value": 28.51, "unit": "ns"}
+{"round": 4, "build": "after", "row": "install_total", "value": 6073.0, "unit": "ns"}
+{"round": 4, "build": "after", "row": "runtime_loop", "value": 5413.0, "unit": "ns"}
+{"round": 4, "build": "after", "row": "seg_graphemes", "value": 129.1, "unit": "ns"}
+{"round": 4, "build": "after", "row": "seg_words", "value": 180.8, "unit": "ns"}
+{"round": 4, "build": "after", "row": "seg_sentences", "value": 306.5, "unit": "ns"}
+{"round": 4, "build": "after", "row": "sse_memory", "value": 2734.0, "unit": "ns"}
+{"round": 4, "build": "after", "row": "sse_loopback", "value": 5.465, "unit": "us", "samples": [5.465, 4.754, 5.645]}
+{"round": 4, "build": "after", "row": "install_own", "value": 660.0, "unit": "ns"}
+{"round": 4, "build": "before", "row": "global_read_webapi", "value": 402.2, "unit": "ns"}
+{"round": 4, "build": "before", "row": "global_read_bare", "value": 28.61, "unit": "ns"}
+{"round": 4, "build": "before", "row": "install_total", "value": 18772.0, "unit": "ns"}
+{"round": 4, "build": "before", "row": "runtime_loop", "value": 5084.0, "unit": "ns"}
+{"round": 4, "build": "before", "row": "seg_graphemes", "value": 173.6, "unit": "ns"}
+{"round": 4, "build": "before", "row": "seg_words", "value": 252.6, "unit": "ns"}
+{"round": 4, "build": "before", "row": "seg_sentences", "value": 390.9, "unit": "ns"}
+{"round": 4, "build": "before", "row": "sse_memory", "value": 3026.0, "unit": "ns"}
+{"round": 4, "build": "before", "row": "sse_loopback", "value": 5.086, "unit": "us", "samples": [4.953, 5.85, 5.086]}
+{"round": 4, "build": "before", "row": "install_own", "value": 13688.0, "unit": "ns"}
+{"round": 4, "canary": "cpu", "when": "after", "value": 257540.402}
+{"round": 4, "canary": "mem", "when": "after", "value": 551.1272226453992}
+{"round": 4, "status": "kept", "foreign": 0.02, "start": "12:53:47", "end": "12:54:23", "why": []}
+{"round": 5, "canary": "cpu", "when": "before", "value": 261764.198}
+{"round": 5, "canary": "mem", "when": "before", "value": 580.591579458706}
+{"round": 5, "build": "before", "row": "global_read_webapi", "value": 388.9, "unit": "ns"}
+{"round": 5, "build": "before", "row": "global_read_bare", "value": 28.52, "unit": "ns"}
+{"round": 5, "build": "before", "row": "install_total", "value": 17000.0, "unit": "ns"}
+{"round": 5, "build": "before", "row": "runtime_loop", "value": 4420.0, "unit": "ns"}
+{"round": 5, "build": "before", "row": "seg_graphemes", "value": 178.4, "unit": "ns"}
+{"round": 5, "build": "before", "row": "seg_words", "value": 228.6, "unit": "ns"}
+{"round": 5, "build": "before", "row": "seg_sentences", "value": 404.2, "unit": "ns"}
+{"round": 5, "build": "before", "row": "sse_memory", "value": 3171.0, "unit": "ns"}
+{"round": 5, "build": "before", "row": "sse_loopback", "value": 6.146, "unit": "us", "samples": [7.058, 5.1, 6.146]}
+{"round": 5, "build": "before", "row": "install_own", "value": 12580.0, "unit": "ns"}
+{"round": 5, "build": "after", "row": "global_read_webapi", "value": 28.57, "unit": "ns"}
+{"round": 5, "build": "after", "row": "global_read_bare", "value": 28.52, "unit": "ns"}
+{"round": 5, "build": "after", "row": "install_total", "value": 5707.0, "unit": "ns"}
+{"round": 5, "build": "after", "row": "runtime_loop", "value": 4539.0, "unit": "ns"}
+{"round": 5, "build": "after", "row": "seg_graphemes", "value": 135.4, "unit": "ns"}
+{"round": 5, "build": "after", "row": "seg_words", "value": 185.4, "unit": "ns"}
+{"round": 5, "build": "after", "row": "seg_sentences", "value": 312.2, "unit": "ns"}
+{"round": 5, "build": "after", "row": "sse_memory", "value": 2862.0, "unit": "ns"}
+{"round": 5, "build": "after", "row": "sse_loopback", "value": 4.979, "unit": "us", "samples": [5.058, 4.979, 4.953]}
+{"round": 5, "build": "after", "row": "install_own", "value": 1168.0, "unit": "ns"}
+{"round": 5, "canary": "cpu", "when": "after", "value": 259650.583}
+{"round": 5, "canary": "mem", "when": "after", "value": 565.6416020767056}
+{"round": 5, "status": "kept", "foreign": 0.018, "start": "12:56:53", "end": "12:57:30", "why": []}
+{"round": 6, "canary": "cpu", "when": "before", "value": 263196.522}
+{"round": 6, "canary": "mem", "when": "before", "value": 561.1763524956041}
+{"round": 6, "build": "after", "row": "global_read_webapi", "value": 28.91, "unit": "ns"}
+{"round": 6, "build": "after", "row": "global_read_bare", "value": 29.19, "unit": "ns"}
+{"round": 6, "build": "after", "row": "install_total", "value": 5599.0, "unit": "ns"}
+{"round": 6, "build": "after", "row": "runtime_loop", "value": 4484.0, "unit": "ns"}
+{"round": 6, "build": "after", "row": "seg_graphemes", "value": 129.8, "unit": "ns"}
+{"round": 6, "build": "after", "row": "seg_words", "value": 185.1, "unit": "ns"}
+{"round": 6, "build": "after", "row": "seg_sentences", "value": 308.0, "unit": "ns"}
+{"round": 6, "build": "after", "row": "sse_memory", "value": 2818.0, "unit": "ns"}
+{"round": 6, "build": "after", "row": "sse_loopback", "value": 5.448, "unit": "us", "samples": [5.406, 5.478, 5.448]}
+{"round": 6, "build": "after", "row": "install_own", "value": 1115.0, "unit": "ns"}
+{"round": 6, "build": "before", "row": "global_read_webapi", "value": 404.0, "unit": "ns"}
+{"round": 6, "build": "before", "row": "global_read_bare", "value": 29.35, "unit": "ns"}
+{"round": 6, "build": "before", "row": "install_total", "value": 17268.0, "unit": "ns"}
+{"round": 6, "build": "before", "row": "runtime_loop", "value": 4309.0, "unit": "ns"}
+{"round": 6, "build": "before", "row": "seg_graphemes", "value": 173.6, "unit": "ns"}
+{"round": 6, "build": "before", "row": "seg_words", "value": 220.9, "unit": "ns"}
+{"round": 6, "build": "before", "row": "seg_sentences", "value": 414.3, "unit": "ns"}
+{"round": 6, "build": "before", "row": "sse_memory", "value": 3145.0, "unit": "ns"}
+{"round": 6, "build": "before", "row": "sse_loopback", "value": 5.762, "unit": "us", "samples": [5.994, 5.54, 5.762]}
+{"round": 6, "build": "before", "row": "install_own", "value": 12959.0, "unit": "ns"}
+{"round": 6, "canary": "cpu", "when": "after", "value": 255854.163}
+{"round": 6, "canary": "mem", "when": "after", "value": 542.2353953112705}
+{"round": 6, "status": "kept", "foreign": 0.047, "start": "13:00:03", "end": "13:00:39", "why": []}
+{"round": 7, "canary": "cpu", "when": "before", "value": 261665.038}
+{"round": 7, "canary": "mem", "when": "before", "value": 559.7696533882066}
+{"round": 7, "build": "before", "row": "global_read_webapi", "value": 389.5, "unit": "ns"}
+{"round": 7, "build": "before", "row": "global_read_bare", "value": 29.37, "unit": "ns"}
+{"round": 7, "build": "before", "row": "install_total", "value": 20132.0, "unit": "ns"}
+{"round": 7, "build": "before", "row": "runtime_loop", "value": 4437.0, "unit": "ns"}
+{"round": 7, "build": "before", "row": "seg_graphemes", "value": 182.5, "unit": "ns"}
+{"round": 7, "build": "before", "row": "seg_words", "value": 228.9, "unit": "ns"}
+{"round": 7, "build": "before", "row": "seg_sentences", "value": 398.3, "unit": "ns"}
+{"round": 7, "build": "before", "row": "sse_memory", "value": 3112.0, "unit": "ns"}
+{"round": 7, "build": "before", "row": "sse_loopback", "value": 5.235, "unit": "us", "samples": [5.779, 5.143, 5.235]}
+{"round": 7, "build": "before", "row": "install_own", "value": 15695.0, "unit": "ns"}
+{"round": 7, "build": "after", "row": "global_read_webapi", "value": 28.63, "unit": "ns"}
+{"round": 7, "build": "after", "row": "global_read_bare", "value": 28.69, "unit": "ns"}
+{"round": 7, "build": "after", "row": "install_total", "value": 5677.0, "unit": "ns"}
+{"round": 7, "build": "after", "row": "runtime_loop", "value": 4348.0, "unit": "ns"}
+{"round": 7, "build": "after", "row": "seg_graphemes", "value": 133.7, "unit": "ns"}
+{"round": 7, "build": "after", "row": "seg_words", "value": 187.1, "unit": "ns"}
+{"round": 7, "build": "after", "row": "seg_sentences", "value": 316.6, "unit": "ns"}
+{"round": 7, "build": "after", "row": "sse_memory", "value": 2696.0, "unit": "ns"}
+{"round": 7, "build": "after", "row": "sse_loopback", "value": 5.209, "unit": "us", "samples": [5.203, 6.21, 5.209]}
+{"round": 7, "build": "after", "row": "install_own", "value": 1329.0, "unit": "ns"}
+{"round": 7, "canary": "cpu", "when": "after", "value": 260018.408}
+{"round": 7, "canary": "mem", "when": "after", "value": 546.8081566527435}
+{"round": 7, "status": "kept", "foreign": 0.027, "start": "13:03:06", "end": "13:03:42", "why": []}

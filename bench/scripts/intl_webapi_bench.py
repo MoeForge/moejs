@@ -6,8 +6,9 @@ sides, and appends one JSON object per measurement to a JSONL file:
     python3 bench/scripts/intl_webapi_bench.py -bin DIR -node NODE -rounds 7 -o intl-webapi-bench.jsonl \\
         -canary 'cpu:248000:taskset -c 0-7 ./c-host -scenario small -workers 8 -dur 1'
 
-DIR holds bench.test (go test -c in bench), webapibench and intlfirst (go
-build ./cmd/webapibench ./cmd/intlfirst in bench). The rows:
+DIR holds bench.test (go test -c in bench), webapibench, intlfirst and
+nodefsbench (go build ./cmd/webapibench ./cmd/intlfirst ./cmd/nodefsbench in
+bench). The rows:
 
   - BenchmarkIntlFormat and BenchmarkIntlSegmenter for moejs, against
     bench/scripts/intl_format_node.mjs and intl_node.mjs, which run the same
@@ -17,13 +18,20 @@ build ./cmd/webapibench ./cmd/intlfirst in bench). The rows:
   - bench/cmd/webapibench/fetch-bench.js in moejs (webapibench -js) and in
     Node against webapibench -serve on SERVER_CPUS: small JSON requests at 1
     and 8 concurrent, a 256 MiB body read with getReader, and server-sent
-    events; the median of the script's own rounds.
+    events; the median of the script's own rounds;
+  - bench/cmd/nodefsbench/fs-bench.mjs in moejs (nodefsbench -js, package
+    node with a read-only file system confined to the fixture) and in Node,
+    over the fixture tree of nodefsbench -fixture in FIXTURE: node:fs reads,
+    directory listings, stat, glob and Buffer's base64; µs per call.
 
-Each round takes LOCK, waits until other processes use less than a quarter
-of a core, runs the canaries, then every workload with moejs and Node in turn
-(odd rounds moejs first), then the canaries again. A round whose canary falls
-below its floor, or during which other processes used more than a quarter of
-a core, goes to the .dropped file and runs again. Both engines run with
+-sections runs a subset of the sections: format, segmenter, first, fetch
+and nodefs, the rows above in that order. The node:fs chart has its own
+file: -sections nodefs -o nodefs-bench.jsonl. Each round takes LOCK, waits until
+other processes use less than a quarter of a core, runs the canaries, then
+every workload with moejs and Node in turn (odd rounds moejs first), then
+the canaries again. A round whose canary falls below its floor, or during
+which other processes used more than a quarter of a core, goes to the
+.dropped file and runs again. Both engines run with
 TZ=UTC and LC_ALL=en_US.UTF-8, pinned to CPUS.
 """
 
@@ -61,6 +69,24 @@ SEGMENTER = {
     "construct": "construct_seg",
 }
 FETCH = {"small1": "fetch_small1", "small8": "fetch_small8", "stream": "fetch_stream", "sse": "fetch_sse"}
+NODEFS = {
+    "readFileSync 4KiB utf8": "fs_readsync_4k_utf8",
+    "readFileSync 4KiB Buffer": "fs_readsync_4k_buf",
+    "readFileSync 1MiB utf8": "fs_readsync_1m_utf8",
+    "readFileSync 1MiB Buffer": "fs_readsync_1m_buf",
+    "await readFile 4KiB utf8": "fs_read_4k_utf8",
+    "await readFile 4KiB Buffer": "fs_read_4k_buf",
+    "await readFile 1MiB utf8": "fs_read_1m_utf8",
+    "await readFile 1MiB Buffer": "fs_read_1m_buf",
+    "readdirSync 1000 entries": "fs_readdirsync",
+    "await readdir 1000 entries": "fs_readdir",
+    "readdirSync recursive tree": "fs_readdirsync_recursive",
+    "statSync x1000": "fs_statsync",
+    "await stat x1000": "fs_stat",
+    "globSync **/*.ts tree": "fs_globsync",
+    "Buffer.from base64 64KiB": "buf_from_base64",
+    "toString base64 64KiB": "buf_to_base64",
+}
 FIRST_SCRIPT = "(1234.5).toLocaleString()"
 
 
@@ -146,6 +172,19 @@ class Bench:
             rows.append((row, statistics.median(got[k]), unit, got[k]))
         return rows
 
+    def nodefs(self, engine):
+        d = os.path.join(TREE, "bench", "cmd", "nodefsbench")
+        if engine == "moejs":
+            cmd = self.taskset + [os.path.join(self.a.bin, "nodefsbench"), "-js", "fs-bench.mjs", "-dir", self.a.fixture]
+        else:
+            cmd = self.taskset + [self.a.node, "fs-bench.mjs", self.a.fixture]
+        got = {}
+        for line in run(cmd, cwd=d).splitlines():
+            if line.startswith("{"):
+                r = json.loads(line)
+                got[r["name"]] = r["us"]
+        return [(row, got[k], "us") for k, row in NODEFS.items()]
+
 
 def busy():
     with open("/proc/stat") as f:
@@ -168,7 +207,8 @@ class Meter:
         self.server = server
 
     def mark(self):
-        return time.time(), busy(), cpu_of("self", True) + cpu_of(self.server, False)
+        own = cpu_of("self", True) + (cpu_of(self.server, False) if self.server else 0)
+        return time.time(), busy(), own
 
     def foreign(self, m0):
         m1 = self.mark()
@@ -203,28 +243,40 @@ def main():
     p.add_argument("-fetch-rounds", type=int, default=3, help="rounds of fetch-bench.js per run")
     p.add_argument("-lock", default=os.path.expanduser("~/moejs-bench/lock"))
     p.add_argument("-canary", action="append", default=[], help="NAME:FLOOR:SHELL-COMMAND printing \"rps\":N")
+    p.add_argument("-fixture", default=os.path.join(os.path.expanduser("~"), "nodefs-fixture"),
+                   help="the fixture tree of the nodefs section, written by nodefsbench -fixture if missing")
+    p.add_argument("-sections", default="format,segmenter,first,fetch", help="the sections to run, comma-separated")
     a = p.parse_args()
+    sections = a.sections.split(",")
 
     b = Bench(a)
+    if "nodefs" in sections and not os.path.isdir(a.fixture):
+        run([os.path.join(a.bin, "nodefsbench"), "-fixture", a.fixture])
     if not os.path.exists(a.o) or os.path.getsize(a.o) == 0:
+        gobin = next(os.path.join(a.bin, f) for f in ("bench.test", "nodefsbench", "webapibench")
+                     if os.path.exists(os.path.join(a.bin, f)))
         meta = {
             "date": datetime.date.today().isoformat(),
             "node": run([a.node, "-p", "process.version + ' icu ' + process.versions.icu"]).strip(),
-            "go": run(["go", "version", os.path.join(a.bin, "bench.test")]).split(": ", 1)[1].strip(),
+            "go": run(["go", "version", gobin]).split(": ", 1)[1].strip(),
             "cpu": next(l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")),
             "cpus": a.cpus,
             "canaries": [{"name": c.split(":")[0], "floor": float(c.split(":")[1])} for c in a.canary],
         }
+        if "nodefs" in sections:
+            meta["tree_files"] = sum(len(f) for _, _, f in os.walk(os.path.join(a.fixture, "tree")))
         with open(a.o, "a") as f:
             f.write(json.dumps({"meta": meta}) + "\n")
     done = 0
     with open(a.o) as f:
         done = len({json.loads(l)["round"] for l in f if '"round"' in l})
 
-    server = subprocess.Popen(["taskset", "-c", a.server_cpus, os.path.join(a.bin, "webapibench"), "-serve", a.server],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1)
-    meter = Meter(server.pid)
+    server = None
+    if "fetch" in sections:
+        server = subprocess.Popen(["taskset", "-c", a.server_cpus, os.path.join(a.bin, "webapibench"), "-serve", a.server],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
+    meter = Meter(server.pid if server else None)
     lock = open(a.lock, "w")
     attempt = 0
     try:
@@ -250,7 +302,10 @@ def main():
                 if not good:
                     ok = False
                     why.append(f"{name} before {v:.0f}")
-            for section in (b.intl_format, b.segmenter, None, b.fetch):
+            for name, section in (("format", b.intl_format), ("segmenter", b.segmenter), ("first", None), ("fetch", b.fetch),
+                                  ("nodefs", b.nodefs)):
+                if name not in sections:
+                    continue
                 if section is None:
                     results = b.first_use(order)
                 else:
@@ -284,7 +339,8 @@ def main():
             else:
                 time.sleep(30)
     finally:
-        server.kill()
+        if server:
+            server.kill()
     print(f"done: {done} rounds kept", flush=True)
     sys.exit(0 if done >= a.rounds else 1)
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/evanw/esbuild/pkg/api"
 )
 

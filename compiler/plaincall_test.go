@@ -3,7 +3,7 @@ package compiler
 import (
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 	"github.com/stretchr/testify/assert"
 )
 

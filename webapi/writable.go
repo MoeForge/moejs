@@ -1,7 +1,7 @@
 package webapi
 
 import (
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // The Streams Standard's WritableStream with its default controller and

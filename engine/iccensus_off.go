@@ -2,7 +2,7 @@
 
 package engine
 
-import "github.com/Calcium-Ion/moejs/bytecode"
+import "github.com/MoeForge/moejs/bytecode"
 
 // icCensus is false in normal builds: the census hooks in the interpreter
 // loop are dead code the compiler drops (iccensus.go).

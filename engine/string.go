@@ -154,7 +154,7 @@ func FromUTF16(u []uint16) *String {
 	for i, c := range u {
 		b[i] = byte(c)
 	}
-	return &String{s: string(b), n: int32(len(b)), kind: strASCII}
+	return &String{s: bytesString(b), n: int32(len(b)), kind: strASCII}
 }
 
 // asciiString wraps a Go string already known to be ASCII.

@@ -28,9 +28,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
-	"github.com/Calcium-Ion/moejs/webapi"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
+	"github.com/MoeForge/moejs/webapi"
 )
 
 var smallReply = []byte(`{"id":"chatcmpl-1","object":"chat.completion","created":1760000000,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"Hello! How can I help you today?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":9,"total_tokens":19}}`)

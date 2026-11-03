@@ -7,8 +7,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -254,4 +254,43 @@ func BenchmarkReleaseCallData(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestReleaseScratch: ReleaseScratch drops the registers, frame records and
+// RegExp working copies a request left, as ReleaseCallData does, and keeps
+// what the host or JavaScript can observe: the host conversion's chunks
+// and the legacy RegExp statics. Inside a call it does nothing.
+func TestReleaseScratch(t *testing.T) {
+	f := newHostLazyFixture(t, callDataSource, RealmOptions{})
+	r, st := f.r, &f.r.interp
+	calls := 0
+	inside := ObjectValue(r.NewNativeFunction(AtomEmpty, 0, func(r *Realm, _ Value, _ []Value) (Value, error) {
+		calls++
+		stack, frames := slices.Clone(st.stack), slices.Clone(st.frames)
+		r.ReleaseScratch()
+		assert.True(t, slices.Equal(stack, st.stack), "registers")
+		assert.True(t, slices.Equal(frames, st.frames), "frame records")
+		assert.NotNil(t, r.regexps.subjects[0].s)
+		return Undefined(), nil
+	}))
+	for i := range 3 {
+		x, err := r.FromGo(callDataArg(i))
+		require.NoError(t, err)
+		require.Equal(t, callDataWant(i), f.callValues("hook", x, inside))
+		require.True(t, slices.ContainsFunc(st.stack, func(v Value) bool { return v.ptr != nil }), "request %d: stale registers", i)
+		require.NotNil(t, r.regexps.subjects[0].s, "request %d: RegExp subject", i)
+
+		r.ReleaseScratch()
+		assert.Empty(t, st.stack)
+		assert.False(t, slices.ContainsFunc(st.stack[:cap(st.stack)], func(v Value) bool { return v != Value{} }), "registers")
+		assert.False(t, slices.ContainsFunc(st.frames, func(fi frameInfo) bool { return fi != frameInfo{} }), "frame records")
+		for j := range r.regexps.subjects {
+			assert.Nil(t, r.regexps.subjects[j].s, "RegExp subject %d", j)
+		}
+		assert.NotNil(t, r.fromGo.heap.maps, "the host conversion's chunks stay")
+		assert.NotNil(t, r.regexps.lastS, "the RegExp statics stay")
+		assert.NotNil(t, r.lazy.statics, "the RegExp statics' match stays")
+		r.ReleaseCallData()
+	}
+	assert.Equal(t, 3, calls)
 }

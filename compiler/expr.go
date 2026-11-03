@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // bindMode distinguishes declaration initialization from assignment.
@@ -1306,7 +1306,7 @@ func (f *funcState) args(list []syntax.Expr, base int) bool {
 		return false
 	}
 	arr := f.alloc()
-	f.emitABx(bytecode.NewArray, arr, f.checkBx(len(list)))
+	f.emitABx(bytecode.NewArray, arr, capHint(len(list)))
 	for i, a := range list {
 		f.c.pollItem(i)
 		mark := f.nregs
@@ -1437,7 +1437,7 @@ func (f *funcState) template(e *syntax.TemplateLit, dst int) {
 }
 
 func (f *funcState) arrayLit(e *syntax.ArrayLit, dst int) {
-	f.emitABx(bytecode.NewArray, dst, f.checkBx(len(e.Elems)))
+	f.emitABx(bytecode.NewArray, dst, capHint(len(e.Elems)))
 	for i, el := range e.Elems {
 		f.c.pollItem(i)
 		mark := f.nregs
@@ -1491,7 +1491,7 @@ func (f *funcState) defineNamed(obj int, name string, val int) {
 }
 
 func (f *funcState) objectLit(e *syntax.ObjectLit, dst int) {
-	f.emitABx(bytecode.NewObject, dst, f.checkBx(len(e.Props)))
+	f.emitABx(bytecode.NewObject, dst, capHint(len(e.Props)))
 	for i, p := range e.Props {
 		f.c.pollItem(i)
 		mark := f.nregs

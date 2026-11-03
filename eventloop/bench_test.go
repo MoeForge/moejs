@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
 )
 
 // benchLoop returns a loop over a runtime with the memory limit limit (0:
@@ -78,6 +78,27 @@ func BenchmarkLoopPromisePingPong(b *testing.B) {
 		b.Run(l.name, func(b *testing.B) {
 			b.ReportAllocs()
 			benchRun(b, benchLoop(b, l.limit), fmt.Sprintf(`(async () => { for (let i = 0; i < %d; i++) await tool(); })();`, b.N))
+		})
+	}
+}
+
+// BenchmarkLoopPromiseSettled: an async function awaiting a promise
+// of NewPromise that the host function settles before it returns, so the
+// settle task runs on the loop's next turn, one round trip per op.
+func BenchmarkLoopPromiseSettled(b *testing.B) {
+	for _, l := range benchLimits {
+		b.Run(l.name, func(b *testing.B) {
+			b.ReportAllocs()
+			loop := benchLoop(b, l.limit)
+			err := loop.Runtime().SetGlobal("tool", moejs.NativeFunc(func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
+				p, settle := loop.NewPromise()
+				settle(nil)
+				return p, nil
+			}))
+			if err != nil {
+				b.Fatal(err)
+			}
+			benchRun(b, loop, fmt.Sprintf(`(async () => { for (let i = 0; i < %d; i++) await tool(); })();`, b.N))
 		})
 	}
 }

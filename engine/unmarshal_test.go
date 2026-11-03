@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,7 +71,6 @@ type umTarget struct {
 	Untagged       string
 	Dash           string `json:"-"`
 	DashComma      string `json:"-,"`
-	BadTag         string `json:"a\\b"`
 	hidden         string //nolint:unused
 }
 
@@ -109,7 +108,7 @@ type umUnicode struct {
 func TestUnmarshalMatchesRoundTrip(t *testing.T) {
 	r := NewRealm()
 	values := []string{
-		`({responseType: "json", url: "https://x/y", method: "POST", headers: {a: "b", "Content-Type": "c"}, body: {x: [1, 2.5, {y: null}], s: "中\ud800", n: -0, big: 2 ** 70}, credentialless: true, extra: 1, count: 7, ratio: 0.1, inner: {x: 3, y: "s"}, list: [{x: 1}, {x: 2, y: null}], pair: [5, 6, 7], tags: ["a", "b"], num: 12.5, Untagged: "u", Dash: "d", "-": "dc", "a\\b": "bt"})`,
+		`({responseType: "json", url: "https://x/y", method: "POST", headers: {a: "b", "Content-Type": "c"}, body: {x: [1, 2.5, {y: null}], s: "中\ud800", n: -0, big: 2 ** 70}, credentialless: true, extra: 1, count: 7, ratio: 0.1, inner: {x: 3, y: "s"}, list: [{x: 1}, {x: 2, y: null}], pair: [5, 6, 7], tags: ["a", "b"], num: 12.5, Untagged: "u", Dash: "d", "-": "dc"})`,
 		`({URL: "upper", Url: "mixed", url: "last", METHOD: "m"})`,
 		`({count: 300})`, `({count: 1.5})`, `({count: "7"})`, `({ratio: 1e40})`, `({num: "12"})`,
 		`({inner: null, list: null, headers: null, body: null, pair: null, url: null})`,
@@ -194,6 +193,91 @@ func TestUnmarshalMatchesRoundTrip(t *testing.T) {
 	require.True(t, completed[values[len(values)-4]+" into struct"]) // dictionary mode
 	require.True(t, completed[values[len(values)-3]+" into map"])
 	require.True(t, completed[values[7]+" into filled"])
+}
+
+// TestUnmarshalTags checks struct tags that the implementations of
+// encoding/json read differently: Go 1.27's takes names the older one
+// rejects and gives meaning to options it ignores, as Go 1.25 and 1.26 do
+// with GOEXPERIMENT=jsonv2. The walk leaves a struct with a name the older
+// one rejects or an option one of them reads to the round trip, for
+// Unmarshal and ToGoInto, so the result is the round trip's under each;
+// the tags all read alike complete.
+func TestUnmarshalTags(t *testing.T) {
+	r := NewRealm()
+	str, num := reflect.TypeFor[string](), reflect.TypeFor[int]()
+	for _, c := range []struct {
+		typ      reflect.Type
+		tag      string
+		src      string
+		complete bool
+	}{
+		// Names the older rules reject, which name the field by its Go
+		// name: Go 1.27 takes them whole (invalid UTF-8 as U+FFFD) or,
+		// with a backslash or a quote, the Go identifier they start with.
+		{str, `json:"€"`, `({"€": "n", F: "f"})`, false},
+		{str, `json:"a€"`, `({"a€": "n", F: "f"})`, false},
+		{str, `json:"Ⅻ"`, `({"Ⅻ": "n", F: "f"})`, false},
+		{str, `json:"a²"`, `({"a²": "n", F: "f"})`, false},
+		{str, "json:\"a\u200db\"", `({"a\u200db": "n", F: "f"})`, false},
+		{str, `json:"\xff"`, `({"\ufffd": "n", F: "f"})`, false},
+		{str, `json:"a\\b"`, `({a: "n", F: "f", "a\\b": "b"})`, false},
+		{str, `json:"d-e\\f"`, `({d: "n", F: "f"})`, false},
+		{str, `json:"_\\x"`, `({_: "n", F: "f"})`, false},
+		{str, `json:"a'b"`, `({a: "n", F: "f"})`, false},
+		{str, `json:"a\"b"`, `({a: "n", F: "f"})`, false},
+		{str, "json:\"a`b\"", `({a: "n", F: "f"})`, false},
+		// Options one of them reads: Go 1.27 (a format option is an error
+		// there), Go 1.25 and 1.26 with GOEXPERIMENT=jsonv2 (inline,
+		// unknown, a quoted option) or all (",string", which Go 1.27 also
+		// reads with bytes after it).
+		{str, `json:"s,case:strict"`, `({S: "upper"})`, false},
+		{reflect.TypeFor[umInner](), `json:",embed"`, `({x: 1, F: {x: 2}})`, false},
+		{reflect.TypeFor[map[string]any](), `json:",embed"`, `({x: 1, F: {x: 2}})`, false},
+		{reflect.TypeFor[time.Duration](), `json:"d,format:sec"`, `({d: 2})`, false},
+		{reflect.TypeFor[time.Duration](), `json:"d,format:nano"`, `({d: 2})`, false},
+		{reflect.TypeFor[[]byte](), `json:"b,format:hex"`, `({b: [1, 2]})`, false},
+		{num, `json:"n,format:x"`, `({n: 1})`, false},
+		{reflect.TypeFor[umInner](), `json:",inline"`, `({x: 1, F: {x: 2}})`, false},
+		{reflect.TypeFor[map[string]any](), `json:",unknown"`, `({x: 1, F: {x: 2}})`, false},
+		{num, `json:"n,'string'"`, `({n: 5})`, false},
+		{num, `json:"n,string\\x"`, `({n: 5})`, false},
+		{num, `json:"n,string "`, `({n: 5})`, false},
+		{num, `json:"n,string"`, `({n: "5"})`, false},
+		// Tags all read alike: options each ignores in Unmarshal,
+		// case:ignore among them.
+		{str, `json:"f"`, `({f: "x"})`, true},
+		{str, `json:"f,omitempty"`, `({f: "x"})`, true},
+		{str, `json:"f,omitzero"`, `({f: "x"})`, true},
+		{str, `json:"f,"`, `({f: "x"})`, true},
+		{str, `json:",omitempty"`, `({F: "x"})`, true},
+		{str, `json:"f,required"`, `({f: "x"})`, true},
+		{str, `json:"f,omitempty,nullable"`, `({f: "x"})`, true},
+		{str, `json:"f,omitEmpty"`, `({f: "x"})`, true},
+		{num, `json:"n,String"`, `({n: 5})`, true},
+		{num, `json:"n,string1"`, `({n: 5})`, true},
+		{str, `json:"s,case:ignore"`, `({S: "upper"})`, true},
+		{str, `json:"k,case:ignore"`, `({"\u212a": "kelvin"})`, true},
+		{str, `json:"-"`, `({"-": "x", F: "y"})`, true},
+		{str, `json:"-,"`, `({"-": "x"})`, true},
+		{str, ``, `({f: "x"})`, true},
+		{str, `json:"a-b.c"`, `({"A-B.C": "x"})`, true},
+		{str, `json:"ünï"`, `({"ÜNÏ": "x"})`, true},
+	} {
+		st := reflect.StructOf([]reflect.StructField{{Name: "F", Type: c.typ, Tag: reflect.StructTag(c.tag)}})
+		v := evalValue(t, r, c.src)
+		want, got := reflect.New(st).Interface(), reflect.New(st).Interface()
+		werr := unmarshalRoundTrip(r, v, want)
+		complete, gerr := unmarshalLikeRoot(r, v, got)
+		require.Equal(t, errText(werr), errText(gerr), "%s: Unmarshal", c.tag)
+		require.Equal(t, want, got, "%s: Unmarshal", c.tag)
+		require.Equal(t, c.complete, complete, "%s: Unmarshal", c.tag)
+		want, got = reflect.New(st).Interface(), reflect.New(st).Interface()
+		_, werr = togoRoundTrip(r, v, want)
+		complete, gerr = togoLikeRoot(r, v, got)
+		require.Equal(t, errText(werr), errText(gerr), "%s: ToGoInto", c.tag)
+		require.Equal(t, want, got, "%s: ToGoInto", c.tag)
+		require.Equal(t, c.complete, complete, "%s: ToGoInto", c.tag)
+	}
 }
 
 // TestUnmarshalCompletes checks that the walk handles the common cases

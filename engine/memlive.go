@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Live measurement (MeasureLive, RebaseAllocation).
@@ -1026,6 +1026,9 @@ func (w *liveWalker) realmRoots() {
 	}
 	if j := lz.jobs; j != nil {
 		w.value(j.result)
+		if j.af != nil {
+			w.asyncFrame(j.af)
+		}
 		w.size += int64(cap(j.kept))*liveValue + int64(cap(j.queue))*int64(unsafe.Sizeof(job{}))
 		for _, v := range j.kept {
 			w.value(v)
@@ -1146,6 +1149,8 @@ func (w *liveWalker) value(v Value) {
 		if t := v.importTarget(); !t.isImportRef() {
 			w.value(*t)
 		}
+	case tagAsync:
+		w.asyncFrame(v.asAsyncFrame())
 	}
 }
 
@@ -1283,10 +1288,6 @@ func (w *liveWalker) internal(x any) {
 	case *genFrame:
 		w.size += int64(unsafe.Sizeof(genFrame{}))
 		w.frame(x)
-	case *asyncFunction:
-		w.size += int64(unsafe.Sizeof(asyncFunction{})) - objectSize
-		w.frame(&x.g)
-		w.object(x.promise)
 	case *asyncGenerator:
 		w.size += int64(unsafe.Sizeof(asyncGenerator{})) - objectSize + int64(cap(x.queue))*int64(unsafe.Sizeof(asyncGenRequest{}))
 		w.frame(&x.g)
@@ -1320,6 +1321,12 @@ func (w *liveWalker) internal(x any) {
 		w.value(x.strong)
 	case *promiseData:
 		w.size += int64(unsafe.Sizeof(promiseData{}))
+		if x.derived {
+			w.reaction(&thenPromiseOfData(x).re) // in the promise's allocation
+		}
+		if x.host {
+			w.size += int64(unsafe.Sizeof(hostPromise{}) - unsafe.Sizeof(promiseObject{}))
+		}
 		w.value(x.result)
 		if last := x.last; last != nil {
 			for re := last.next; ; re = re.next {
@@ -1411,10 +1418,12 @@ func (w *liveWalker) function(fd *FunctionData) {
 		w.object(d.target)
 		w.object(d.handler)
 	case *resolvingFns:
-		if w.mark(unsafe.Pointer(d)) {
-			w.size += int64(unsafe.Sizeof(resolvingFns{}))
-			w.object(d.promise)
-		}
+		// Both functions are the allocation, which either keeps: the other
+		// one counts as an object of its own, and the resolve function's
+		// thisValue the promise. d is not marked: it is where the resolve
+		// function is, whose mark the objects' marks already make.
+		w.object(&d.resolveFn.obj)
+		w.object(&d.rejectFn.obj)
 	case *capabilityExecutor:
 		if w.mark(unsafe.Pointer(d)) {
 			w.size += int64(unsafe.Sizeof(capabilityExecutor{}))
@@ -1442,6 +1451,17 @@ func (w *liveWalker) function(fd *FunctionData) {
 	case LiveReporter: // the payload of a host's data function
 		d.ReportLive(w.add, w.addBytes)
 	}
+}
+
+// asyncFrame adds the state of an async function call that awaited, with
+// its reaction record and the registers allocated with it.
+func (w *liveWalker) asyncFrame(af *asyncFrame) {
+	if !w.mark(unsafe.Pointer(af)) {
+		return
+	}
+	w.size += int64(unsafe.Sizeof(asyncFrame{}))
+	w.frame(&af.g)
+	w.object(af.promise)
 }
 
 // frame adds what a suspended generator or async frame holds.
@@ -1527,18 +1547,23 @@ func (w *liveWalker) reaction(re *promiseReaction) {
 	w.object(re.onFulfilled)
 	w.object(re.onRejected)
 	switch x := re.reactor.(type) {
-	case *asyncFunction:
-		w.object(&x.obj)
+	case *asyncFrame:
+		if re == &x.re {
+			w.size -= reactionSize // the record of its awaits, counted with it
+		}
+		w.asyncFrame(x)
 	case *asyncGenerator:
+		if re == &x.re {
+			w.size -= reactionSize
+		}
 		w.object(&x.obj)
 	case *asyncFromSyncStep:
-		if w.mark(unsafe.Pointer(x)) {
-			w.size += int64(unsafe.Sizeof(asyncFromSyncStep{}))
-			if x.sync != nil {
-				w.object(&x.sync.obj)
-			}
-			w.object(x.promise)
+		// x starts with its own reaction, which marks it.
+		w.size += int64(unsafe.Sizeof(asyncFromSyncStep{}) - unsafe.Sizeof(promiseReaction{}))
+		if x.sync != nil {
+			w.object(&x.sync.obj)
 		}
+		w.object(x.promise)
 	case *fromAsync:
 		if w.mark(unsafe.Pointer(x)) {
 			w.size += int64(unsafe.Sizeof(fromAsync{}))

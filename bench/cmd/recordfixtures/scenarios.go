@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // scenario is one hook call to record; Args are JSON-shaped Go values.

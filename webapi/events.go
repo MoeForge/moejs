@@ -6,7 +6,7 @@ import (
 	"time"
 	"weak"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // --- DOMException ---------------------------------------------------------------

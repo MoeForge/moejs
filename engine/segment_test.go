@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"slices"
 	"strconv"
@@ -328,6 +329,7 @@ func FuzzSegment(f *testing.F) {
 		if len(u) == 0 {
 			return
 		}
+		segCheckSentenceSkip(t, &segText{u: u})
 		for g := range segGranularity(3) {
 			st := &segText{u: u}
 			bounds, like := segBoundaries(t, g, st)
@@ -341,6 +343,102 @@ func FuzzSegment(f *testing.F) {
 			}
 		}
 	})
+}
+
+// segSentenceNextRef is segSentenceNext without segSentenceSkip: every
+// code point through the rules.
+func segSentenceNextRef(t *segText, i int) int {
+	s := segSentences()
+	n := t.len()
+	var term uint8
+	closeSp, sp, upperLower := false, false, false
+	x := segSOther
+	for j := i; j < n; {
+		c, k := t.next(j)
+		y := s.of(c)
+		if j > i && (y == segSExtend || y == segSFormat) {
+			j = k
+			continue
+		}
+		if term != 0 {
+			switch {
+			case y == segSSContinue || y == segSSTerm || y == segSATerm,
+				y == segSClose && !sp,
+				y == segSSp, segParaSep(y),
+				term == segSATerm && !closeSp && y == segSNumeric,
+				term == segSATerm && !closeSp && upperLower && y == segSUpper,
+				term == segSATerm && segSB8(t, s, j):
+			default:
+				return j
+			}
+		}
+		switch {
+		case y == segSCR:
+			if k < n && t.at(k) == '\n' {
+				return k + 1
+			}
+			return k
+		case segParaSep(y):
+			return k
+		case y == segSATerm || y == segSSTerm:
+			term, closeSp, sp = y, false, false
+			upperLower = x == segSUpper || x == segSLower
+		case term != 0 && y == segSClose && !sp:
+			closeSp = true
+		case term != 0 && y == segSSp:
+			closeSp, sp = true, true
+		default:
+			term = 0
+		}
+		x, j = y, k
+	}
+	return n
+}
+
+// segCheckSentenceSkip checks segSentenceNext against segSentenceNextRef
+// from every index of t that starts a code point.
+func segCheckSentenceSkip(t *testing.T, st *segText) {
+	t.Helper()
+	for i := 0; i < st.len(); i++ {
+		if st.u != nil && i > 0 && st.u[i]&0xFC00 == 0xDC00 && st.u[i-1]&0xFC00 == 0xD800 {
+			continue
+		}
+		if got, want := segSentenceNext(st, i), segSentenceNextRef(st, i); got != want {
+			t.Fatalf("sentence from %d of %U: %d, every code point through the rules %d", i, st.u, got, want)
+		}
+	}
+}
+
+// TestSegSentenceSkip checks that skipping to the next terminator or
+// paragraph separator finds the sentences that applying the rules to every
+// code point finds, on random texts that favour the classes x and SB5 see.
+func TestSegSentenceSkip(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	favour := []rune{'.', '!', ' ', 'a', 'A', '1', 0x0300, 0x00AD, ')', '\r', '\n', 0x2029}
+	for range 20000 {
+		var u []uint16
+		for range 1 + rng.IntN(24) {
+			c := segAlphabet[rng.IntN(len(segAlphabet))]
+			if rng.IntN(2) == 0 {
+				c = favour[rng.IntN(len(favour))]
+			}
+			u = utf16.AppendRune(u, c)
+		}
+		segCheckSentenceSkip(t, &segText{u: u})
+		if a := segTextOf(u); a.u == nil {
+			segCheckSentenceSkip(t, a)
+		}
+	}
+}
+
+// TestSegSentenceASCIIStops checks segSentenceASCIIStops against the
+// sentence table.
+func TestSegSentenceASCIIStops(t *testing.T) {
+	s := segSentences()
+	for c := range rune(0x80) {
+		stop := segSentenceStops>>s.of(c)&1 != 0
+		require.Equal(t, stop, c < 64 && segSentenceASCIIStops>>c&1 != 0, "%U", c)
+	}
 }
 
 // TestSegAllocs checks that segNext and segStart do not allocate.

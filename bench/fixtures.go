@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // PluginKeys lists the plugin corpus in report order.

@@ -94,7 +94,7 @@ moejs 对比 Sobek，每次操作 100 次内循环：
 
 - 机器是 Intel Xeon E5-2667 v4（Broadwell，3.2 GHz）上的 KVM 虚拟机，14 个 vCPU、15 GB 内存，测试进程绑定在其中 8 个 vCPU 上（taskset 0-7，GOMAXPROCS=8），Debian 13，Go 1.26.6，gcc 14.2。
 - 每个 worker 一个运行时。一次调用把 JSON 字节交给引擎解析，调用插件，再把结果序列化成宿主自己的字节。每次预热 2 秒，小请求和 agent 请求测 6 秒，大请求测 8 秒，一次接一次连续跑，引擎顺序每格轮换，每格 3 轮取中位数。
-- 每次运行都记录虚拟机里其他进程同时占用的 CPU 时间，没有一次平均超过四分之一个核。宿主机上其他虚拟机的负载在虚拟机里看不到，所以每次运行前先跑一个短探针，等宿主机空闲再测；比同一格另外两轮都慢 5% 以上的运行会重跑。
+- 每次运行都记录虚拟机里其他进程同时占用的 CPU 时间，没有一次平均超过四分之一个核。宿主机上其他虚拟机的负载在虚拟机里看不到，所以每次运行前先跑一个短探针，等宿主机空闲再测。比同一格另外两轮都慢 5% 以上的运行会重跑。
 - 小请求是 new-api 10 个任务插件的 269 次真实调用。agent 请求是 8 个不同的编码会话，每个 10 万 token（o200k_base）：系统提示词、12 个工具定义、一条用户任务，以及 67 到 102 次工具调用的结果（Go 源码、grep 和测试输出）。agent 插件为本测试编写，接口和 new-api 任务插件的 buildSubmitRequest 一样：逐条转换消息，改模型名，给系统提示词加前缀，删掉上游不支持的参数和 JSON Schema 字段，返回 url、headers 和 body。大请求每次 25 MB 进、17 MB 出。
 - 内存是所有 worker 停在最后一次调用写完输出时，Go 堆 GC 后的存活字节加 glibc malloc 正在用的字节，包括 32 个运行时本身，不含等待回收的部分。
 - quickjs-go v0.7.7 默认开启 goroutine 检查，每次 API 调用都要读一次 goroutine 栈，图里两种配置都测了。两种配置都用 JSON.stringify 输出，因为 Value.JSONStringify 会泄漏。Sobek 为 2026-07-08 版。
@@ -130,34 +130,42 @@ moejs 对比 Sobek，每次操作 100 次内循环：
 
 ![moejs 的 Intl 对比 Node.js](assets/intl-bench.zh.png)
 
-对比 Node.js 24.22（V8，ICU 78.3），2026-10-24 测量，Go 1.26.6，机器和插件场景相同，绑定同样的 8 个 vCPU。两个引擎跑 `bench/testdata` 里的同一批模块，TZ=UTC，en-US 区域：moejs 用 BenchmarkIntlFormat 和 BenchmarkIntlSegmenter，Node.js 用 `bench/scripts/intl_format_node.mjs` 和 `intl_node.mjs`。每个数字是 7 轮的中位数。每轮轮流跑 moejs 和 Node.js，先后顺序每轮交替，前后各跑一次金丝雀基准，排除宿主机上其他虚拟机的负载。
+对比 Node.js 24.22（V8，ICU 78.3），2026-10-25 测量，Go 1.26.6，机器和插件场景相同，绑定同样的 8 个 vCPU。两个引擎跑 `bench/testdata` 里的同一批模块，TZ=UTC，en-US 区域：moejs 用 BenchmarkIntlFormat 和 BenchmarkIntlSegmenter，Node.js 用 `bench/scripts/intl_format_node.mjs` 和 `intl_node.mjs`。每个数字是 7 轮的中位数。每轮轮流跑 moejs 和 Node.js，先后顺序每轮交替，前后各跑一次金丝雀基准，排除宿主机上其他虚拟机的负载。
 
-moejs 格式化的速度是 Node.js 的 1.2 到 3.4 倍，创建格式化器是 4 到 16 倍。Intl.Segmenter 按每段算比 Node.js 慢：字素 0.64x，词 0.95x，句 0.77x。
+moejs 格式化的速度是 Node.js 的 1.2 到 3.3 倍，创建格式化器是 4 到 15 倍。Intl.Segmenter 按每段算是 Node.js 的：字素 0.85x，词 1.2x，句 0.96x。
 
 每次调用的耗时，7 轮中位数。速度是 Node.js 的耗时除以 moejs 的耗时：
 
 | 场景 | moejs | Node.js | 速度 |
 |---|--:|--:|--:|
-| NumberFormat ja-JP 日元，format | 400 ns | 553 ns | 1.4x |
-| NumberFormat ja-JP 日元，formatToParts | 1.34 µs | 2.34 µs | 1.8x |
-| NumberFormat de-DE 小数，format | 391 ns | 547 ns | 1.4x |
-| DateTimeFormat Asia/Tokyo，format | 406 ns | 1.26 µs | 3.1x |
-| DateTimeFormat Asia/Tokyo，formatToParts | 1.74 µs | 3.08 µs | 1.8x |
-| `(n).toLocaleString()` | 380 ns | 466 ns | 1.2x |
-| `date.toLocaleString()` | 451 ns | 1.54 µs | 3.4x |
-| `new Intl.NumberFormat` | 4.78 µs | 20.3 µs | 4.2x |
-| `new Intl.DateTimeFormat` | 5.53 µs | 86.3 µs | 16x |
-| `new Intl.Segmenter` | 1.17 µs | 13.8 µs | 12x |
-| Segmenter，每个字素 | 180 ns | 114 ns | 0.64x |
-| Segmenter，每个词 | 230 ns | 218 ns | 0.95x |
-| Segmenter，每个句子 | 401 ns | 308 ns | 0.77x |
-| 新进程里第一次 `toLocaleString` | 229 µs | 17.2 ms | 75x |
+| NumberFormat ja-JP 日元，format | 398 ns | 554 ns | 1.4x |
+| NumberFormat ja-JP 日元，formatToParts | 1.36 µs | 2.36 µs | 1.7x |
+| NumberFormat de-DE 小数，format | 381 ns | 552 ns | 1.4x |
+| DateTimeFormat Asia/Tokyo，format | 393 ns | 1.25 µs | 3.2x |
+| DateTimeFormat Asia/Tokyo，formatToParts | 1.78 µs | 3.09 µs | 1.7x |
+| `(n).toLocaleString()` | 386 ns | 464 ns | 1.2x |
+| `date.toLocaleString()` | 462 ns | 1.54 µs | 3.3x |
+| `new Intl.NumberFormat` | 4.86 µs | 20.0 µs | 4.1x |
+| `new Intl.DateTimeFormat` | 5.66 µs | 86.4 µs | 15x |
+| `new Intl.Segmenter` | 1.18 µs | 13.0 µs | 11x |
+| Segmenter，每个字素 | 135 ns | 114 ns | 0.85x |
+| Segmenter，每个词 | 187 ns | 219 ns | 1.2x |
+| Segmenter，每个句子 | 324 ns | 310 ns | 0.96x |
+| 新进程里第一次 `toLocaleString` | 224 µs | 17.3 ms | 77x |
 
 README 里的 Web API 图出自同样的几轮，用的是 `bench/cmd/webapibench`。`bench/scripts/intl_webapi_bench.sh` 编译基准并测新的几轮，`uv run --with matplotlib bench/scripts/intl_webapi_chart.py` 从 `docs/assets/intl-webapi-bench.jsonl` 重画两张图（`--table` 打印数字）。
 
+## node:fs
+
+![moejs 的 node:fs 对比 Node.js](assets/nodefs-bench.zh.png)
+
+moejs（`node` 包）和 Node.js 24.22 在同一棵文件树上跑同一个脚本 `bench/cmd/nodefsbench/fs-bench.mjs`，2026-10-25 和 Intl 的几轮一样测量，每个数字是 7 轮的中位数。moejs 在默认的沙箱里跑，每个路径都经 `openat2`（或 `os.Root`）限制在树根之内，文件系统只读。promise 形式、按文本读 1 MiB、递归列目录和 glob 是 moejs 更快，普通的 `readdir` 持平，`statSync`、小文件的 `readFileSync` 和 base64 是 moejs 更慢。
+
+`OUT=docs/assets/nodefs-bench.jsonl sh bench/scripts/intl_webapi_bench.sh -sections nodefs` 测新的几轮，`uv run --with matplotlib bench/scripts/intl_webapi_chart.py` 从 `docs/assets/nodefs-bench.jsonl` 和另外两张图一起重画这张图（`--table` 打印数字）。
+
 ## 另一台机器
 
-下面是 hanxi 为 [#1](https://github.com/Calcium-Ion/moejs/pull/1)（把 modernc.org/quickjs 加进基准测试）测的数字：Intel Xeon E5-2650 v3（2 × 10 核，超线程到 40 个逻辑 CPU），
+下面是 hanxi 为 [#1](https://github.com/MoeForge/moejs/pull/1)（把 modernc.org/quickjs 加进基准测试）测的数字：Intel Xeon E5-2650 v3（2 × 10 核，超线程到 40 个逻辑 CPU），
 Linux，go1.26.0 linux/amd64，2026-10-08 测得的 3 次运行中位数。quickjs-go 用的是默认配置，没有测 V8。
 
 | | moejs | Sobek | modernc-quickjs | quickjs-go |
@@ -183,7 +191,17 @@ go test -run TestFootprint -v .
 
 `bench/scripts/run_all.sh` 运行全部测量，包括并发吞吐与分阶段基准。
 
+插件场景由 `bench/cmd/pluginbench` 运行。`bench/scenarios/gen.py` 把输入生成到 `bench/testdata/scenarios`（不纳入 git），并用 `bench/scenarios/SHA256SUMS` 校验，这些哈希就是上面数据测量时所用文件的哈希。输入都不作为数据保存：小请求来自 `bench/testdata/fixtures` 里的调用，图片是固定种子生成的随机字节，agent 会话里的工具结果取自 Go 1.26.6 源码树，gen.py 通过 `GOTOOLCHAIN=go1.26.6 go env GOROOT` 找到它。运行前需要先下载插件，并装有 Python 3.9 或更高版本：
+
+```sh
+python3 bench/scenarios/gen.py
+cd bench
+go run ./cmd/pluginbench -engine moejs -scenario agent100k -workers 8
+```
+
+`bench/scripts/plugin_ab.sh <base> <head>` 先确认两边结果相同，再用两个 git 版本或两份检出的 moejs 跑这些场景。C 版 QuickJS 和 quickjs-ng 两列来自一个不在仓库里的 C 宿主程序。
+
 ## PGO
 
-`default.pgo` 以整套钩子负载录制（在 `bench/` 中运行 `go run ./cmd/pgo` 重新生成）。Go 只会自动使用 main 包目录下的
+`default.pgo` 以整套钩子负载录制（在 `bench/` 中运行 `go run -trimpath ./cmd/pgo` 重新生成）。Go 只会自动使用 main 包目录下的
 `default.pgo`，因此嵌入方需要传入 `-pgo=<moejs 路径>/default.pgo`，或把该文件复制到自己的 main 包目录。

@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/compiler"
+	"github.com/MoeForge/moejs/compiler"
 )
 
 // TestPlainCallThis covers calls whose this is undefined by the Call's

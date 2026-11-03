@@ -4,8 +4,8 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // The URL Standard's URL and URLSearchParams over package whatwgurl.

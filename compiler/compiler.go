@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // Error is a compile-time failure with a source position.
@@ -203,10 +203,14 @@ func (f *funcState) enterScript(s *syntax.Scope) {
 		}
 	}
 	// GlobalDeclarationInstantiation initializes the last declaration of
-	// each function name, in the order of those declarations.
+	// each function name, in the order of those declarations. The names
+	// seen are a set, so that many functions compile in linear time.
 	var fns []string
+	seen := make(map[string]struct{}, len(s.Funcs))
 	for i := len(s.Funcs) - 1; i >= 0; i-- {
-		if name := s.Funcs[i].Func.Name.Name; !slices.Contains(fns, name) {
+		name := s.Funcs[i].Func.Name.Name
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
 			fns = append(fns, name)
 		}
 	}
@@ -529,7 +533,7 @@ func (f *funcState) free(mark int) { f.nregs = mark }
 
 func (f *funcState) addConst(k bytecode.Const) uint16 {
 	if len(f.consts) > bytecode.MaxBx {
-		f.c.fail(f.curPos, "SyntaxError: too many constants in one function"+unsupportedSuffix)
+		f.c.fail(f.curPos, "SyntaxError: function needs more than 65536 constants"+unsupportedSuffix)
 	}
 	f.consts = append(f.consts, k)
 	return uint16(len(f.consts) - 1)
@@ -575,7 +579,7 @@ func makeStringConst(s string, key bool) bytecode.Const {
 
 func (f *funcState) newIC() uint16 {
 	if f.icCount > bytecode.MaxBx {
-		f.c.fail(f.curPos, "SyntaxError: too many property sites in one function"+unsupportedSuffix)
+		f.c.fail(f.curPos, "SyntaxError: function needs more than 65536 property and global variable accesses"+unsupportedSuffix)
 	}
 	f.icCount++
 	return uint16(f.icCount - 1)
@@ -644,7 +648,7 @@ func (f *funcState) bind(lbl *label) {
 func (f *funcState) patchJump(at, target int) {
 	off := target - (at + 1)
 	if off < bytecode.MinSBx || off > bytecode.MaxSBx {
-		f.c.fail(f.curPos, "SyntaxError: jump offset out of range (function too large)"+unsupportedSuffix)
+		f.c.fail(f.curPos, "SyntaxError: jump offset out of range (a jump over more than 32767 instructions)"+unsupportedSuffix)
 	}
 	w := f.code[at]
 	f.code[at] = bytecode.EncodeAsBx(bytecode.DecodeOp(w), bytecode.DecodeA(w), int16(off))
@@ -690,7 +694,10 @@ func (f *funcState) pushEnvScope(s *syntax.Scope) *envScope {
 			es.size++
 		}
 	}
-	f.emitABx(bytecode.PushEnv, 0, f.checkBx(es.size))
+	if es.size > bytecode.MaxBx {
+		f.c.fail(f.curPos, "SyntaxError: block needs more than 65535 captured bindings"+unsupportedSuffix)
+	}
+	f.emitABx(bytecode.PushEnv, 0, uint16(es.size))
 	f.envStack = append(f.envStack, es)
 	f.envDepth++
 	return es
@@ -991,12 +998,10 @@ func (f *funcState) checkDepth(d int) {
 	}
 }
 
-func (f *funcState) checkBx(n int) uint16 {
-	if n > bytecode.MaxBx {
-		f.c.fail(f.curPos, "SyntaxError: operand out of range"+unsupportedSuffix)
-	}
-	return uint16(n)
-}
+// capHint returns the Bx operand of NewArray or NewObject for a literal of
+// n elements or properties: the room the engine allocates first, a hint,
+// so a longer literal is not limited by it.
+func capHint(n int) uint16 { return uint16(min(n, bytecode.MaxBx)) }
 
 // --- functions -------------------------------------------------------------------
 
@@ -1035,7 +1040,7 @@ func (f *funcState) compileFunction(fn *syntax.Function, inferredName string) ui
 	child.out.Source = &bytecode.SourceInfo{Name: f.c.file.Name, Src: f.c.file.Src, Start: fn.Pos, End: fn.End}
 	child.compileBody()
 	if len(f.children) > bytecode.MaxBx {
-		f.c.fail(fn.Pos, "SyntaxError: too many nested functions"+unsupportedSuffix)
+		f.c.fail(fn.Pos, "SyntaxError: function needs more than 65536 nested functions"+unsupportedSuffix)
 	}
 	f.children = append(f.children, child.finish())
 	return uint16(len(f.children) - 1)
@@ -1285,6 +1290,10 @@ func (f *funcState) emitReturn(reg int) {
 		return
 	}
 	f.emitIterCloses(0)
+	if f.asyncBody() {
+		f.asyncReturn(reg)
+		return
+	}
 	if f.retLbl != nil {
 		f.derivedReturn(reg)
 		return

@@ -185,19 +185,22 @@ func errText(err error) string {
 	return err.Error()
 }
 
-// TestToGoIntoNumberStop checks a json.Number from a string: Unmarshal
-// stops at it, and the walk has written the same members before it, the
-// ones before it in sorted key order.
+// TestToGoIntoNumberStop checks a json.Number from a string: the walk stops
+// at it, having written the members before it in sorted key order, and the
+// round trip, run on the same target, gives its result and error. The
+// older implementation of encoding/json ends at the error, Go 1.27's goes
+// on with the other members.
 func TestToGoIntoNumberStop(t *testing.T) {
 	r := NewRealm()
 	v := evalValue(t, r, `({z: 1, b: "x", a: 2, c: 3})`)
 	var got, want map[string]json.Number
-	_, gerr := togoLikeRoot(r, v, &got)
+	require.False(t, r.ToGoInto(v, &got))
+	require.Equal(t, map[string]json.Number{"a": "2"}, got)
+	_, gerr := togoRoundTrip(r, v, &got)
 	_, werr := togoRoundTrip(r, v, &want)
 	require.Error(t, werr)
 	require.Equal(t, werr.Error(), errText(gerr))
 	require.Equal(t, want, got)
-	require.Equal(t, map[string]json.Number{"a": "2"}, got)
 }
 
 // TestToGoIntoIgnoresInterrupt checks that a pending interrupt is not

@@ -107,7 +107,7 @@ const (
 	flagSealed
 	flagIsPrototype
 	flagDict    // named properties live in dict (shape is the dictionary sentinel)
-	flagHasLazy // internal is *lazyProps with unresolved entries, *lazyKeys, *pendingCompile, the *Realm of a global object with pending coldGlobalKeys, or the *FunctionData of a %RegExp% with its statics pending
+	flagHasLazy // internal is *lazyProps with unresolved entries (or on a global object with pending coldGlobalKeys), *lazyKeys, *pendingCompile, the *Realm of a global object with pending coldGlobalKeys, or the *FunctionData of a %RegExp% with its statics pending
 	// flagShared marks a frozen intrinsic shared by every realm of the
 	// process. Every mutating path checks it first: [[Set]] and the other
 	// boolean methods return false (strict callers throw sharedWriteError,
@@ -133,8 +133,13 @@ type Object struct {
 	proto    *Object // [[Prototype]]; nil for null
 	class    Class
 	flags    uint8
-	internal any        // *FunctionData, *ArrayData, *String, *primitiveWrapper, *lazyProps, ...
-	dict     *dictProps // dictionary-mode named properties and/or sparse elements
+	// keepShape marks an object a host built as an API surface
+	// (KeepShape): past maxShapeProps it continues in an owned chain, as
+	// a global object does, rather than in a dictionary. The byte is
+	// padding before internal, so Object keeps its size.
+	keepShape bool
+	internal  any        // *FunctionData, *ArrayData, *String, *primitiveWrapper, *lazyProps, ...
+	dict      *dictProps // dictionary-mode named properties and/or sparse elements
 }
 
 // ArrayData is the internal payload of ClassArray objects.
@@ -150,12 +155,29 @@ type primitiveWrapper struct {
 }
 
 // lazyProps holds not-yet-materialized properties: one by one (lazy
-// globals) or all at once (install, a deferred builtin installer).
+// properties, DefineLazyProperty and DefineLazyProperties) or all at once
+// (install, a deferred builtin installer). On a global object the lazy
+// properties coexist with the cold bindings its realm has yet to define
+// (Realm.coldGlobals, builtin_defer.go): the object keeps the table, and
+// flagHasLazy, while either is pending.
 type lazyProps struct {
-	r       *Realm
-	pending map[PropertyKey]func(*Realm) Value
-	order   []PropertyKey // registration order, so resolveAllLazy is deterministic
+	r *Realm
+	// defs are the lazy properties in registration order; a defined one
+	// keeps its place without its init until none is pending.
+	defs    []lazyDef
 	install func(*Realm, *Object)
+	// index maps the key of each pending definition to its place in defs
+	// once defs may be longer than lazyLinear (grow).
+	index map[PropertyKey]int32
+}
+
+// lazyDef is one lazy property: init(r) creates its value, or batch(r, i)
+// for one of DefineLazyProperties.
+type lazyDef struct {
+	key   PropertyKey
+	init  func(*Realm) Value
+	batch func(*Realm, int) Value
+	i     int
 }
 
 var (
@@ -433,10 +455,40 @@ func (o *Object) addNamed(r *Realm, key PropertyKey, cell propCell) {
 			r.bumpEpoch(o)
 			return
 		}
+		if o.shape.owned || o == r.Global || o.keepShape {
+			o.addOwnedNamed(r, key, cell)
+			return
+		}
 		o.toDictionary(r)
 	}
 	o.dict.add(key, cell)
 	r.charge(dictEntrySize)
+	r.bumpEpoch(o)
+}
+
+// KeepShape marks o, an object a host builds as an API surface (a
+// module's exports, a class's prototype, a namespace of functions), to
+// keep a shape past maxShapeProps (64) named properties, as the global
+// object does: its properties continue in a chain of shapes of its own
+// (Shape.addOwned), so that reads of them keep their inline caches, where
+// any other object moves to dictionary mode. The chain changes only at its
+// end; a deletion before the end, new attributes, a new prototype or
+// freezing moves o to dictionary mode, as any other change of an object
+// past maxShapeProps does. What JavaScript sees of o is the same either
+// way. Mark o before it gets its 65th property; an object in dictionary
+// mode stays there.
+func (o *Object) KeepShape() { o.keepShape = true }
+
+// addOwnedNamed is addNamed for a global object past maxShapeProps, which
+// continues in an owned chain (Shape.addOwned) rather than in a dictionary:
+// its global variables keep their inline caches. An object a host marked
+// with KeepShape does the same.
+func (o *Object) addOwnedNamed(r *Realm, key PropertyKey, cell propCell) {
+	o.shape = o.shape.addOwned(r, key, cell.attrs)
+	c := cap(o.slots)
+	if o.slots = append(o.slots, cell.value); cap(o.slots) != c {
+		r.charge(cap(o.slots) * valueSize)
+	}
 	r.bumpEpoch(o)
 }
 
@@ -445,11 +497,15 @@ func (o *Object) replaceNamed(r *Realm, key PropertyKey, cell propCell) {
 	if o.flags&flagDict == 0 {
 		slot, attrs, _ := o.shape.Lookup(key)
 		o.slots[slot] = cell.value
-		if attrs != cell.attrs {
+		if attrs == cell.attrs {
+			return
+		}
+		if !o.shape.owned {
 			o.shape = o.shape.replaceAttrs(r, key, cell.attrs)
 			r.bumpEpoch(o)
+			return
 		}
-		return
+		o.toDictionary(r) // an owned chain changes only at its end (Shape.addOwned)
 	}
 	c, _ := o.dict.lookup(key)
 	if c.attrs != cell.attrs {
@@ -463,7 +519,11 @@ func (o *Object) removeNamed(r *Realm, key PropertyKey) {
 	if o.flags&flagDict == 0 {
 		slot, _, _ := o.shape.Lookup(key)
 		if slot == o.shape.count-1 {
-			o.shape = o.shape.parent
+			if o.shape.owned {
+				o.shape = o.shape.ownedPop(r)
+			} else {
+				o.shape = o.shape.parent
+			}
 			o.slots[slot] = Value{}
 			o.slots = o.slots[:slot]
 			r.bumpEpoch(o)
@@ -1257,7 +1317,11 @@ func (o *Object) SetPrototypeOf(r *Realm, proto *Object) bool {
 		r.markPrototype(proto)
 	}
 	if o.flags&flagDict == 0 {
-		o.shape = o.shape.rebase(r, r.rootShapeFor(proto))
+		if o.shape.owned {
+			o.toDictionary(r) // an owned chain changes only at its end (Shape.addOwned)
+		} else {
+			o.shape = o.shape.rebase(r, r.rootShapeFor(proto))
+		}
 	}
 	r.bumpEpoch(o)
 	return true
@@ -1309,6 +1373,9 @@ func (o *Object) Freeze(r *Realm) {
 }
 
 func (o *Object) rewriteAttrs(r *Realm, fn func(uint8) uint8) {
+	if o.flags&flagDict == 0 && o.shape.owned {
+		o.toDictionary(r) // an owned chain changes only at its end (Shape.addOwned)
+	}
 	if o.flags&flagDict == 0 {
 		if o.shape.count != 0 {
 			o.shape = o.shape.mapAttrs(r, fn)
@@ -1371,22 +1438,82 @@ func (o *Object) IsSealed() bool {
 // DefineLazyProperty registers a property whose value is computed by init on
 // first access. It is used for lazily materialized globals (Math, JSON, ...).
 // The property is installed non-enumerable, writable and configurable.
+// A key registered again while pending keeps its place and takes the new
+// init.
 func (o *Object) DefineLazyProperty(r *Realm, key PropertyKey, init func(*Realm) Value) {
+	o.lazyTable(r, 1).add(lazyDef{key: key, init: init})
+}
+
+// DefineLazyProperties registers the properties keys, as DefineLazyProperty
+// does each: the first access to keys[i] defines it with the value of
+// init(r, i). A key keys lists more than once is registered once, in the
+// place of its first occurrence, with the index of its last. One call costs
+// a few allocations however many keys it registers, and on a global object
+// it leaves the builtin globals the realm has yet to define pending too.
+func (o *Object) DefineLazyProperties(r *Realm, keys []PropertyKey, init func(r *Realm, i int) Value) {
+	lp := o.lazyTable(r, len(keys))
+	for i, k := range keys {
+		lp.add(lazyDef{key: k, batch: init, i: i})
+	}
+}
+
+// lazyLinear is the length of lazyProps.defs up to which find scans it;
+// past it a map indexes the pending definitions.
+const lazyLinear = 32
+
+// add registers d, replacing the pending definition of its key.
+func (lp *lazyProps) add(d lazyDef) {
+	if i := lp.find(d.key); i >= 0 {
+		lp.defs[i] = d
+		return
+	}
+	if lp.index != nil {
+		lp.index[d.key] = int32(len(lp.defs))
+	}
+	lp.defs = append(lp.defs, d)
+}
+
+// grow makes room for n more definitions, and indexes the pending ones
+// once there may be more than lazyLinear.
+func (lp *lazyProps) grow(n int) {
+	lp.defs = slices.Grow(lp.defs, n)
+	if lp.index == nil && len(lp.defs)+n > lazyLinear {
+		lp.index = make(map[PropertyKey]int32, len(lp.defs)+n)
+		for i := range lp.defs {
+			if lp.defs[i].pending() {
+				lp.index[lp.defs[i].key] = int32(i)
+			}
+		}
+	}
+}
+
+// lazyTable returns the lazy properties of o, with room for n more: a
+// lazyKeys object, %RegExp.prototype% with compile pending, %RegExp% with
+// its statics pending and an object with a deferred install define their
+// properties first, a host placeholder materializes. A global object with
+// cold bindings pending keeps them: its table belongs to its realm, which
+// defines a cold binding before a lazy property of the same key.
+func (o *Object) lazyTable(r *Realm, n int) *lazyProps {
 	o.mustBeMutable()
-	switch o.internal.(type) {
-	case *Realm, *lazyKeys, *pendingCompile:
+	switch in := o.internal.(type) {
+	case *lazyProps:
+		if in.install == nil {
+			in.grow(n)
+			return in
+		}
+		o.runInstall(in)
+	case *Realm:
+		r = in
+	case *lazyKeys, *pendingCompile:
 		o.resolveAllLazy()
 	default:
 		o.materializeHost()
 	}
-	lp, _ := o.internal.(*lazyProps)
-	if lp == nil {
-		lp = &lazyProps{r: r, pending: make(map[PropertyKey]func(*Realm) Value, 8)}
-		o.internal = lp
-	}
-	lp.pending[key] = init
-	lp.order = append(lp.order, key)
+	lp := &lazyProps{r: r}
+	lp.grow(n)
+	o.internal = lp
 	o.flags |= flagHasLazy
+	return lp
 }
 
 // lazyPending reports whether a lookup of key on o, which has flagHasLazy,
@@ -1394,7 +1521,7 @@ func (o *Object) DefineLazyProperty(r *Realm, key PropertyKey, init func(*Realm)
 func (o *Object) lazyPending(key PropertyKey) bool {
 	switch lp := o.internal.(type) {
 	case *lazyProps:
-		return lp.install != nil || lp.pending[key] != nil
+		return lp.install != nil || lp.find(key) >= 0 || o == lp.r.Global && lp.r.coldGlobalIndex(key) >= 0
 	case *lazyKeys:
 		return lp.isPending(key)
 	case *Realm:
@@ -1463,16 +1590,80 @@ func (o *Object) resolveLazy(key PropertyKey) bool {
 		o.runInstall(lp)
 		return true
 	}
-	init, ok := lp.pending[key]
-	if !ok {
-		return true
+	if o == lp.r.Global {
+		lp.r.resolveColdGlobal(key)
 	}
-	delete(lp.pending, key)
-	if len(lp.pending) == 0 {
-		o.flags &^= flagHasLazy
+	if i := lp.find(key); i >= 0 {
+		lp.define(o, i)
 	}
-	o.addNamed(lp.r, key, propCell{value: init(lp.r), attrs: attrHidden})
 	return true
+}
+
+// find returns the index in lp.defs of the pending lazy property key, -1
+// if there is none.
+func (lp *lazyProps) find(key PropertyKey) int {
+	if lp.index != nil {
+		if i, ok := lp.index[key]; ok {
+			return int(i)
+		}
+		return -1
+	}
+	for i := range lp.defs {
+		if lp.defs[i].key == key && lp.defs[i].pending() {
+			return i
+		}
+	}
+	return -1
+}
+
+// pending reports whether d is still to define.
+func (d *lazyDef) pending() bool { return d.init != nil || d.batch != nil }
+
+// anyPending reports whether any definition of lp is pending.
+func (lp *lazyProps) anyPending() bool {
+	if lp.index != nil {
+		return len(lp.index) != 0
+	}
+	for i := range lp.defs {
+		if lp.defs[i].pending() {
+			return true
+		}
+	}
+	return false
+}
+
+// define defines the pending lazy property lp.defs[i] on o, replacing an
+// own property of its key: a cold global binding of the same key, which
+// the realm defines first (resolveLazy), or one the host defined itself.
+// The definition leaves the table before init runs, so a lookup init makes
+// of the key finds it absent rather than running init again. A defined
+// entry keeps its place until none is pending, which empties the table.
+func (lp *lazyProps) define(o *Object, i int) {
+	d := lp.defs[i]
+	lp.defs[i].init, lp.defs[i].batch = nil, nil
+	if lp.index != nil {
+		delete(lp.index, d.key)
+	}
+	if !lp.anyPending() {
+		clear(lp.defs)
+		lp.defs, lp.index = lp.defs[:0], nil
+		if o != lp.r.Global || lp.r.coldGlobals == 0 {
+			o.flags &^= flagHasLazy
+			o.internal = nil
+		}
+	}
+	var v Value
+	if d.init != nil {
+		v = d.init(lp.r)
+	} else {
+		v = d.batch(lp.r, d.i)
+	}
+	cell := propCell{value: v, attrs: attrHidden}
+	if _, _, ok := o.lookupNamed(d.key); ok {
+		o.replaceNamed(lp.r, d.key, cell)
+		return
+	}
+	o.addNamed(lp.r, d.key, cell)
 }
 
 // resolveLazyWrite prepares o for a write, redefinition or deletion of
@@ -1509,8 +1700,14 @@ func (o *Object) resolveAllLazy() {
 		o.runInstall(lp)
 		return
 	}
-	for _, key := range lp.order {
-		o.resolveLazy(key)
+	// A global object defines its pending cold bindings first, in their
+	// order, as it did before the host's lazy properties were registered.
+	if o == lp.r.Global {
+		lp.r.resolveColdGlobals()
 	}
-	lp.order = nil
+	for i := 0; i < len(lp.defs); i++ {
+		if lp.defs[i].pending() {
+			lp.define(o, i)
+		}
+	}
 }

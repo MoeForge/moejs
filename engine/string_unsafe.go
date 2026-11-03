@@ -6,8 +6,9 @@ import (
 	"unsafe"
 )
 
-// isASCII reports whether every byte of s is < 0x80, scanning eight bytes at
-// a time (SWAR).
+// isASCII reports whether every byte of s is < 0x80, scanning 32 bytes at a
+// time (SWAR, four words or-ed together), then eight, then one: every
+// FromGoString of text scans it once.
 //
 // GC safety: unsafe.Slice(unsafe.StringData(s), len(s)) produces a []byte
 // view over the string's own backing memory without copying. The view never
@@ -19,9 +20,17 @@ func isASCII(s string) bool {
 		return true
 	}
 	b := unsafe.Slice(unsafe.StringData(s), len(s))
+	for len(b) >= 32 {
+		x := binary.LittleEndian.Uint64(b) | binary.LittleEndian.Uint64(b[8:]) |
+			binary.LittleEndian.Uint64(b[16:]) | binary.LittleEndian.Uint64(b[24:])
+		if x&swarMSB != 0 {
+			return false
+		}
+		b = b[32:]
+	}
 	i := 0
 	for ; i+8 <= len(b); i += 8 {
-		if binary.LittleEndian.Uint64(b[i:])&0x8080808080808080 != 0 {
+		if binary.LittleEndian.Uint64(b[i:])&swarMSB != 0 {
 			return false
 		}
 	}
@@ -178,6 +187,10 @@ func (s *String) published() (String, bool) {
 	}
 	return String{p: d, n: s.n, kind: strUTF16}, true
 }
+
+// bytesString returns the bytes of b, which the caller never writes again,
+// as a string without copying them.
+func bytesString(b []byte) string { return unsafe.String(unsafe.SliceData(b), len(b)) }
 
 // unitsPtr is what a strUTF16 String keeps of u in p: the address of its
 // first unit. The String covers u[:len(u)] only.

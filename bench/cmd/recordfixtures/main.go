@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Calcium-Ion/moejs/bench"
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 func main() {

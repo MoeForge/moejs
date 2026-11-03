@@ -65,7 +65,8 @@ import (
 // an empty interface (but in a json.RawMessage, which receives the text of
 // its value, rawInto), a target type that unmarshals itself
 // (json.Unmarshaler, encoding.TextUnmarshaler; not json.RawMessage) or has
-// an embedded or ",string" field, a
+// an embedded field or a tag jsonStructFields leaves to the round trip
+// (",string" among them), a
 // non-empty interface, an interface holding a pointer, a []byte from a
 // string, and any value the target's type rejects. Strings are not copied:
 // the Go string of an ASCII string is the one v holds. err is an interrupt,
@@ -569,10 +570,11 @@ func (d *jsonDecoder) object(o *Object, rv reflect.Value, jt *jsonType, depth in
 // and of the members whose keys have one Go string only the last (ToGo's
 // map holds it): the walk takes them in that order too, so that what it
 // writes before it stops is what the round trip writes first, also when
-// the round trip stops at an error further on (Unmarshal ends at the error
-// of a type that unmarshals itself or of a json.Number from a string), and
-// two members that go to one field, by case folding, are written in the
-// round trip's order.
+// the round trip meets an error further on (at a type that unmarshals
+// itself or a json.Number from a string, where the walk stops too: the
+// older encoding/json ends Unmarshal there, Go 1.27's goes on with the
+// other members), and two members that go to one field, by case folding,
+// are written in the round trip's order.
 func (d *jsonDecoder) togoObject(o *Object, rv reflect.Value, jt *jsonType, depth int) bool {
 	isMap := rv.Kind() == reflect.Map
 	if isMap {
@@ -1177,8 +1179,8 @@ type jsonType struct {
 	// itself from text (Unmarshal parses or decodes such keys).
 	mapKeys bool
 	// byExact and byFold index the fields of a struct by encoding/json's
-	// rules; byExact is nil for a struct with an embedded or ",string"
-	// field.
+	// rules; byExact is nil for a struct with an embedded field or a tag
+	// that jsonStructFields leaves to the round trip.
 	byExact map[string]int
 	byFold  map[string]int
 	// holdsAny: jsonHoldsAny.
@@ -1239,10 +1241,15 @@ func jsonDeref(t reflect.Type) reflect.Type {
 	return t
 }
 
-// jsonStructFields indexes the fields Unmarshal decodes into, for a struct
-// without embedded fields: exported, not tagged "-", named by a valid tag
-// or the field name; of several fields with one name, the only tagged one,
-// or none. byFold holds the first field of each folded name.
+// jsonStructFields indexes the fields Unmarshal decodes into: exported, not
+// tagged "-", named by the tag or, when it has no name, the field name; of
+// several fields with one name, the only tagged one, or none. byFold holds
+// the first field of each folded name. Both are nil, for the round trip,
+// when a field is embedded or the tag of one Unmarshal decodes into has a
+// name the older encoding/json rejects or options jsonOptsIgnored does not
+// pass: the walk does not handle ",string", and Go 1.27's encoding/json,
+// built on its v2 code, takes such a name or a part of it and reads
+// options the older one ignores (case:strict, embed, format).
 func jsonStructFields(t reflect.Type) (byExact, byFold map[string]int) {
 	var names []string
 	var index []int
@@ -1260,14 +1267,14 @@ func jsonStructFields(t reflect.Type) (byExact, byFold map[string]int) {
 			continue
 		}
 		name, opts, _ := cutTag(tag)
-		if jsonTagHas(opts, "string") {
+		if name != "" && !jsonValidTag(name) || !jsonOptsIgnored(opts) {
 			return nil, nil
 		}
-		valid := jsonValidTag(name)
-		if !valid {
+		named := name != ""
+		if !named {
 			name = sf.Name
 		}
-		names, index, tagged = append(names, name), append(index, i), append(tagged, valid)
+		names, index, tagged = append(names, name), append(index, i), append(tagged, named)
 	}
 	byExact = make(map[string]int, len(names))
 	byFold = make(map[string]int, len(names))
@@ -1313,16 +1320,29 @@ func cutTag(tag string) (name, opts string, found bool) {
 	return tag, "", false
 }
 
-// jsonTagHas is encoding/json's tagOptions.Contains.
-func jsonTagHas(opts, name string) bool {
+// jsonOptsIgnored reports whether opts, the options of a json tag, are ones
+// every implementation of encoding/json ignores in Unmarshal: empty ones,
+// case:ignore (which matches as without it) and words of ASCII letters,
+// digits and underscores, which the v2 code reads whole, but string, case,
+// embed, format, and inline and unknown (read by Go 1.25 and 1.26 with
+// GOEXPERIMENT=jsonv2). A later Go may read other words.
+func jsonOptsIgnored(opts string) bool {
 	for opts != "" {
 		var o string
 		o, opts, _ = cutTag(opts)
-		if o == name {
-			return true
+		switch o {
+		case "", "case:ignore":
+			continue
+		case "string", "case", "embed", "format", "inline", "unknown":
+			return false
+		}
+		for i := range len(o) {
+			if c := o[i]; !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_') {
+				return false
+			}
 		}
 	}
-	return false
+	return true
 }
 
 // jsonValidTag is encoding/json's isValidTag.

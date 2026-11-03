@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // classModule holds the class micro programs (shaped like BenchmarkMicro:

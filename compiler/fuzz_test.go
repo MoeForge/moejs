@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // FuzzCompile compiles whatever parses, as a module or as a script. A

@@ -3,7 +3,7 @@ package moejs
 import (
 	"encoding/json"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // Unmarshal stores v in the value target points to as json.Unmarshal stores

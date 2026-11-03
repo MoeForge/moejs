@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 	"unsafe"
 )
 
@@ -50,6 +50,13 @@ func (r *Realm) asyncIterOp(fd *FunctionData, base int, w uint32, pc int) (int, 
 		res := regs[a+2]
 		if !res.IsObject() {
 			return pc, r.TypeError("Iterator result %s is not an object", r.DisplayString(res))
+		}
+		if v, done, ok := r.iterResultFields(res.AsObject()); ok {
+			if ToBoolean(done) {
+				return pc + int(int16(w>>16)), nil
+			}
+			regs[a+2] = v
+			return pc, nil
 		}
 		done, err := res.AsObject().Get(r, StringKey(AtomDone), res)
 		if err != nil {
@@ -317,7 +324,9 @@ func (r *Realm) asyncFromSyncContinue(s *asyncFromSyncIter, res Value, p *Object
 		return r.rejectWith(p, err)
 	}
 	closing := closeOnRejection && !done
-	wrapper, err := r.promiseResolve(v)
+	// The value wrapper is PromiseResolve's as an Await's (awaitTarget):
+	// none for a value that is no thenable, whose step is queued at once.
+	wrapper, err := r.awaitTarget(v)
 	if err != nil {
 		if closing {
 			if ie := r.asyncFromSyncClose(s, err); ie != nil {
@@ -326,7 +335,13 @@ func (r *Realm) asyncFromSyncContinue(s *asyncFromSyncIter, res Value, p *Object
 		}
 		return r.rejectWith(p, err)
 	}
-	r.promiseReact(wrapper, &asyncFromSyncStep{sync: s, promise: p, done: done, close: closing})
+	x := &asyncFromSyncStep{sync: s, promise: p, done: done, close: closing}
+	x.re.reactor = x
+	if wrapper != nil {
+		r.performPromiseThen(wrapper, &x.re)
+	} else {
+		r.enqueue(job{reaction: &x.re, arg: v})
+	}
 	return ObjectValue(p), nil
 }
 
@@ -341,9 +356,11 @@ func (r *Realm) asyncFromSyncClose(s *asyncFromSyncIter, err error) error {
 	return nil
 }
 
-// asyncFromSyncStep reacts to the awaited value of a sync result: the
-// promise p of the async-from-sync method settles with it.
+// asyncFromSyncStep reacts to the awaited value of a sync result through
+// the reaction it starts with: the promise p of the async-from-sync method
+// settles with it.
 type asyncFromSyncStep struct {
+	re          promiseReaction
 	sync        *asyncFromSyncIter
 	promise     *Object
 	done, close bool

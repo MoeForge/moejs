@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // ---------------------------------------------------------------- shared

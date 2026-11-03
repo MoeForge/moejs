@@ -1,6 +1,6 @@
 # moejs guide
 
-The [package documentation](https://pkg.go.dev/github.com/Calcium-Ion/moejs)
+The [package documentation](https://pkg.go.dev/github.com/MoeForge/moejs)
 describes every function, and the [README](../README.md) has a complete
 example.
 
@@ -50,6 +50,16 @@ JavaScript first reads its content, and is then held as UTF-16 as well;
 its length is known without decoding it. Under a memory limit it is charged
 as if decoded when it is made.
 
+A runtime also keeps a finished call's values reachable from the engine's
+scratch, the interpreter's registers and frame records, until a later call
+overwrites them. What a call made and then dropped can therefore stay in
+Go's heap after the call returns, where the memory limit's measurements do
+not see it, because JavaScript can no longer reach it. A host that pools
+runtimes calls `ReleaseCallData` between requests, which drops that scratch
+along with the request's data. The `eventloop` package's `Run` drops the
+scratch when it ends, so a runtime reused for one loop program after
+another does not keep the last program's values.
+
 Under the default `GOGC=100`, a Go process's resident memory runs at
 roughly twice its live heap, because the collector lets the heap grow by
 as much as is live before it collects again. It runs higher with many
@@ -62,6 +72,15 @@ alone, and keep `GOGC` at its default. Throughput is then unaffected until
 the process nears the limit. A `GOMEMLIMIT` below the live heap makes the
 collector run continuously, and throughput drops sharply. Lowering `GOGC`
 trades throughput for memory across the whole process.
+
+A promise an async function call returned keeps only its result once the
+call has returned or thrown, and never the call's frame: while the call
+waits at an `await`, the promise it awaits keeps the frame, its locals and
+the scope it captured, so a call left waiting on a promise that will never
+settle and that nothing else holds (`await new Promise(() => {})`) is freed
+even while its own promise is held. A promise `then` returned keeps its
+handlers until the promise it came from settles. To free them, drop such
+promises or settle what they wait on.
 
 As an example, take an 8.1 MB JSON body with five base64 images, 32
 requests in flight with `GOMAXPROCS=8`, and a host that keeps each body
@@ -633,6 +652,23 @@ the `Function` constructors and `EvalScript` then throw an `EvalError`.
 `Compile` and `CompileScript`, which the host calls itself, ignore both
 options.
 
+### Size limits
+
+The bytecode of one function, or of a script's or module's top level,
+holds at most 256 registers, 65,536 constants (names, strings, and numbers
+outside -32,768 to 32,767), 65,536 property and global variable accesses
+and 65,536 nested functions, and none of its jumps spans more than 32,767
+instructions. Code past a limit does not compile: `Compile`,
+`CompileScript` and the others return a `*SyntaxError` that names the
+limit, and `eval` and the `Function` constructors throw one. A script with
+100,000 `var` declarations runs, since the names a script declares are
+listed apart from its constants, but 100,000 `var x = …` declarations do
+not: each assignment names its global. Code that large compiles when it is
+split into functions, scripts or modules, each with limits of its own.
+
+`RunScript`, `Load` and `Link` return an error for a nil `*Script` or
+`*Module`, which is what a failed compile returns.
+
 ## Values
 
 ### Go values in
@@ -1180,11 +1216,14 @@ a fetch that uses the signal does.
 
 ### Streaming
 
-A response body is a `ReadableStream`. Its source reads the
-`http.Response` body on a goroutine only when the stream asks for a chunk:
-when a read waits and the queue is empty. The Go side never reads ahead of
-JavaScript. A slow reader therefore holds the server back through TCP flow
-control, and memory stays bounded by the socket buffers.
+A response body is a `ReadableStream`. From the stream's first read on, a
+goroutine reads the `http.Response` body at most one chunk ahead of what
+JavaScript took: it reads a chunk, which waits until the stream takes it,
+and reads the next one while JavaScript works on that one, so that the
+wait for the network overlaps JavaScript's work. A read takes the chunk
+read ahead at once, or waits for the read that runs. A slow reader
+therefore still holds the server back through TCP flow control, and
+memory stays bounded by the socket buffers and one chunk per body.
 
 ```js
 const response = await fetch(url, { method: "POST", body, signal });
@@ -1197,9 +1236,10 @@ for (;;) {
 ```
 
 Each chunk is a `Uint8Array` over the bytes that one read of the body
-returned. A chunk that fills at least half of the read buffer is handed
-over without a copy; a smaller one is copied into a buffer of its own
-size, and the read buffer serves the next read. The read
+returned: what had arrived, up to the read buffer's size. A chunk that
+fills at least half of the read buffer is handed over without a copy; a
+smaller one is copied into a buffer of its own size on the goroutine, and
+the read buffer serves the next read. The read
 buffer starts at 16 KiB and grows to 256 KiB while reads fill it; under a
 `MemoryLimit` it grows to an eighth of the limit at most, and no less than
 4 KiB, so that a script that keeps one chunk at a time stays well under
@@ -1214,7 +1254,9 @@ Every byte handed to JavaScript is charged to the runtime's
 `MemoryLimit` before it is allocated, on the loop; under `eventloop` the
 limit bounds what the run keeps and allocates across its tasks, as the
 memory limit section above describes. A streamed chunk is charged in the
-task that hands it over. A body read whole is charged as it arrives: a
+task that hands it over. Until then, the chunk read ahead and the read
+buffer count in every measurement of what the run keeps while JavaScript
+reaches the stream, though only Go holds them. A body read whole is charged as it arrives: a
 goroutine reads up to a window past what was charged (the largest read
 buffer), or to the body's end, and the loop charges those bytes before
 the next window is read. Go holds at most one window more of the body than
@@ -1287,8 +1329,10 @@ is not decoded.
   reject with.
 - The end of the body, an error, a cancel, an abort and `Close` each close
   the body and end the request's context at once, without waiting for the
-  garbage collector. As a last resort, the body of a response that
-  JavaScript drops unread is closed when the collector frees it. That can
+  garbage collector; the goroutine reading the body stops, and a chunk it
+  read ahead is dropped. As a last resort, the body of a response that
+  JavaScript drops, unread or partly read, is closed when the collector
+  frees it. That can
   happen much later, so a host should not rely on it: read or cancel
   bodies, and call `Close`.
 
@@ -1362,6 +1406,308 @@ shared frozen builtins have no such hook.
   parse.
 - `performance` has `now()`, `timeOrigin` and `toJSON()`, without marks,
   measures or entries.
+
+## Node.js modules
+
+### Installing
+
+The `node` package gives a runtime `node:fs`, `node:fs/promises` and
+`node:buffer`, also under their bare names `fs`, `fs/promises` and
+`buffer`, for programs that read and write the files of a workspace, such
+as the programs a coding agent writes for a sandbox. It runs on an event
+loop, and only Go's standard library does the I/O.
+
+```go
+imp := node.Importer(hostImporter) // nil when the host has none
+rt := moejs.NewRuntime(moejs.Options{Importer: imp, MemoryLimit: 256 << 20})
+loop, err := eventloop.New(rt, eventloop.Options{})
+api, err := node.InstallLoop(loop, node.Options{
+	FS: &node.FSOptions{
+		Root:  "/srv/sandboxes/42", // the host directory
+		Mount: "/workspace",        // where JavaScript sees it
+		Cwd:   "/workspace/app",    // what relative paths resolve against
+		Write: false,               // the default: read-only
+		Allow: func(op, path string) error {
+			if filepath.Base(path) == ".env" {
+				return fs.ErrNotExist
+			}
+			return nil
+		},
+	},
+	Buffer: true, // the global Buffer
+})
+defer api.Close()
+```
+
+`node.Importer` wraps the host's `Importer`: it resolves the package's
+specifiers to its modules and passes every other specifier to the host's
+`Resolve`, so `import()` of the host's own modules works as before.
+`node.Resolver` does the same for a `Resolver` given to `moejs.Link`, for
+programs that import the modules statically. The modules are compiled
+once per process and read what they export from their `import.meta`,
+which `Install` fills for its own runtime: a runtime without `Install`, or
+whose options have no `FS`, fails `import("node:fs")` with an `Error`.
+`node:buffer` works without `FS`.
+
+`InstallLoop` installs the package on a loop of package `eventloop`;
+`Install` takes any `node.Loop` (see below). Either is called once per
+runtime, before the loop runs or on it. `Close` closes the root directory
+and fails the operations still waiting for a worker with `EBADF`; the
+file system functions fail with `EBADF` after it.
+
+### Your own loop
+
+A host that drives its own event loop, rather than package `eventloop`'s,
+gives `Install` a `node.Loop`:
+
+```go
+type Loop interface {
+	Runtime() *moejs.Runtime
+	Post(task func(*moejs.Runtime) error) bool
+	Hold() (release func())
+}
+```
+
+- `Post` queues a task, from any goroutine. The loop runs it on the
+  runtime's goroutine, between its other callbacks, as it runs a callback,
+  and handles its error as a callback's: an interrupt (the memory limit's)
+  and an exception (one that a callback of `fs.readFile` threw) end the
+  program, as an uncaught exception ends Node.js. A task runs the promise
+  jobs it queues before it returns, so the loop runs nothing for it. `Post`
+  reports false once the loop is over, and the task is dropped.
+- `Hold` keeps the loop from ending while an operation is in flight: a
+  loop with nothing else to do waits while a hold is out. It is called on
+  the runtime's goroutine; `release` comes from any goroutine, once, after
+  the operation's `Post`.
+
+Each promise and callback operation takes one hold when it starts and
+posts one task, which settles its promise or calls its callback, when its
+work is done. The synchronous functions need neither. A loop that wakes on
+a channel implements both in a few lines: `Post` appends to a queue under
+a mutex and signals the channel, `Hold` counts, and the loop's wait for
+work treats a count above zero as work to come. The package's tests run
+it on such a loop.
+
+### Sandbox
+
+Every path resolves inside `FSOptions.Root`:
+
+- A relative path joins `Cwd`. An absolute path must lie under `Mount`
+  (by default the root's own host path). A path outside it fails with
+  `EACCES`, so does the root's host path when `Mount` differs from it.
+- The rest of the path goes to the operating system's resolution,
+  confined to the root through `os.Root` (and on Linux on amd64 and arm64,
+  `openat2` with `RESOLVE_BENEATH`, which resolves a path in one call).
+  `..` and symbolic links are resolved as the system resolves them, after
+  the links before them, and one that leaves the root fails with `EACCES`.
+  A link inside the root works, also one with an absolute target under
+  the root. `realpath`, `glob` and `readlink` return paths under `Mount`.
+- Without `Write`, every function that changes the file system fails with
+  `EROFS`, as does `access` with `W_OK` and `readFile` with a writing
+  `flag`.
+- `Allow(op, path)` sees each access before it is made: `op` is `"read"`
+  or `"write"`, as in Node.js's permission model, and `path` is absolute
+  and under `Mount`. An error that `errors.Is` matches with
+  `fs.ErrNotExist` fails the access with `ENOENT`, a `syscall.Errno` with
+  that errno, any other error with `EACCES`. See the next section for
+  what it is asked and what it can guarantee.
+- The package creates no links: `cp` copies what a link leads to.
+- Confinement is by path. A hard link that the host made inside the root
+  to a file outside it is a path inside the root, and the program reads
+  the file through it. Programs cannot make links.
+- On Windows, `\` and `/` both separate a path's names, as in Node.js.
+- On Linux, a stat, an open or a listing of a name in a directory the
+  package resolved within the last millisecond takes one system call: the
+  package keeps a descriptor of the directory, opened beneath the root,
+  and uses it only with that one name, without following a link (a link
+  as the name is followed from the root, beneath it). The package's own
+  `rename`, `rm`, `rmdir` and `unlink` drop the descriptors before they
+  return, so the program's own changes, which cannot leave the root,
+  are seen at once. What the cache adds is a window: for up to a
+  millisecond after a directory was resolved, a descriptor follows the
+  directory itself, not its path. If another process renames or replaces
+  the directory meanwhile, the program still reaches it at its new place,
+  outside the root too: another process that moves a directory out of the
+  root, writes into it there and moves it back can have the program read
+  what it wrote. Without the cache, a path is resolved anew each time,
+  and the only window is the one between the resolution of a path and its
+  use, which the os.Root path has as well. Set
+  `FSOptions.NoDescriptorCache` when other processes may rearrange the
+  tree while the program runs; a `stat` below the root then takes three
+  system calls rather than one.
+
+### The Allow hook
+
+The hook is asked about the path as the program wrote it, one directory
+at a time, and then about each name the resolution of the path reaches,
+the names a link leads to included, each before anything about it is
+looked up: the directories as `"read"`, the path itself as the
+operation's `op`. A denied directory fails the whole operation with the
+hook's error, so a program learns nothing about what it holds: not
+which names exist in it, not their kinds, not where its links lead. A
+link is followed only where the hook allows both the link and its
+target. `realpath` asks the same.
+
+The hook also guards what lies below a directory that an operation
+changes as a whole. `rm` with `recursive` asks `"write"` about every
+entry it would remove and removes nothing when one is denied; `rename`
+of a directory asks about each entry below it, at its old path and at its
+new one; `mkdir` with `recursive` asks about each directory it creates.
+
+What the hook cannot guarantee:
+
+- It guards paths, not files. A file has the path a rename gives it, and
+  a policy written as paths holds for the program's renames only as far
+  as the paths it names: a rename of an ancestor moves what a prefix
+  policy denies to a path it may allow, unless the policy also denies the
+  rename (the hook is asked about every entry the rename moves). Where a
+  policy must hold whatever the program renames, give it `Write: false`,
+  or a `Root` narrowed to the area it may write.
+- It guards names, not listings: `readdir` and `glob` of an allowed
+  directory list every name in it, the denied ones too.
+- The path is resolved before the access is made. A program that renames
+  a link into place between the two, from another operation in flight,
+  can race the hook; the root holds either way.
+- On a file system that ignores case, as macOS's and Windows's do by
+  default, the hook gets the program's spelling of each name, which the
+  system resolves whatever its case: compare names case-insensitively
+  there.
+- The hook is called often, once for each directory of a path and more
+  for a recursive `rm` or a `rename`: keep it cheap.
+
+### Errors
+
+The errors are Node.js's: an `Error` whose own properties are `errno`,
+`code`, `syscall`, `path` and, for `rename`, `copyFile` and `cp`, `dest`,
+with Node's message, such as
+`ENOENT: no such file or directory, open 'a.txt'`. `path` is the path as
+the program gave it. The syscall names and the messages follow Node.js 24
+case by case (`readFile` of a directory is `EISDIR` for `read`, without a
+path; `realpathSync` names the component that failed): the package's
+tests run the same cases in Node.js and compare. Bad arguments throw
+Node's `TypeError` and `RangeError` with `code`s such as
+`ERR_INVALID_ARG_TYPE`. A function of Node's `node:fs` that the package
+does not implement throws `ERR_METHOD_NOT_IMPLEMENTED`.
+
+### What is there
+
+- Reading: `readFile`, `readdir` (`withFileTypes`, `recursive`, `encoding`),
+  `stat` and `lstat` (`Stats` with its fields, the lazy dates and the
+  `is*` methods; `throwIfNoEntry`), `access` and `fs.constants`,
+  `exists` and `existsSync`, `realpath`, `readlink`, and `glob` with
+  `globSync` (`cwd`, `exclude` as patterns or a function, `withFileTypes`,
+  `followSymlinks`). Each has the synchronous, the callback and the
+  promise form; `fs.promises.glob` returns an async iterator.
+- Writing, with `Write`: `writeFile`, `appendFile`, `mkdir` (`recursive`),
+  `rm` (`recursive`, `force`), `rmdir`, `unlink`, `rename`, `copyFile` and
+  `cp` (`recursive`, `force`, `errorOnExist`).
+- `Buffer`, a subclass of `Uint8Array`: `from` (a string in `utf8`, `hex`,
+  `base64`, `base64url`, `latin1`/`binary`, `ascii` or `utf16le`/`ucs2`, an
+  array, an array-like, an `ArrayBuffer` whose memory it shares, a
+  Buffer's JSON), `alloc`, `allocUnsafe`, `concat`, `isBuffer`,
+  `isEncoding`, `byteLength`, `compare`, and the methods `toString`,
+  `write`, `slice` and `subarray` (both share memory), `equals`, `compare`,
+  `indexOf`, `lastIndexOf`, `includes`, `toJSON`, `fill`, `copy`,
+  `swap16/32/64`, the reads and writes of 8, 16 and 32-bit integers and of
+  floats and doubles in both byte orders, and of 1 to 6-byte integers.
+  Decoding follows the WHATWG UTF-8 decoder, as Node.js does.
+
+### Order
+
+`readdir` returns the names sorted by their bytes, as Node.js does on
+Unix, where libuv sorts them. A recursive listing follows Node's order:
+breadth first for the synchronous and callback forms, and Node's stack
+order for the promise form; links to directories are followed, as
+Node.js follows them. `glob` returns its matches sorted; Node.js
+returns them in the order of its walk, which it does not document.
+`fs.promises.glob` returns an async iterator, as Node's async generator
+does, and a bad pattern or option rejects its `next()` rather than throw.
+The patterns are minimatch's, as Node's: `*`, `?`, classes, `**`, braces and
+extglobs, without dotfiles unless a pattern names the dot, and `**`
+follows no link unless `followSymlinks` is set; a backslash separates
+names, as in Node.js, rather than escape a character. A segment without
+extglobs is matched in time linear in the name; one with them is
+compiled to a Go regular expression, as minimatch compiles a RegExp, which
+matches in linear time and bounded memory. `!(...)`, which a regular
+expression of RE2 cannot express, is matched by trying the splits of the
+name, with a bound on the work and the runtime's interrupt checked: a
+segment may hold one, outside any other extglob, and a name that takes
+too long fails the walk. A pattern is at most 64 KiB, as minimatch's,
+and so are all the distinct strings of one call's patterns and `exclude`
+patterns together, each copied and compiled once however many times an
+array repeats it, and at most 65536 of them. The braces of a pattern
+expand to its first 4096 patterns, and those of one call's patterns to
+at most 1 MiB in all: the expansion takes time in proportion to what it
+produces, stops as soon as it passes 1 MiB, nests braces at most 1024
+deep, and checks the runtime's interrupt as it goes. A segment is parsed
+in time linear in its length, a run of literal characters as one token,
+with extglobs nested at most 256 deep and at most 65536 tokens a call.
+The expressions of a segment and of the whole call are bounded in size. What the expansion and the expressions take is
+charged to the memory limit, and the runtime's interrupt is checked
+between the expressions. The work of matching, the bytes of the
+names times the size of the expressions run over them, is counted: the
+runtime's interrupt and `Close` are checked as it grows, and a call whose
+work passes its bound fails with a `TypeError`. A pattern or a call past
+these bounds is a `TypeError`.
+
+### Event loop and limits
+
+The synchronous functions run on the loop, as in Node.js. The promise and
+callback forms do their file system work on a pool of
+`FSOptions.Workers` goroutines (4 by default, the size of libuv's pool);
+the operations beyond wait in a queue, not on goroutines of their own.
+They settle on the loop in a task of its tasks phase, and an operation in
+flight keeps `Run` alive. An exception in a callback stops the loop as a
+timer callback's does.
+
+What the package hands to JavaScript, file contents, names and paths, is
+charged to the memory limit (`moejs.Options.MemoryLimit`) on the loop,
+before it is created. A file larger than the limit fails before it is
+read, with a `RangeError` whose code is `ERR_FS_FILE_TOO_LARGE`, as Node
+fails one larger than 2 GiB; a program that keeps more than the limit of
+what it reads stops with the limit's error. The workers hold at most the
+limit at once of what they read and list for JavaScript: a worker takes
+a file's size from that budget before it reads the file. A listing,
+recursive or a glob's, is charged (or taken from the budget) as it
+grows, not once it is done. A result whose work is done holds its part
+until the loop settles it. An operation whose growth does not fit waits,
+as backpressure, for what will be released without it: the results the
+loop is to settle, and the operations that began before it. So none waits
+on itself and no two wait on each other; the oldest operation goes over
+the budget rather than wait on younger ones, and it alone does, once the
+older ones and the results have released what they held, so the workers
+hold at most the limit and that one operation's growth. A wait ends at
+the runtime's interrupt and at `Close`. An operation that alone needs more than the
+limit, such as a listing larger than it, fails as that operation with a
+`RangeError` the program can catch, in either form, rather than stop the
+program. The budget is released on every path: when the loop settles a
+result, when the work fails, when an interrupt stopped the work (the
+result is dropped and its promise stays pending, as an interrupt leaves
+promises), when the loop is terminated and refuses the settlement, and
+at `Close`. The operations of an interrupted program that have not
+started on a worker when the interrupt comes are dropped too, rather than
+run for a program the host stopped, so a runtime that the host clears
+and runs again does not wait for them.
+
+The long walks, a recursive `readdir`, `glob`, `cp`, a recursive `rm` and
+the hook's walks, and the long loops of `Buffer`, stop at the runtime's
+interrupt (`Interrupt`, `Terminate`, the memory limit) and at `Close`,
+in the synchronous forms as in the others.
+
+### Deviations
+
+- No streams (`createReadStream` and friends), no file handles
+  (`fs.promises.open`, `fs.open`), no `watch`, no `bigint` stats. TODO.md
+  lists them.
+- `birthtimeMs` is `ctimeMs` on Linux, as libuv gives it without `statx`.
+- `cp` has no `filter`, and it copies a link's target rather than the
+  link.
+- A Buffer has an `ArrayBuffer` of its own: there is no pool, so
+  `byteOffset` is 0 but for a slice, and `allocUnsafe` returns zeroed
+  memory. `buffer.kMaxLength` is moejs's largest `ArrayBuffer`, 2 GiB - 1.
+- `fs.constants` holds Linux's values.
+- Base64 runs at about a gigabyte a second; Node.js, with SIMD, is about
+  four times faster on large inputs.
 
 ## Isolation
 

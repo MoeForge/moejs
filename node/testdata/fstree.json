@@ -1,0 +1,34 @@
+{
+  "dirs": ["dir/sub", "dir2/x", ".hidden", "empty", "src/a/b", "src/c"],
+  "files": {
+    "file.txt": "hello\n",
+    "ro.txt": "ro\n",
+    "utf8.txt": "héllo wörld ✓ 😀\n",
+    "bad.bin": "\\xff\\xfe\\xe2\\x82\\x41\\xc0\\x80",
+    "dir/a.txt": "a\n",
+    "dir/sub/b.ts": "export const b = 1\n",
+    "dir/.dot.ts": "dot\n",
+    "dir2/x/y": "y\n",
+    ".hidden/h.ts": "h\n",
+    "src/index.ts": "i\n",
+    "src/a/one.ts": "1\n",
+    "src/a/two.tsx": "2\n",
+    "src/a/b/three.ts": "3\n",
+    "src/a/b/four.js": "4\n",
+    "src/c/five.ts": "5\n",
+    "src/c/README.md": "r\n",
+    "Z.ts": "z\n",
+    "_u.ts": "u\n",
+    "é.ts": "e\n",
+    "B c.ts": "bc\n"
+  },
+  "links": {
+    "link.txt": "file.txt",
+    "linkdir": "dir",
+    "dangling": "nope",
+    "loop1": "loop2",
+    "loop2": "loop1",
+    "src/up": "../dir"
+  },
+  "modes": { "ro.txt": 292 }
+}

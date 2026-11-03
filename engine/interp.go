@@ -9,7 +9,7 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Interpreter entry points and per-realm interpreter state.

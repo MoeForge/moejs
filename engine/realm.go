@@ -7,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Builtin file convention:
@@ -364,8 +364,9 @@ type sharedTemplate struct {
 	// the allocation size class.
 	globalSlotsCap int
 	// dataDescShape and accessorDescShape are the descriptor object shapes
-	// of Object.getOwnPropertyDescriptor (builtin_object.go).
-	dataDescShape, accessorDescShape *Shape
+	// of Object.getOwnPropertyDescriptor (builtin_object.go), and
+	// iterResultShape that of an iterator result (builtin_iterator.go).
+	dataDescShape, accessorDescShape, iterResultShape *Shape
 	// coldCells are the coldGlobalKeys bindings but the late ones
 	// (lateCells), which globalShape and globalSlots leave out.
 	coldCells [len(coldGlobalKeys)]propCell
@@ -409,6 +410,8 @@ func buildSharedTemplate() {
 	dataDesc, accessorDesc := descriptorShapeFrom(tpl, tpl.plainRoot, false), descriptorShapeFrom(tpl, tpl.plainRoot, true)
 	dataDesc.prepareShared()
 	accessorDesc.prepareShared()
+	iterResult := iterResultShapeFrom(tpl)
+	iterResult.prepareShared()
 	sharedTpl = &sharedTemplate{
 		Intrinsics:        tpl.Intrinsics,
 		globalShape:       hot,
@@ -421,6 +424,7 @@ func buildSharedTemplate() {
 		globalSlotsCap:    cap(append([]Value(nil), make([]Value, hot.count+sharedGlobalHeadroom)...)),
 		dataDescShape:     dataDesc,
 		accessorDescShape: accessorDesc,
+		iterResultShape:   iterResult,
 		coldCells:         cold,
 	}
 }

@@ -368,3 +368,86 @@ func TestPromiseLateInstall(t *testing.T) {
 	assert.Same(t, r.promise.ctor, v.AsObject())
 	assert.Same(t, r.promise.proto, p.proto)
 }
+
+// TestPromiseRootShape: the promises a realm makes take the root shape
+// rootShapeFor gives their prototype, in a mutable realm (one whose
+// Promise is defined after boot) and in shared realms, so an object made
+// with the same prototype shares their shapes.
+func TestPromiseRootShape(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		for range 2 {
+			r := NewRealmWith(RealmOptions{SharedIntrinsics: shared})
+			pi := r.promiseIntr()
+			want := r.rootShapeFor(pi.proto)
+			assert.Same(t, want, r.newPromise().shape, "shared=%v", shared)
+			assert.Same(t, want, r.allocPromise(pi.proto).shape, "shared=%v", shared)
+			assert.Same(t, want, r.NewObjectWithProto(pi.proto).shape, "shared=%v", shared)
+		}
+	}
+}
+
+// TestSettlePromise: a promise of NewHostPromise settles once, as through
+// its resolving functions: resolve adopts a thenable, later calls do
+// nothing, a call from outside a call runs the jobs and one inside a call
+// leaves them to the outermost return, and the rejection tracker sees a
+// rejection with no handler. Other promises, another realm's included, are
+// refused.
+func TestSettlePromise(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		r := NewRealmWith(RealmOptions{SharedIntrinsics: shared})
+		p := r.NewHostPromise()
+		var order []string
+		for i := range 2 {
+			r.promiseReact(p, orderReactor{&order, i})
+		}
+		q := r.newPromise()
+		require.NoError(t, r.SettlePromise(p, ObjectValue(q), false))
+		require.NoError(t, r.SettlePromise(p, IntValue(0), true))
+		require.NoError(t, r.SettlePromise(p, IntValue(1), false))
+		state, _, _ := p.PromiseResult()
+		assert.Equal(t, PromisePending, state, "adopting the thenable")
+		r.HoldJobs()
+		r.resolvePromise(q, IntValue(7))
+		require.NoError(t, r.ReleaseJobs(nil))
+		state, v, _ := p.PromiseResult()
+		assert.Equal(t, PromiseFulfilled, state)
+		assert.Equal(t, IntValue(7), v)
+		assert.Equal(t, []string{"0:7", "1:7"}, order)
+
+		// From inside a call the jobs wait for the outermost return.
+		p = r.NewHostPromise()
+		order = order[:0]
+		r.promiseReact(p, orderReactor{&order, 0})
+		r.HoldJobs()
+		require.NoError(t, r.SettlePromise(p, IntValue(1), false))
+		assert.Empty(t, order)
+		require.NoError(t, r.ReleaseJobs(nil))
+		assert.Equal(t, []string{"0:1"}, order)
+
+		var ops []PromiseRejectionOperation
+		r.SetPromiseRejectionTracker(func(_ *Object, op PromiseRejectionOperation) { ops = append(ops, op) })
+		p = r.NewHostPromise()
+		require.NoError(t, r.SettlePromise(p, IntValue(2), true))
+		state, v, _ = p.PromiseResult()
+		assert.Equal(t, PromiseRejected, state)
+		assert.Equal(t, IntValue(2), v)
+		assert.Equal(t, []PromiseRejectionOperation{PromiseRejectionReject}, ops)
+		r.SetPromiseRejectionTracker(nil)
+
+		// A queueMicrotask callback's exception comes back as a call's would.
+		r.enqueue(job{fn: r.NewNativeFunction(AtomEmpty, 0, func(r *Realm, this Value, args []Value) (Value, error) {
+			return Undefined(), r.Throw(StringValue(FromGoString("cb")))
+		})})
+		err := r.SettlePromise(r.NewHostPromise(), IntValue(3), false)
+		var exc *Exception
+		require.True(t, asException(err, &exc), "%v", err)
+		assert.Equal(t, "cb", exc.Value.String())
+		f, _, _ := r.NewPromiseWithResolvers()
+		assert.Error(t, r.SettlePromise(f, IntValue(1), false), "a promise with resolving functions")
+		assert.Error(t, r.SettlePromise(r.NewObject(), IntValue(1), false), "an object")
+		other := NewRealmWith(RealmOptions{SharedIntrinsics: shared}).NewHostPromise()
+		assert.Error(t, r.SettlePromise(other, IntValue(1), false), "a promise of another realm")
+		state, _, _ = other.PromiseResult()
+		assert.Equal(t, PromisePending, state, "a promise of another realm")
+	}
+}

@@ -8,7 +8,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // Options configures NewRuntime.
@@ -145,8 +145,11 @@ func (rt *Runtime) Function(name string, length int, fn NativeFunc) Value {
 // starting a new budget of Options.MemoryLimit (ResetAllocation), so the
 // top level's allocation does not count against the first request. A
 // failed Load leaves the count, and the error of a memory limit hit in
-// Stats, as they are.
+// Stats, as they are. A nil m, what a failed Compile returns, is an error.
 func (rt *Runtime) Load(m *Module) (err error) {
+	if m == nil {
+		return errNilModule
+	}
 	if rt.mod != nil {
 		return errors.New("moejs: runtime already loaded module " + rt.mod.Name())
 	}

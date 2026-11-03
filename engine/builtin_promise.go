@@ -18,9 +18,21 @@ import "unsafe"
 
 func init() { lateGlobal(StringKey(AtomPromise), installPromise) }
 
-// promiseIntrinsics are %Promise% and %Promise.prototype%.
+// promiseIntrinsics are %Promise%, %Promise.prototype% and its then, and
+// the guards of %Promise.prototype%.constructor, %Promise%[@@species] and
+// %Promise.prototype%.then (protocol.go), whose original values make
+// plainPromise's promises read %Promise% as their constructor and species
+// and nativeThen's the original then.
 type promiseIntrinsics struct {
-	proto, ctor *Object
+	proto, ctor, then *Object
+	// root is the root shape of proto, which every new promise of proto
+	// takes: the shared tree's for a shared realm, which a lookup in the
+	// process-wide map would find (rootShapeFor).
+	root                               *Shape
+	ctorGuard, speciesGuard, thenGuard protoGuard
+	// objectThen and arrayThen watch that %Object.prototype% and
+	// %Array.prototype% have no then (notThenable).
+	objectThen, arrayThen absentGuard
 }
 
 // promiseIntr returns the realm's promise intrinsics, defining Promise if
@@ -52,11 +64,19 @@ func installPromise(r *Realm) {
 	ctor := r.newConstructor(AtomPromise, 1, requireNew("Promise"), promiseConstruct, proto)
 	// The executor's resolving functions keep the promise it runs for.
 	ctor.internal.(*FunctionData).measurable = true
-	r.promise = &promiseIntrinsics{proto: proto, ctor: ctor}
+	r.promise = &promiseIntrinsics{proto: proto, ctor: ctor, root: r.rootShapeFor(proto)}
 	r.installBuiltins(proto, promiseProtoMethods)
 	r.installToStringTag(proto, AtomPromise)
 	r.installBuiltins(ctor, promiseStatics)
 	r.installSpeciesGetter(ctor)
+	species, _ := ctor.getOwnCell(speciesKey)
+	then, _ := proto.getOwnCell(thenKey)
+	r.promise.then = then.value.AsObject()
+	r.promise.ctorGuard = protoGuard{obj: proto, key: constructorKey, want: ObjectValue(ctor)}
+	r.promise.speciesGuard = protoGuard{obj: ctor, key: speciesKey, want: species.value}
+	r.promise.thenGuard = protoGuard{obj: proto, key: thenKey, want: then.value}
+	r.promise.objectThen = absentGuard{obj: r.ObjectPrototype, key: thenKey}
+	r.promise.arrayThen = absentGuard{obj: r.ArrayPrototype, key: thenKey}
 	r.bindGlobal(AtomPromise, ObjectValue(ctor))
 }
 
@@ -82,12 +102,26 @@ type promiseData struct {
 	last    *promiseReaction
 	state   PromiseState
 	handled bool // [[PromiseIsHandled]]
+	// host marks a promise of NewHostPromise, which SettlePromise settles,
+	// and resolved is its [[AlreadyResolved]] (builtin_promise_host.go).
+	host, resolved bool
+	// derived marks a promise then derived as %Promise%'s, allocated with
+	// the reaction that settles it (thenPromise).
+	derived bool
 }
 
 // promiseObject co-allocates a promise with its data.
 type promiseObject struct {
 	obj  Object
 	data promiseData
+}
+
+// thenPromise co-allocates the promise then derives as %Promise%'s with
+// the reaction of then that settles it, one allocation for both. The
+// reaction job drops the handlers, which the promise would keep otherwise.
+type thenPromise struct {
+	promiseObject
+	re promiseReaction
 }
 
 // promiseCapability is a PromiseCapability Record. resolve and reject nil
@@ -116,13 +150,74 @@ type promiseReactor interface {
 
 func isPromise(v Value) bool { return v.IsObject() && v.AsObject().class == ClassPromise }
 
+var thenKey = StringKey(AtomThen)
+
+// nativeThen reports whether o is a promise whose then is the original
+// %Promise.prototype%.then without a lookup: one of %Promise.prototype%
+// with no own property, while the guard sees the original then.
+func (r *Realm) nativeThen(o *Object, pi *promiseIntrinsics) bool {
+	return o.class == ClassPromise && o.proto == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.thenGuard)
+}
+
+// notThenable reports whether o has no then without a lookup: o has no
+// such own property, lazy or in a dictionary, and its prototype is
+// %Object.prototype%, or %Array.prototype% on %Object.prototype%, while
+// the guards see neither with a then. Such a lookup runs no code, so
+// skipping it is unobservable.
+func (r *Realm) notThenable(o *Object, pi *promiseIntrinsics) bool {
+	if o.flags&(flagDict|flagHasLazy) != 0 {
+		return false
+	}
+	switch o.proto {
+	case r.ObjectPrototype:
+	case r.ArrayPrototype:
+		if !r.sharedIntrinsics && (o.proto.proto != r.ObjectPrototype || !r.absentHolds(&pi.arrayThen)) {
+			return false
+		}
+	default:
+		return false
+	}
+	if o.shape.count != 0 {
+		if _, _, ok := o.shape.Lookup(thenKey); ok {
+			return false
+		}
+	}
+	return r.absentHolds(&pi.objectThen)
+}
+
+// plainPromise reports whether o is a promise whose constructor is
+// %Promise% without a lookup: one of %Promise.prototype% with no own
+// property, while %Promise.prototype%.constructor is %Promise%. Such a
+// lookup runs no code, so skipping it is unobservable.
+func (r *Realm) plainPromise(o *Object, pi *promiseIntrinsics) bool {
+	return o.class == ClassPromise && o.proto == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.ctorGuard)
+}
+
+// promiseSpecies implements SpeciesConstructor(p, %Promise%), with no
+// lookups for a plain promise while %Promise%[@@species] is the original
+// getter, which returns %Promise%.
+func (r *Realm) promiseSpecies(p *Object) (*Object, error) {
+	pi := r.promiseIntr()
+	if r.plainPromise(p, pi) && r.guardHolds(&pi.speciesGuard) {
+		return pi.ctor, nil
+	}
+	return r.speciesConstructor(p, pi.ctor)
+}
+
 // allocPromise creates a pending promise with the given prototype.
 func (r *Realm) allocPromise(proto *Object) *Object {
-	r.markPrototype(proto)
-	po := &promiseObject{data: promiseData{result: Undefined()}}
+	po := &promiseObject{}
 	r.chargeObject(unsafe.Sizeof(promiseObject{}))
+	return r.initPromise(po, proto, r.rootShapeFor(proto))
+}
+
+// initPromise makes po a pending promise with the given prototype and its
+// root shape, and returns it.
+func (r *Realm) initPromise(po *promiseObject, proto *Object, root *Shape) *Object {
+	r.markPrototype(proto)
+	po.data.result = Undefined()
 	o := &po.obj
-	o.shape = r.rootShapeFor(proto)
+	o.shape = root
 	o.proto = proto
 	o.class = ClassPromise
 	o.flags = flagExtensible
@@ -131,7 +226,12 @@ func (r *Realm) allocPromise(proto *Object) *Object {
 }
 
 // newPromise creates a pending promise with %Promise.prototype%.
-func (r *Realm) newPromise() *Object { return r.allocPromise(r.promiseIntr().proto) }
+func (r *Realm) newPromise() *Object {
+	pi := r.promiseIntr()
+	po := &promiseObject{}
+	r.chargeObject(unsafe.Sizeof(promiseObject{}))
+	return r.initPromise(po, pi.proto, pi.root)
+}
 
 // resolvePromise runs the steps of p's resolve function for v: a thenable
 // is adopted from a job, anything else fulfills p. Like the resolve
@@ -150,7 +250,17 @@ func (r *Realm) resolvePromiseErr(p *Object, v Value) error {
 		r.rejectPromise(p, ObjectValue(r.NewError(KindTypeError, "Chaining cycle detected for promise #<Promise>")))
 		return nil
 	}
-	then, err := v.AsObject().GetProp(r, StringKey(AtomThen))
+	if pi := r.promise; pi != nil {
+		if r.nativeThen(v.AsObject(), pi) {
+			r.enqueue(job{promise: p, arg: v, fn: pi.then})
+			return nil
+		}
+		if r.notThenable(v.AsObject(), pi) {
+			r.settlePromise(p, v, false)
+			return nil
+		}
+	}
+	then, err := v.AsObject().GetProp(r, thenKey)
 	if err != nil {
 		t, ok := r.thrownValue(err)
 		if !ok {
@@ -230,6 +340,9 @@ func (r *Realm) promiseReact(p *Object, x promiseReactor) {
 func (r *Realm) promiseResolve(v Value) (*Object, error) {
 	pi := r.promiseIntr()
 	if isPromise(v) {
+		if r.plainPromise(v.AsObject(), pi) {
+			return v.AsObject(), nil
+		}
 		c, err := v.AsObject().GetProp(r, constructorKey)
 		if err != nil {
 			return nil, err
@@ -238,7 +351,7 @@ func (r *Realm) promiseResolve(v Value) (*Object, error) {
 			return v.AsObject(), nil
 		}
 	}
-	p := r.allocPromise(pi.proto)
+	p := r.newPromise()
 	return p, r.resolvePromiseErr(p, v)
 }
 
@@ -328,6 +441,7 @@ func (r *Realm) promiseReactionJob(re *promiseReaction, v Value, rejected bool) 
 	if rejected {
 		h = re.onRejected
 	}
+	re.onFulfilled, re.onRejected = nil, nil
 	if h != nil {
 		res, err := r.callStack(h, Undefined(), v)
 		if err == nil {
@@ -345,8 +459,16 @@ func (r *Realm) promiseReactionJob(re *promiseReaction, v Value, rejected bool) 
 }
 
 // promiseResolveThenableJob implements NewPromiseResolveThenableJob's job:
-// thenable.then(resolve, reject) with fresh resolving functions of p.
+// thenable.then(resolve, reject) with fresh resolving functions of p. When
+// then is the original %Promise.prototype%.then and thenable a promise
+// whose constructor and species it reads as %Promise% without a lookup,
+// that call's steps are a reaction on thenable that settles p directly: the
+// promise then would derive and the resolving functions are unobservable.
 func (r *Realm) promiseResolveThenableJob(p *Object, thenable Value, then *Object) error {
+	if pi := r.promise; pi != nil && then == pi.then && r.plainPromise(thenable.AsObject(), pi) && r.guardHolds(&pi.speciesGuard) {
+		r.performPromiseThen(thenable.AsObject(), &promiseReaction{cap: promiseCapability{promise: p}})
+		return nil
+	}
 	s, resolve, reject := r.createResolvingFunctions(p)
 	_, err := r.callStack(then, thenable, ObjectValue(resolve), ObjectValue(reject))
 	if err == nil {
@@ -362,33 +484,59 @@ func (r *Realm) promiseResolveThenableJob(p *Object, thenable Value, then *Objec
 
 // --- resolving functions and capabilities -----------------------------------------
 
-// resolvingFns is the state a promise's resolve and reject functions share.
+// resolvingFns is the state a promise's resolve and reject functions share,
+// allocated with both functions: either keeps the other, which the memory
+// measurement counts with it (liveWalker.function). The resolve function's
+// thisValue is the promise until either function is called, and Undefined
+// once [[AlreadyResolved]] is set, so that the state has no fields of its own.
 type resolvingFns struct {
-	promise *Object
-	done    bool // [[AlreadyResolved]]
+	resolveFn, rejectFn nativeFuncObject
 }
 
-// createResolvingFunctions implements CreateResolvingFunctions(p).
+// createResolvingFunctions implements CreateResolvingFunctions(p) in one
+// allocation.
 func (r *Realm) createResolvingFunctions(p *Object) (s *resolvingFns, resolve, reject *Object) {
-	s = &resolvingFns{promise: p}
-	return s, r.NewNativeDataFunction(AtomEmpty, 1, promiseResolveFunction, s),
-		r.NewNativeDataFunction(AtomEmpty, 1, promiseRejectFunction, s)
+	s = new(resolvingFns)
+	r.chargeObject(unsafe.Sizeof(resolvingFns{}))
+	resolve, reject = r.initResolvingFunction(&s.resolveFn, promiseResolveFunction, s),
+		r.initResolvingFunction(&s.rejectFn, promiseRejectFunction, s)
+	s.resolveFn.fd.thisValue = ObjectValue(p)
+	return s, resolve, reject
+}
+
+// initResolvingFunction makes fo the resolving function fn of s, as
+// NewNativeDataFunction makes a function.
+func (r *Realm) initResolvingFunction(fo *nativeFuncObject, fn NativeDataFunc, s *resolvingFns) *Object {
+	r.initFunction(&fo.obj, &fo.fd, fo.slots[:], AtomEmpty, 1, FuncNativeData)
+	fo.fd.dataFn = fn
+	fo.fd.data = s
+	return &fo.obj
+}
+
+// take returns the promise of s and sets [[AlreadyResolved]], or nil when
+// it is already set.
+func (s *resolvingFns) take() *Object {
+	p := &s.resolveFn.fd.thisValue
+	if !p.IsObject() {
+		return nil
+	}
+	o := p.AsObject()
+	*p = Undefined()
+	return o
 }
 
 func (s *resolvingFns) reject(r *Realm, v Value) {
-	if !s.done {
-		s.done = true
-		r.rejectPromise(s.promise, v)
+	if p := s.take(); p != nil {
+		r.rejectPromise(p, v)
 	}
 }
 
 func promiseResolveFunction(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
-	s := fd.Data().(*resolvingFns)
-	if s.done {
+	p := fd.Data().(*resolvingFns).take()
+	if p == nil {
 		return Undefined(), nil
 	}
-	s.done = true
-	return Undefined(), r.resolvePromiseErr(s.promise, Arg(args, 0))
+	return Undefined(), r.resolvePromiseErr(p, Arg(args, 0))
 }
 
 func promiseRejectFunction(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
@@ -401,7 +549,7 @@ func promiseRejectFunction(r *Realm, fd *FunctionData, this Value, args []Value)
 // hands them to code that can observe them.
 func (r *Realm) newPromiseCapability(c Value, fns bool) (promiseCapability, error) {
 	if pi := r.promiseIntr(); c.IsObject() && c.AsObject() == pi.ctor {
-		p := r.allocPromise(pi.proto)
+		p := r.newPromise()
 		if !fns {
 			return promiseCapability{promise: p}, nil
 		}
@@ -526,15 +674,25 @@ func promiseProtoThen(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), r.TypeError("Method Promise.prototype.then called on incompatible receiver %s", r.DisplayString(this))
 	}
 	p := this.AsObject()
-	c, err := r.speciesConstructor(p, r.promiseIntr().ctor)
+	c, err := r.promiseSpecies(p)
 	if err != nil {
 		return Undefined(), err
+	}
+	onFulfilled, onRejected := callableOrNil(Arg(args, 0)), callableOrNil(Arg(args, 1))
+	if pi := r.promise; c == pi.ctor {
+		tp := &thenPromise{}
+		r.chargeObject(unsafe.Sizeof(thenPromise{}))
+		d := r.initPromise(&tp.promiseObject, pi.proto, pi.root)
+		tp.data.derived = true
+		tp.re = promiseReaction{cap: promiseCapability{promise: d}, onFulfilled: onFulfilled, onRejected: onRejected}
+		r.performPromiseThen(p, &tp.re)
+		return ObjectValue(d), nil
 	}
 	pc, err := r.newPromiseCapability(ObjectValue(c), false)
 	if err != nil {
 		return Undefined(), err
 	}
-	r.performPromiseThen(p, &promiseReaction{cap: pc, onFulfilled: callableOrNil(Arg(args, 0)), onRejected: callableOrNil(Arg(args, 1))})
+	r.performPromiseThen(p, &promiseReaction{cap: pc, onFulfilled: onFulfilled, onRejected: onRejected})
 	return ObjectValue(pc.promise), nil
 }
 
@@ -553,7 +711,7 @@ func promiseProtoFinally(r *Realm, this Value, args []Value) (Value, error) {
 	if !this.IsObject() {
 		return Undefined(), r.TypeError("Method Promise.prototype.finally called on incompatible receiver %s", r.DisplayString(this))
 	}
-	c, err := r.speciesConstructor(this.AsObject(), r.promiseIntr().ctor)
+	c, err := r.promiseSpecies(this.AsObject())
 	if err != nil {
 		return Undefined(), err
 	}

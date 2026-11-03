@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -236,4 +237,25 @@ func TestRebaseAllocation(t *testing.T) {
 	r.SetMemoryLimit(4 * limit)
 	_, err = runScriptValue(t, r, `[1]`)
 	require.NoError(t, err)
+}
+
+// TestMeasureLiveResolvingFunctions: a promise's resolve and reject
+// functions share one allocation, which either one keeps, so holding one
+// counts both, as much as holding the pair.
+func TestMeasureLiveResolvingFunctions(t *testing.T) {
+	const n = 1000
+	measure := func(keep string) int64 {
+		r := NewRealmWith(RealmOptions{SharedIntrinsics: true})
+		empty := r.MeasureLive(nil)
+		_, err := runScriptValue(t, r, `var keep = Array.from({length: 1000}, () => { let fns; new Promise((res, rej) => { fns = [res, rej]; }); return `+keep+`; });`)
+		require.NoError(t, err)
+		return r.MeasureLive(nil) - empty
+	}
+	pair := measure("fns")
+	for _, keep := range []string{"fns[0]", "fns[1]"} {
+		one := measure(keep)
+		assert.GreaterOrEqual(t, one, int64(n*unsafe.Sizeof(resolvingFns{})), keep)
+		// The pair adds a two-element array per promise.
+		assert.Less(t, pair-one, int64(n*(objectSize+4*liveValue)), keep)
+	}
 }

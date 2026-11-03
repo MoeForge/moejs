@@ -3,7 +3,7 @@ package webapi
 import (
 	"sync/atomic"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // The memory limit's measurements of what a program retains walk the
@@ -149,19 +149,20 @@ func addHeld(add func(engine.Value), h *[4]engine.Value) {
 	}
 }
 
-// liveValues adds the promise and its resolving functions.
+// liveValues adds the promise.
 func (p promise) liveValues(add func(engine.Value)) {
 	addObject(add, p.p)
-	addObject(add, p.resolve)
-	addObject(add, p.reject)
 }
 
-// ReportLive reports the stream's stored error and what its algorithms
-// call, its controller's object, queued chunks and size function, and its
-// reader (rsReader.report).
-func (s *readableStream) ReportLive(add func(engine.Value), _ func(int)) {
+// ReportLive reports the stream's stored error, what its algorithms call
+// and what its source keeps in Go, its controller's object, queued chunks
+// and size function, and its reader (rsReader.report).
+func (s *readableStream) ReportLive(add func(engine.Value), addBytes func(int)) {
 	add(s.stored)
 	addHeld(add, s.held)
+	if s.src != nil {
+		s.src.ReportLive(add, addBytes)
+	}
 	if c := s.ctrl; c != nil {
 		addObject(add, c.obj)
 		add(c.size)

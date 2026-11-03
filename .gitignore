@@ -6,6 +6,8 @@
 /bench/testdata/plugins/*.pgo
 # new-api plugins, fetched by bench/testdata/plugins/fetch.sh (AGPL-3.0)
 /bench/testdata/plugins/*/
+# plugin scenarios, written by bench/scenarios/gen.py
+/bench/testdata/scenarios/
 coverage.*
 
 # Editors and OS

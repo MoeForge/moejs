@@ -72,6 +72,15 @@ semantics fails with a `SyntaxError` that names it:
   `performance` on a runtime with an event loop, without `Blob`, `File`,
   `FormData`, BYOB readers, fetch of `data:`, `blob:` and `file:` URLs, and
   Brotli decoding
+- Node.js modules on a bare `Runtime`, which has none: `import("node:fs")`
+  fails there. The `node` package serves `node:fs`, `node:fs/promises` and
+  `node:buffer` on a runtime with an event loop, without streams
+  (`createReadStream`, `createWriteStream`), file handles and descriptors
+  (`fs.promises.open`, `FileHandle`, `fs.open`, `read`, `write`), `watch`
+  and `watchFile`, `bigint` stats, `opendir`, `mkdtemp`, `chmod`, `chown`,
+  `utimes`, `truncate`, `link` and `symlink`, the `filter` option of `cp`,
+  Buffer's BigInt reads and writes, `transcode` and `Blob`, and the other
+  `node:` modules
 
 ## Known wrong results
 
@@ -126,9 +135,23 @@ These run, with a result that differs from the specification:
   realm of its `newTarget`, for one) never arises, and a function or
   generator runs only in the runtime that created it (the host API returns
   `ErrForeign` for one of another runtime).
+- A promise `then` returned keeps its handlers while the promise it came
+  from is pending: the derived promise shares an allocation with the
+  reaction that settles it. A promise derived from one that nothing will
+  settle and nothing else reaches stays alive with its handlers as long as
+  it is held, where the collector would free the handlers otherwise.
 - A function that needs more than 256 registers, its parameters (and a
   rest parameter or `arguments` after them) included, is a SyntaxError:
   register operands are 8 bits.
+- A function, or a script's or module's top level, that needs more than
+  65,536 constants, 65,536 property and global variable accesses or 65,536
+  nested functions, or a jump over more than 32,767 instructions, is a
+  SyntaxError, and so is a block whose closures capture more than 65,535
+  of its bindings: those operands are 16 bits. A script's top level reaches
+  them first, since each global it reads or writes is a name constant and
+  an access: 100,000 `var x = …` declarations, a `switch` of some 10,000
+  cases. Wider operands would take a second extra word, or wide variants of
+  the property and global opcodes in the interpreter loop.
 - Listing the keys of a typed array of more than 2^24 elements
   (`Object.keys`, `for`-`in`, `Reflect.ownKeys`) throws a RangeError, where
   V8 lists them. Reading and writing its elements is not limited.
@@ -165,6 +188,36 @@ These run, with a result that differs from the specification:
   loopback and `169.254.169.254` included. With `MutableIntrinsics`, a
   `Promise[Symbol.species]` a script defines runs inside the package's own
   promise reactions, because `Promise.prototype.then` reads it.
+- `node`: `birthtimeMs` is `ctimeMs` on Linux (no `statx`). The Allow hook
+  sees a path resolved before the access, so a program that renames a link
+  into place between the two races it; the root holds either way. On a
+  file system that ignores case it gets the program's spelling of a name,
+  not the system's. A confined `stat` below the root takes one system call
+  (`fstatat` on a cached directory descriptor) where Node.js takes one
+  (`statx`), plus the descriptor's `openat2` once a millisecond (three with
+  `NoDescriptorCache`). Base64
+  runs at over a gigabyte a second, a quarter of Node's SIMD speed. `glob`
+  returns its matches sorted, where Node.js returns its walk's order. A
+  glob segment may hold one `!(...)`, outside any other extglob: Node.js
+  takes any number, nested too. A
+  `..` that leaves the mount after other names (`/w/a/../../w/b.txt`) is
+  EACCES, where Node.js resolves it outside and back in; one right after
+  the mount (`/w/../w/b.txt`) is read lexically.
+- `node` Buffer, against Node.js 24: no `readBigInt64LE` and the other
+  BigInt reads and writes, no `copyBytesFrom`, no `asciiSlice`,
+  `utf8Write` and the other `*Slice` and `*Write` methods, no `Blob`,
+  `File`, `SlowBuffer`, `transcode` or `resolveObjectURL`; `buffer.atob`
+  and `btoa` are the global ones, which check their input as the HTML
+  Standard does rather than as Node's do; a method called on a buffer that
+  a script detached or shrank reads what is left rather than throwing; a
+  receiver that is not a Uint8Array (a Uint16Array, a plain object) is
+  refused or read otherwise than by Node's generic code; `copy` converts
+  odd offsets (`-0.5`, beyond `2**53`) and reads a source of another typed
+  array by bytes, not by elements; there is no pool, so a small Buffer has
+  an ArrayBuffer of its own (`byteOffset` 0, `buffer` not shared); the
+  slices of a subclass of Buffer are of the subclass; a few methods have
+  another `length`; the Uint8Array constructor's message for a bad offset
+  is the engine's.
 
 ## Host API
 

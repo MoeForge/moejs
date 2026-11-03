@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	quickjs "github.com/buke/quickjs-go"
 	"github.com/grafana/sobek"
 	v8 "rogchap.com/v8go"

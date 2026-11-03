@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 	"unsafe"
 )
 

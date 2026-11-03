@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 )
 
 func main() {

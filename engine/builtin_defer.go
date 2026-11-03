@@ -44,7 +44,9 @@ func (r *Realm) deferredCap(n, eager int) int {
 // template's shape before them (buildSharedTemplate), so its slots keep the
 // size class they had without them, and defines each on the first lookup of
 // its key (resolveLazy); Realm.coldGlobals has a bit for each binding still
-// to define and the global object's internal is the realm while any is.
+// to define and the global object's internal is the realm while any is, or
+// the table of the host's lazy properties (lazyProps) once the host has
+// defined some: they leave the cold bindings pending.
 //
 // The late bindings (lateGlobal) come after the others. A mutable realm
 // does not install them at creation either: its global object defines them
@@ -235,8 +237,11 @@ func (r *Realm) defineColdGlobal(i int) {
 		r.coldGlobals &^= 1 << i
 	}
 	if r.coldGlobals == 0 {
-		g.flags &^= flagHasLazy
-		g.internal = nil
+		// A host's lazy properties may still be pending (lazyProps).
+		if lp, ok := g.internal.(*lazyProps); !ok || len(lp.defs) == 0 {
+			g.flags &^= flagHasLazy
+			g.internal = nil
+		}
 	}
 	if r.sharedIntrinsics {
 		g.addNamed(r, coldGlobalKeys[i], cell)

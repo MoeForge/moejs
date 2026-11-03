@@ -4,7 +4,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // The Streams Standard's TransformStream and queuing strategies, and the

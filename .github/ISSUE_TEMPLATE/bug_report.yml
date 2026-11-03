@@ -5,14 +5,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        Features listed in [TODO.md](https://github.com/Calcium-Ion/moejs/blob/main/TODO.md) fail with "is not supported yet (see TODO.md)". To ask for one, use the feature request form.
-        Report security problems privately: see [SECURITY.md](https://github.com/Calcium-Ion/moejs/blob/main/SECURITY.md).
+        Features listed in [TODO.md](https://github.com/MoeForge/moejs/blob/main/TODO.md) fail with an error that says they are "not supported yet". To ask for one, use the feature request form.
+        Report security problems privately: see [SECURITY.md](https://github.com/MoeForge/moejs/blob/main/SECURITY.md).
   - type: input
     id: moejs-version
     attributes:
       label: moejs version
-      description: The output of `go list -m github.com/Calcium-Ion/moejs` in your module.
-      placeholder: github.com/Calcium-Ion/moejs v0.1.0-alpha.7
+      description: The output of `go list -m github.com/MoeForge/moejs` in your module.
+      placeholder: github.com/MoeForge/moejs v0.1.0-alpha.11
     validations:
       required: true
   - type: input

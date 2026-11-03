@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/compiler"
+	"github.com/MoeForge/moejs/compiler"
 	"github.com/stretchr/testify/assert"
 )
 

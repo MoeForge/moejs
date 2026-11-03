@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // Dirs are the directories under test/ that the suite runs: of intl402,

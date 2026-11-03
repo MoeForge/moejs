@@ -1,0 +1,6060 @@
+{
+ "read": {
+  "readFile file sync": {
+   "ok": {
+    "buffer": "hello\n"
+   }
+  },
+  "readFile file promise": {
+   "ok": {
+    "buffer": "hello\n"
+   }
+  },
+  "readFile file callback": {
+   "ok": {
+    "buffer": "hello\n"
+   }
+  },
+  "readFile utf8 sync": {
+   "ok": "hello\n"
+  },
+  "readFile utf8 promise": {
+   "ok": "hello\n"
+  },
+  "readFile utf8 callback": {
+   "ok": "hello\n"
+  },
+  "readFile utf8 multibyte sync": {
+   "ok": "héllo wörld ✓ 😀\n"
+  },
+  "readFile utf8 multibyte promise": {
+   "ok": "héllo wörld ✓ 😀\n"
+  },
+  "readFile utf8 multibyte callback": {
+   "ok": "héllo wörld ✓ 😀\n"
+  },
+  "readFile bad utf8 sync": {
+   "ok": "���A��"
+  },
+  "readFile bad utf8 promise": {
+   "ok": "���A��"
+  },
+  "readFile bad utf8 callback": {
+   "ok": "���A��"
+  },
+  "readFile latin1 sync": {
+   "ok": "hÃ©llo wÃ¶rld â ð\n"
+  },
+  "readFile latin1 promise": {
+   "ok": "hÃ©llo wÃ¶rld â ð\n"
+  },
+  "readFile latin1 callback": {
+   "ok": "hÃ©llo wÃ¶rld â ð\n"
+  },
+  "readFile base64 sync": {
+   "ok": "aMOpbGxvIHfDtnJsZCDinJMg8J+YgAo="
+  },
+  "readFile base64 promise": {
+   "ok": "aMOpbGxvIHfDtnJsZCDinJMg8J+YgAo="
+  },
+  "readFile base64 callback": {
+   "ok": "aMOpbGxvIHfDtnJsZCDinJMg8J+YgAo="
+  },
+  "readFile hex sync": {
+   "ok": "fffee28241c080"
+  },
+  "readFile hex promise": {
+   "ok": "fffee28241c080"
+  },
+  "readFile hex callback": {
+   "ok": "fffee28241c080"
+  },
+  "readFile ucs2 sync": {
+   "ok": "써沩潬眠뛃汲⁤鳢ₓ鿰肘"
+  },
+  "readFile ucs2 promise": {
+   "ok": "써沩潬眠뛃汲⁤鳢ₓ鿰肘"
+  },
+  "readFile ucs2 callback": {
+   "ok": "써沩潬眠뛃汲⁤鳢ₓ鿰肘"
+  },
+  "readFile ENOENT sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "nope.txt",
+    "message": "ENOENT: no such file or directory, open 'nope.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile ENOENT promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "nope.txt",
+    "message": "ENOENT: no such file or directory, open 'nope.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile ENOENT callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "nope.txt",
+    "message": "ENOENT: no such file or directory, open 'nope.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile EISDIR sync": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile EISDIR promise": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile EISDIR callback": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile EISDIR utf8 sync": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile EISDIR utf8 promise": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile EISDIR utf8 callback": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "read",
+    "message": "EISDIR: illegal operation on a directory, read",
+    "keys": [
+     "errno",
+     "code",
+     "syscall"
+    ]
+   }
+  },
+  "readFile ENOTDIR sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, open 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile ENOTDIR promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, open 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile ENOTDIR callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, open 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile trailing slash sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/",
+    "message": "ENOTDIR: not a directory, open 'file.txt/'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile trailing slash promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/",
+    "message": "ENOTDIR: not a directory, open 'file.txt/'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile trailing slash callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "open",
+    "path": "file.txt/",
+    "message": "ENOTDIR: not a directory, open 'file.txt/'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile link sync": {
+   "ok": "hello\n"
+  },
+  "readFile link promise": {
+   "ok": "hello\n"
+  },
+  "readFile link callback": {
+   "ok": "hello\n"
+  },
+  "readFile through linkdir sync": {
+   "ok": "a\n"
+  },
+  "readFile through linkdir promise": {
+   "ok": "a\n"
+  },
+  "readFile through linkdir callback": {
+   "ok": "a\n"
+  },
+  "readFile dangling sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, open 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile dangling promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, open 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile dangling callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, open 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile loop sync": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "open",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, open 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile loop promise": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "open",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, open 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile loop callback": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "open",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, open 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile dotdot sync": {
+   "ok": "hello\n"
+  },
+  "readFile dotdot promise": {
+   "ok": "hello\n"
+  },
+  "readFile dotdot callback": {
+   "ok": "hello\n"
+  },
+  "readFile through link up sync": {
+   "ok": "a\n"
+  },
+  "readFile through link up promise": {
+   "ok": "a\n"
+  },
+  "readFile through link up callback": {
+   "ok": "a\n"
+  },
+  "readFile dot slash sync": {
+   "ok": "export const b = 1\n"
+  },
+  "readFile dot slash promise": {
+   "ok": "export const b = 1\n"
+  },
+  "readFile dot slash callback": {
+   "ok": "export const b = 1\n"
+  },
+  "readFile absolute sync": {
+   "ok": "hello\n"
+  },
+  "readFile absolute promise": {
+   "ok": "hello\n"
+  },
+  "readFile absolute callback": {
+   "ok": "hello\n"
+  },
+  "readFile buffer path sync": {
+   "ok": "hello\n"
+  },
+  "readFile buffer path promise": {
+   "ok": "hello\n"
+  },
+  "readFile buffer path callback": {
+   "ok": "hello\n"
+  },
+  "readFile bad encoding sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'encoding' is invalid encoding. Received 'nope'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad encoding promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'encoding' is invalid encoding. Received 'nope'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad encoding callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'encoding' is invalid encoding. Received 'nope'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad options sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options\" argument must be one of type string or object. Received type number (12)",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad options promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options\" argument must be one of type string or object. Received type number (12)",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad options callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options\" argument must be one of type string or object. Received type number (12)",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad path sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"path\" argument must be of type string or an instance of Buffer or URL. Received an instance of Object",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad path promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"path\" argument must be of type string or an instance of Buffer or URL. Received an instance of Object",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad path callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"path\" argument must be of type string or an instance of Buffer or URL. Received an instance of Object",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile NUL sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'path' must be a string, Uint8Array, or URL without null bytes. Received 'a\\x00b'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile NUL promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'path' must be a string, Uint8Array, or URL without null bytes. Received 'a\\x00b'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile NUL callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'path' must be a string, Uint8Array, or URL without null bytes. Received 'a\\x00b'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile empty path sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "",
+    "message": "ENOENT: no such file or directory, open ''",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile empty path promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "",
+    "message": "ENOENT: no such file or directory, open ''",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile empty path callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "",
+    "message": "ENOENT: no such file or directory, open ''",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readFile bad flag sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'flags' is invalid. Received 'q'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad flag promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'flags' is invalid. Received 'q'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readFile bad flag callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_VALUE",
+    "message": "The argument 'flags' is invalid. Received 'q'",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readdir root sync": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "readdir root promise": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "readdir root callback": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "readdir dir sync": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir dir promise": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir dir callback": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir dir slash sync": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir dir slash promise": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir dir slash callback": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir types sync": {
+   "ok": [
+    {
+     "dirent": ".hidden",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "B c.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "Z.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "_u.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "bad.bin",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "dangling",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "dir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "dir2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "empty",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "file.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "link.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "linkdir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop1",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "ro.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "src",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "utf8.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "é.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir types promise": {
+   "ok": [
+    {
+     "dirent": ".hidden",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "B c.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "Z.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "_u.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "bad.bin",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "dangling",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "dir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "dir2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "empty",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "file.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "link.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "linkdir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop1",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "ro.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "src",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "utf8.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "é.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir types callback": {
+   "ok": [
+    {
+     "dirent": ".hidden",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "B c.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "Z.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "_u.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "bad.bin",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "dangling",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "dir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "dir2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "empty",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "file.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "link.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "linkdir",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop1",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "loop2",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "ro.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "src",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "utf8.txt",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "é.ts",
+     "parentPath": ".",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir recursive sync": {
+   "ok": [
+    "a",
+    "c",
+    "index.ts",
+    "up",
+    "a/b",
+    "a/one.ts",
+    "a/two.tsx",
+    "c/README.md",
+    "c/five.ts",
+    "up/.dot.ts",
+    "up/a.txt",
+    "up/sub",
+    "a/b/four.js",
+    "a/b/three.ts",
+    "up/sub/b.ts"
+   ]
+  },
+  "readdir recursive promise": {
+   "ok": [
+    "a",
+    "c",
+    "index.ts",
+    "up",
+    "up/.dot.ts",
+    "up/a.txt",
+    "up/sub",
+    "up/sub/b.ts",
+    "c/README.md",
+    "c/five.ts",
+    "a/b",
+    "a/one.ts",
+    "a/two.tsx",
+    "a/b/four.js",
+    "a/b/three.ts"
+   ]
+  },
+  "readdir recursive callback": {
+   "ok": [
+    "a",
+    "c",
+    "index.ts",
+    "up",
+    "a/b",
+    "a/one.ts",
+    "a/two.tsx",
+    "c/README.md",
+    "c/five.ts",
+    "up/.dot.ts",
+    "up/a.txt",
+    "up/sub",
+    "a/b/four.js",
+    "a/b/three.ts",
+    "up/sub/b.ts"
+   ]
+  },
+  "readdir recursive root sync": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts",
+    ".hidden/h.ts",
+    "dir/.dot.ts",
+    "dir/a.txt",
+    "dir/sub",
+    "dir2/x",
+    "linkdir/.dot.ts",
+    "linkdir/a.txt",
+    "linkdir/sub",
+    "src/a",
+    "src/c",
+    "src/index.ts",
+    "src/up",
+    "dir/sub/b.ts",
+    "dir2/x/y",
+    "linkdir/sub/b.ts",
+    "src/a/b",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/up/.dot.ts",
+    "src/up/a.txt",
+    "src/up/sub",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "src/up/sub/b.ts"
+   ]
+  },
+  "readdir recursive root promise": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts",
+    "src/a",
+    "src/c",
+    "src/index.ts",
+    "src/up",
+    "src/up/.dot.ts",
+    "src/up/a.txt",
+    "src/up/sub",
+    "src/up/sub/b.ts",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/a/b",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "linkdir/.dot.ts",
+    "linkdir/a.txt",
+    "linkdir/sub",
+    "linkdir/sub/b.ts",
+    "dir2/x",
+    "dir2/x/y",
+    "dir/.dot.ts",
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts",
+    ".hidden/h.ts"
+   ]
+  },
+  "readdir recursive root callback": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts",
+    ".hidden/h.ts",
+    "dir/.dot.ts",
+    "dir/a.txt",
+    "dir/sub",
+    "dir2/x",
+    "linkdir/.dot.ts",
+    "linkdir/a.txt",
+    "linkdir/sub",
+    "src/a",
+    "src/c",
+    "src/index.ts",
+    "src/up",
+    "dir/sub/b.ts",
+    "dir2/x/y",
+    "linkdir/sub/b.ts",
+    "src/a/b",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/up/.dot.ts",
+    "src/up/a.txt",
+    "src/up/sub",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "src/up/sub/b.ts"
+   ]
+  },
+  "readdir recursive types sync": {
+   "ok": [
+    {
+     "dirent": "a",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "c",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "index.ts",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "up",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "b",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "one.ts",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "two.tsx",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "README.md",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "five.ts",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": ".dot.ts",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "a.txt",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "sub",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "four.js",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "three.ts",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "b.ts",
+     "parentPath": "src/up/sub",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir recursive types promise": {
+   "ok": [
+    {
+     "dirent": "a",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "c",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "index.ts",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "up",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "README.md",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "five.ts",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "b",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "one.ts",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "two.tsx",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "four.js",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "three.ts",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir recursive types callback": {
+   "ok": [
+    {
+     "dirent": "a",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "c",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "index.ts",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "up",
+     "parentPath": "src",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": false,
+     "link": true
+    },
+    {
+     "dirent": "b",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "one.ts",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "two.tsx",
+     "parentPath": "src/a",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "README.md",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "five.ts",
+     "parentPath": "src/c",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": ".dot.ts",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "a.txt",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "sub",
+     "parentPath": "src/up",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": false,
+     "dir": true,
+     "link": false
+    },
+    {
+     "dirent": "four.js",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "three.ts",
+     "parentPath": "src/a/b",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    },
+    {
+     "dirent": "b.ts",
+     "parentPath": "src/up/sub",
+     "keys": [
+      "name",
+      "parentPath"
+     ],
+     "file": true,
+     "dir": false,
+     "link": false
+    }
+   ]
+  },
+  "readdir buffer sync": {
+   "ok": [
+    {
+     "buffer": ".dot.ts"
+    },
+    {
+     "buffer": "a.txt"
+    },
+    {
+     "buffer": "sub"
+    }
+   ]
+  },
+  "readdir buffer promise": {
+   "ok": [
+    {
+     "buffer": ".dot.ts"
+    },
+    {
+     "buffer": "a.txt"
+    },
+    {
+     "buffer": "sub"
+    }
+   ]
+  },
+  "readdir buffer callback": {
+   "ok": [
+    {
+     "buffer": ".dot.ts"
+    },
+    {
+     "buffer": "a.txt"
+    },
+    {
+     "buffer": "sub"
+    }
+   ]
+  },
+  "readdir hex sync": {
+   "ok": [
+    "2e646f742e7473",
+    "612e747874",
+    "737562"
+   ]
+  },
+  "readdir hex promise": {
+   "ok": [
+    "2e646f742e7473",
+    "612e747874",
+    "737562"
+   ]
+  },
+  "readdir hex callback": {
+   "ok": [
+    "2e646f742e7473",
+    "612e747874",
+    "737562"
+   ]
+  },
+  "readdir ENOENT sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "scandir",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, scandir 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir ENOENT promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "scandir",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, scandir 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir ENOENT callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "scandir",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, scandir 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir ENOTDIR sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "scandir",
+    "path": "file.txt",
+    "message": "ENOTDIR: not a directory, scandir 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir ENOTDIR promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "scandir",
+    "path": "file.txt",
+    "message": "ENOTDIR: not a directory, scandir 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir ENOTDIR callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "scandir",
+    "path": "file.txt",
+    "message": "ENOTDIR: not a directory, scandir 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readdir link sync": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir link promise": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir link callback": {
+   "ok": [
+    ".dot.ts",
+    "a.txt",
+    "sub"
+   ]
+  },
+  "readdir empty sync": {
+   "ok": []
+  },
+  "readdir empty promise": {
+   "ok": []
+  },
+  "readdir empty callback": {
+   "ok": []
+  },
+  "readdir bad recursive sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options.recursive\" property must be of type boolean. Received type string ('yes')",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "readdir bad recursive promise": {
+   "ok": [
+    ".hidden",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts",
+    "src/a",
+    "src/c",
+    "src/index.ts",
+    "src/up",
+    "src/up/.dot.ts",
+    "src/up/a.txt",
+    "src/up/sub",
+    "src/up/sub/b.ts",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/a/b",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "linkdir/.dot.ts",
+    "linkdir/a.txt",
+    "linkdir/sub",
+    "linkdir/sub/b.ts",
+    "dir2/x",
+    "dir2/x/y",
+    "dir/.dot.ts",
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts",
+    ".hidden/h.ts"
+   ]
+  },
+  "readdir bad recursive callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options.recursive\" property must be of type boolean. Received type string ('yes')",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "stat file.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat file.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat file.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat file.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat file.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat file.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat dir sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat dir promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat dir callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat dir sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat dir promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat dir callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat link.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat link.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat link.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699263,
+    "size": 6,
+    "blocks": 8,
+    "atimeMs": 1792944053104.6946,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat link.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699283,
+    "size": 8,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat link.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699283,
+    "size": 8,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat link.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699283,
+    "size": 8,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat linkdir sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat linkdir promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat linkdir callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 3,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699253,
+    "size": 100,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat linkdir sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699284,
+    "size": 3,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat linkdir promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699284,
+    "size": 3,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat linkdir callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699284,
+    "size": 3,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat dangling sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, stat 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat dangling promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, stat 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat dangling callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, stat 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat dangling sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699285,
+    "size": 4,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat dangling promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699285,
+    "size": 4,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat dangling callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699285,
+    "size": 4,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat nope sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, stat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat nope promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, stat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat nope callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, stat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat nope sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat nope promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat nope callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat file.txt/x sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "stat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, stat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat file.txt/x promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "stat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, stat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat file.txt/x callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "stat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, stat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat file.txt/x sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "lstat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, lstat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat file.txt/x promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "lstat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, lstat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat file.txt/x callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "lstat",
+    "path": "file.txt/x",
+    "message": "ENOTDIR: not a directory, lstat 'file.txt/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat loop1 sync": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "stat",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, stat 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat loop1 promise": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "stat",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, stat 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "stat loop1 callback": {
+   "err": {
+    "name": "Error",
+    "code": "ELOOP",
+    "errno": -40,
+    "syscall": "stat",
+    "path": "loop1",
+    "message": "ELOOP: too many symbolic links encountered, stat 'loop1'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "lstat loop1 sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699286,
+    "size": 5,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat loop1 promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699286,
+    "size": 5,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat loop1 callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 41471,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699286,
+    "size": 5,
+    "blocks": 0,
+    "atimeMs": 1792944053124.694,
+    "mtimeMs": 1792944052952.698,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052952.698,
+    "isFile": false,
+    "isDirectory": false,
+    "isSymbolicLink": true,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052953,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat ro.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat ro.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat ro.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat ro.txt sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat ro.txt promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat ro.txt callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 33060,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699264,
+    "size": 3,
+    "blocks": 8,
+    "atimeMs": 1792944052936.6985,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052952.698,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": true,
+    "isDirectory": false,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat empty sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat empty promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat empty callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat empty sync": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat empty promise": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "lstat empty callback": {
+   "ok": {
+    "keys": [
+     "dev",
+     "mode",
+     "nlink",
+     "uid",
+     "gid",
+     "rdev",
+     "blksize",
+     "ino",
+     "size",
+     "blocks",
+     "atimeMs",
+     "mtimeMs",
+     "ctimeMs",
+     "birthtimeMs"
+    ],
+    "ctor": "Stats",
+    "dev": 40,
+    "mode": 16877,
+    "nlink": 2,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 35699258,
+    "size": 40,
+    "blocks": 0,
+    "atimeMs": 1792944053120.694,
+    "mtimeMs": 1792944052936.6985,
+    "ctimeMs": 1792944052936.6985,
+    "birthtimeMs": 1792944052936.6985,
+    "isFile": false,
+    "isDirectory": true,
+    "isSymbolicLink": false,
+    "isFIFO": false,
+    "isSocket": false,
+    "isBlockDevice": false,
+    "isCharacterDevice": false,
+    "mtime": 1792944052937,
+    "mtimeType": "[object Date]"
+   }
+  },
+  "stat throwIfNoEntry sync": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "stat throwIfNoEntry ENOTDIR sync": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "stat bad throwIfNoEntry sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, stat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access sync": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access promise": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access callback": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access R_OK sync": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access R_OK promise": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access R_OK callback": {
+   "ok": {
+    "undefined": true
+   }
+  },
+  "access W_OK ro sync": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "ro.txt",
+    "message": "EACCES: permission denied, access 'ro.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access W_OK ro promise": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "ro.txt",
+    "message": "EACCES: permission denied, access 'ro.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access W_OK ro callback": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "ro.txt",
+    "message": "EACCES: permission denied, access 'ro.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access X_OK sync": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "file.txt",
+    "message": "EACCES: permission denied, access 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access X_OK promise": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "file.txt",
+    "message": "EACCES: permission denied, access 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access X_OK callback": {
+   "err": {
+    "name": "Error",
+    "code": "EACCES",
+    "errno": -13,
+    "syscall": "access",
+    "path": "file.txt",
+    "message": "EACCES: permission denied, access 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access ENOENT sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "access",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, access 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access ENOENT promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "access",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, access 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access ENOENT callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "access",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, access 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "access bad mode sync": {
+   "err": {
+    "name": "RangeError",
+    "code": "ERR_OUT_OF_RANGE",
+    "message": "mode is out of range: >= 0 && <= 7",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "access bad mode promise": {
+   "err": {
+    "name": "RangeError",
+    "code": "ERR_OUT_OF_RANGE",
+    "message": "mode is out of range: >= 0 && <= 7",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "access bad mode callback": {
+   "threw": {
+    "name": "RangeError",
+    "code": "ERR_OUT_OF_RANGE",
+    "message": "mode is out of range: >= 0 && <= 7",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "access bad mode type sync": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "mode must be int32 or null/undefined",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "access bad mode type promise": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "mode must be int32 or null/undefined",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "access bad mode type callback": {
+   "threw": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "mode must be int32 or null/undefined",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "existsSync": [
+   true,
+   false,
+   true,
+   false,
+   true,
+   false,
+   false
+  ],
+  "existsSync bad": [
+   false,
+   false
+  ],
+  "exists": [
+   true,
+   false
+  ],
+  "realpath link.txt sync": {
+   "ok": "<root>/file.txt"
+  },
+  "realpath link.txt promise": {
+   "ok": "<root>/file.txt"
+  },
+  "realpath link.txt callback": {
+   "ok": "<root>/file.txt"
+  },
+  "realpath linkdir/sub sync": {
+   "ok": "<root>/dir/sub"
+  },
+  "realpath linkdir/sub promise": {
+   "ok": "<root>/dir/sub"
+  },
+  "realpath linkdir/sub callback": {
+   "ok": "<root>/dir/sub"
+  },
+  "realpath . sync": {
+   "ok": "<root>"
+  },
+  "realpath . promise": {
+   "ok": "<root>"
+  },
+  "realpath . callback": {
+   "ok": "<root>"
+  },
+  "realpath dir/../dir2 sync": {
+   "ok": "<root>/dir2"
+  },
+  "realpath dir/../dir2 promise": {
+   "ok": "<root>/dir2"
+  },
+  "realpath dir/../dir2 callback": {
+   "ok": "<root>/dir2"
+  },
+  "realpath src/up sync": {
+   "ok": "<root>/dir"
+  },
+  "realpath src/up promise": {
+   "ok": "<root>/dir"
+  },
+  "realpath src/up callback": {
+   "ok": "<root>/dir"
+  },
+  "realpath src/up/sub/b.ts sync": {
+   "ok": "<root>/dir/sub/b.ts"
+  },
+  "realpath src/up/sub/b.ts promise": {
+   "ok": "<root>/dir/sub/b.ts"
+  },
+  "realpath src/up/sub/b.ts callback": {
+   "ok": "<root>/dir/sub/b.ts"
+  },
+  "realpath ENOENT sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "<root>/nope",
+    "message": "ENOENT: no such file or directory, lstat '<root>/nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath ENOENT promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "realpath",
+    "path": "nope/x",
+    "message": "ENOENT: no such file or directory, realpath 'nope/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath ENOENT callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "<root>/nope",
+    "message": "ENOENT: no such file or directory, lstat '<root>/nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath dangling sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "<root>/dangling",
+    "message": "ENOENT: no such file or directory, stat '<root>/dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath dangling promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "realpath",
+    "path": "dangling",
+    "message": "ENOENT: no such file or directory, realpath 'dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath dangling callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "stat",
+    "path": "<root>/dangling",
+    "message": "ENOENT: no such file or directory, stat '<root>/dangling'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "realpath buffer sync": {
+   "ok": {
+    "buffer": "<root>/file.txt"
+   }
+  },
+  "realpath buffer promise": {
+   "ok": {
+    "buffer": "<root>/file.txt"
+   }
+  },
+  "realpath buffer callback": {
+   "ok": {
+    "buffer": "<root>/file.txt"
+   }
+  },
+  "readlink link.txt sync": {
+   "ok": "file.txt"
+  },
+  "readlink link.txt promise": {
+   "ok": "file.txt"
+  },
+  "readlink link.txt callback": {
+   "ok": "file.txt"
+  },
+  "readlink linkdir sync": {
+   "ok": "dir"
+  },
+  "readlink linkdir promise": {
+   "ok": "dir"
+  },
+  "readlink linkdir callback": {
+   "ok": "dir"
+  },
+  "readlink src/up sync": {
+   "ok": "../dir"
+  },
+  "readlink src/up promise": {
+   "ok": "../dir"
+  },
+  "readlink src/up callback": {
+   "ok": "../dir"
+  },
+  "readlink file.txt sync": {
+   "err": {
+    "name": "Error",
+    "code": "EINVAL",
+    "errno": -22,
+    "syscall": "readlink",
+    "path": "file.txt",
+    "message": "EINVAL: invalid argument, readlink 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readlink file.txt promise": {
+   "err": {
+    "name": "Error",
+    "code": "EINVAL",
+    "errno": -22,
+    "syscall": "readlink",
+    "path": "file.txt",
+    "message": "EINVAL: invalid argument, readlink 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readlink file.txt callback": {
+   "err": {
+    "name": "Error",
+    "code": "EINVAL",
+    "errno": -22,
+    "syscall": "readlink",
+    "path": "file.txt",
+    "message": "EINVAL: invalid argument, readlink 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readlink nope sync": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "readlink",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, readlink 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readlink nope promise": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "readlink",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, readlink 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "readlink nope callback": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "readlink",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, readlink 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "glob **/*.ts": {
+   "ok": [
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "dir/sub/b.ts",
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/c/five.ts",
+    "src/index.ts",
+    "é.ts"
+   ]
+  },
+  "glob **": {
+   "ok": [
+    ".",
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts",
+    "dir2",
+    "dir2/x",
+    "dir2/x/y",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "src/a",
+    "src/a/b",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/c",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/index.ts",
+    "src/up",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "glob *": {
+   "ok": [
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "glob **/*": {
+   "ok": [
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir",
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts",
+    "dir2",
+    "dir2/x",
+    "dir2/x/y",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "src/a",
+    "src/a/b",
+    "src/a/b/four.js",
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/c",
+    "src/c/README.md",
+    "src/c/five.ts",
+    "src/index.ts",
+    "src/up",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "glob dir/**": {
+   "ok": [
+    "dir",
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts"
+   ]
+  },
+  "glob dir/**/*": {
+   "ok": [
+    "dir/a.txt",
+    "dir/sub",
+    "dir/sub/b.ts"
+   ]
+  },
+  "glob **/a.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob linkdir/*": {
+   "ok": [
+    "linkdir/a.txt",
+    "linkdir/sub"
+   ]
+  },
+  "glob linkdir/**": {
+   "ok": [
+    "linkdir",
+    "linkdir/a.txt",
+    "linkdir/sub",
+    "linkdir/sub/b.ts"
+   ]
+  },
+  "glob .hidden/*": {
+   "ok": [
+    ".hidden/h.ts"
+   ]
+  },
+  "glob **/.dot.ts": {
+   "ok": [
+    "dir/.dot.ts"
+   ]
+  },
+  "glob */": {
+   "ok": [
+    "dir",
+    "dir2",
+    "empty",
+    "src"
+   ]
+  },
+  "glob **/": {
+   "ok": [
+    ".",
+    "dir",
+    "dir/sub",
+    "dir2",
+    "dir2/x",
+    "empty",
+    "src",
+    "src/a",
+    "src/a/b",
+    "src/c"
+   ]
+  },
+  "glob dir/*/b.ts": {
+   "ok": [
+    "dir/sub/b.ts"
+   ]
+  },
+  "glob {dir,dir2}/*": {
+   "ok": [
+    "dir/a.txt",
+    "dir/sub",
+    "dir2/x"
+   ]
+  },
+  "glob dir/{a,b}.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob dir/[ab].txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob dir/?.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob nope/*": {
+   "ok": []
+  },
+  "glob file.txt": {
+   "ok": [
+    "file.txt"
+   ]
+  },
+  "glob file.txt/": {
+   "ok": []
+  },
+  "glob ./dir/*": {
+   "ok": [
+    "dir/a.txt",
+    "dir/sub"
+   ]
+  },
+  "glob dir/../dir/a.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob DIR/*": {
+   "ok": []
+  },
+  "glob **/sub": {
+   "ok": [
+    "dir/sub"
+   ]
+  },
+  "glob **/sub/": {
+   "ok": [
+    "dir/sub"
+   ]
+  },
+  "glob dir/sub/**": {
+   "ok": [
+    "dir/sub",
+    "dir/sub/b.ts"
+   ]
+  },
+  "glob .*": {
+   "ok": [
+    ".hidden"
+   ]
+  },
+  "glob **/.*": {
+   "ok": [
+    ".hidden",
+    "dir/.dot.ts"
+   ]
+  },
+  "glob +(dir|dir2)/*": {
+   "ok": [
+    "dir/a.txt",
+    "dir/sub",
+    "dir2/x"
+   ]
+  },
+  "glob !(dir)": {
+   "ok": [
+    "B c.ts",
+    "Z.ts",
+    "_u.ts",
+    "bad.bin",
+    "dangling",
+    "dir2",
+    "empty",
+    "file.txt",
+    "link.txt",
+    "linkdir",
+    "loop1",
+    "loop2",
+    "ro.txt",
+    "src",
+    "utf8.txt",
+    "é.ts"
+   ]
+  },
+  "glob [d]ir/a.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob dir/[!a].txt": {
+   "ok": []
+  },
+  "glob src/**/*.{ts,tsx}": {
+   "ok": [
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/a/two.tsx",
+    "src/c/five.ts",
+    "src/index.ts"
+   ]
+  },
+  "glob src/*/*.ts": {
+   "ok": [
+    "src/a/one.ts",
+    "src/c/five.ts"
+   ]
+  },
+  "glob src/**/?(*.)ts": {
+   "ok": [
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/c/five.ts",
+    "src/index.ts"
+   ]
+  },
+  "glob src/a/*(o|n|e).ts": {
+   "ok": [
+    "src/a/one.ts"
+   ]
+  },
+  "glob */a.txt": {
+   "ok": [
+    "dir/a.txt"
+   ]
+  },
+  "glob src/**/[[:lower:]]*.ts": {
+   "ok": [
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/c/five.ts",
+    "src/index.ts"
+   ]
+  },
+  "glob src/up/*": {
+   "ok": [
+    "src/up/a.txt",
+    "src/up/sub"
+   ]
+  },
+  "glob src/{a,c}/**/*.ts": {
+   "ok": [
+    "src/a/b/three.ts",
+    "src/a/one.ts",
+    "src/c/five.ts"
+   ]
+  },
+  "glob **/*.md": {
+   "ok": [
+    "src/c/README.md"
+   ]
+  },
+  "glob src/a/b/*": {
+   "ok": [
+    "src/a/b/four.js",
+    "src/a/b/three.ts"
+   ]
+  },
+  "glob exclude": [
+   "B c.ts",
+   "Z.ts",
+   "_u.ts",
+   "bad.bin",
+   "dangling",
+   "dir",
+   "dir2",
+   "dir2/x",
+   "dir2/x/y",
+   "empty",
+   "file.txt",
+   "link.txt",
+   "linkdir",
+   "loop1",
+   "loop2",
+   "ro.txt",
+   "src",
+   "src/a",
+   "src/c",
+   "src/c/README.md",
+   "src/c/five.ts",
+   "src/index.ts",
+   "src/up",
+   "utf8.txt",
+   "é.ts"
+  ],
+  "glob exclude fn": [
+   "src/a/one.ts",
+   "src/c/five.ts",
+   "src/index.ts"
+  ],
+  "glob cwd": [
+   "one.ts"
+  ],
+  "glob array": [
+   "dir/a.txt",
+   "dir/sub",
+   "src/c/README.md",
+   "src/c/five.ts"
+  ],
+  "glob types": [
+   [
+    "a.txt",
+    "dir",
+    true,
+    false
+   ],
+   [
+    "sub",
+    "dir",
+    false,
+    true
+   ]
+  ],
+  "glob follow": [
+   "B c.ts",
+   "Z.ts",
+   "_u.ts",
+   "dir/sub/b.ts",
+   "linkdir/sub/b.ts",
+   "src/a/b/three.ts",
+   "src/a/one.ts",
+   "src/c/five.ts",
+   "src/index.ts",
+   "src/up/sub/b.ts",
+   "é.ts"
+  ],
+  "glob promise": [
+   "src/a/b/three.ts",
+   "src/a/one.ts",
+   "src/c/five.ts",
+   "src/index.ts"
+  ],
+  "glob callback": [
+   "src/a/b/three.ts",
+   "src/a/one.ts",
+   "src/c/five.ts",
+   "src/index.ts"
+  ],
+  "glob bad": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"patterns\" argument must be of type string. Received type number (1)",
+   "keys": [
+    "code"
+   ]
+  }
+ },
+ "write": {
+  "writeFile": {
+   "ok": "undefined"
+  },
+  "writeFile buffer": {
+   "ok": "undefined"
+  },
+  "writeFile encoding": {
+   "ok": "undefined"
+  },
+  "writeFile Uint8Array": {
+   "ok": "undefined"
+  },
+  "writeFile EISDIR": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "open",
+    "path": "dir",
+    "message": "EISDIR: illegal operation on a directory, open 'dir'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "writeFile ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "open",
+    "path": "nope/x",
+    "message": "ENOENT: no such file or directory, open 'nope/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "writeFile wx EEXIST": {
+   "err": {
+    "name": "Error",
+    "code": "EEXIST",
+    "errno": -17,
+    "syscall": "open",
+    "path": "file.txt",
+    "message": "EEXIST: file already exists, open 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "writeFile bad data": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView. Received type number (12)",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "writeFile through link": {
+   "ok": "undefined"
+  },
+  "appendFile": {
+   "ok": "undefined"
+  },
+  "appendFile new": {
+   "ok": "undefined"
+  },
+  "appendFile EISDIR": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "open",
+    "path": "dir",
+    "message": "EISDIR: illegal operation on a directory, open 'dir'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "mkdir": {
+   "ok": "undefined"
+  },
+  "mkdir EEXIST": {
+   "err": {
+    "name": "Error",
+    "code": "EEXIST",
+    "errno": -17,
+    "syscall": "mkdir",
+    "path": "dir",
+    "message": "EEXIST: file already exists, mkdir 'dir'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "mkdir ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "mkdir",
+    "path": "nope/x",
+    "message": "ENOENT: no such file or directory, mkdir 'nope/x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "mkdir recursive": {
+   "ok": "m2"
+  },
+  "mkdir recursive exists": {
+   "ok": "undefined"
+  },
+  "mkdir recursive partial": {
+   "ok": "dir/n1"
+  },
+  "mkdir recursive ENOTDIR": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "mkdir",
+    "path": "file.txt/a/b",
+    "message": "ENOTDIR: not a directory, mkdir 'file.txt/a/b'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "mkdir mode": {
+   "ok": "undefined"
+  },
+  "mkdir mode string": {
+   "ok": "undefined"
+  },
+  "rmdir ENOTEMPTY": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTEMPTY",
+    "errno": -39,
+    "syscall": "rmdir",
+    "path": "dir",
+    "message": "ENOTEMPTY: directory not empty, rmdir 'dir'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "rmdir ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "rmdir",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, rmdir 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "rmdir ENOTDIR": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTDIR",
+    "errno": -20,
+    "syscall": "rmdir",
+    "path": "file.txt",
+    "message": "ENOTDIR: not a directory, rmdir 'file.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "rmdir": {
+   "ok": "undefined"
+  },
+  "unlink ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "unlink",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, unlink 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "unlink EISDIR": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "unlink",
+    "path": "dir2",
+    "message": "EISDIR: illegal operation on a directory, unlink 'dir2'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "unlink": {
+   "ok": "undefined"
+  },
+  "unlink link": {
+   "ok": "undefined"
+  },
+  "rm ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "rm force": {
+   "ok": "undefined"
+  },
+  "rm dir": {
+   "err": {
+    "name": "SystemError",
+    "code": "ERR_FS_EISDIR",
+    "errno": 21,
+    "syscall": "rm",
+    "path": "dir2",
+    "message": "Path is a directory: rm returned EISDIR (is a directory) dir2",
+    "keys": [
+     "code",
+     "info",
+     "errno",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "rm recursive": {
+   "ok": "undefined"
+  },
+  "rm file": {
+   "ok": "undefined"
+  },
+  "rm bad force": {
+   "err": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"options.force\" property must be of type boolean. Received type number (1)",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "rename": {
+   "ok": "undefined"
+  },
+  "rename ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "rename",
+    "path": "nope",
+    "dest": "x",
+    "message": "ENOENT: no such file or directory, rename 'nope' -> 'x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path",
+     "dest"
+    ]
+   }
+  },
+  "rename ENOTEMPTY": {
+   "err": {
+    "name": "Error",
+    "code": "ENOTEMPTY",
+    "errno": -39,
+    "syscall": "rename",
+    "path": "m2",
+    "dest": "dir",
+    "message": "ENOTEMPTY: directory not empty, rename 'm2' -> 'dir'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path",
+     "dest"
+    ]
+   }
+  },
+  "rename dir": {
+   "ok": "undefined"
+  },
+  "copyFile": {
+   "ok": "undefined"
+  },
+  "copyFile ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "copyfile",
+    "path": "nope",
+    "dest": "x",
+    "message": "ENOENT: no such file or directory, copyfile 'nope' -> 'x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path",
+     "dest"
+    ]
+   }
+  },
+  "copyFile EISDIR": {
+   "err": {
+    "name": "Error",
+    "code": "EISDIR",
+    "errno": -21,
+    "syscall": "copyfile",
+    "path": "dir",
+    "dest": "x",
+    "message": "EISDIR: illegal operation on a directory, copyfile 'dir' -> 'x'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path",
+     "dest"
+    ]
+   }
+  },
+  "copyFile EXCL": {
+   "err": {
+    "name": "Error",
+    "code": "EEXIST",
+    "errno": -17,
+    "syscall": "copyfile",
+    "path": "file.txt",
+    "dest": "copy.txt",
+    "message": "EEXIST: file already exists, copyfile 'file.txt' -> 'copy.txt'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path",
+     "dest"
+    ]
+   }
+  },
+  "copyFile bad mode": {
+   "err": {
+    "name": "RangeError",
+    "code": "ERR_OUT_OF_RANGE",
+    "message": "mode is out of range: >= 0 && <= 7",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "cp file": {
+   "ok": "undefined"
+  },
+  "cp ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "cp dir no recursive": {
+   "err": {
+    "name": "Error",
+    "code": "ERR_FS_EISDIR",
+    "message": "Recursive option not enabled, cannot copy a directory: src/",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "cp dir": {
+   "ok": "undefined"
+  },
+  "cp no force": {
+   "ok": "undefined"
+  },
+  "cp errorOnExist": {
+   "err": {
+    "name": "SystemError",
+    "code": "ERR_FS_CP_EEXIST",
+    "errno": 17,
+    "syscall": "cp",
+    "path": "cp.txt",
+    "message": "Target already exists: cp returned EEXIST (cp.txt already exists) cp.txt",
+    "keys": [
+     "code",
+     "info",
+     "errno",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "cp self": {
+   "err": {
+    "name": "Error",
+    "code": "ERR_FS_CP_EINVAL",
+    "message": "Cannot copy src/ to a subdirectory of self src/inner",
+    "keys": [
+     "code"
+    ]
+   }
+  },
+  "promises writeFile": {
+   "ok": "undefined"
+  },
+  "promises appendFile": {
+   "ok": "undefined"
+  },
+  "promises mkdir": {
+   "ok": "pm"
+  },
+  "promises rm": {
+   "ok": "undefined"
+  },
+  "promises rm ENOENT": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "pm",
+    "message": "ENOENT: no such file or directory, lstat 'pm'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "promises rename": {
+   "ok": "undefined"
+  },
+  "promises copyFile": {
+   "ok": "undefined"
+  },
+  "promises unlink": {
+   "ok": "undefined"
+  },
+  "promises rmdir": {
+   "ok": "undefined"
+  },
+  "promises cp": {
+   "ok": "undefined"
+  },
+  "callback writeFile": {
+   "ok": "undefined"
+  },
+  "callback mkdir": {
+   "ok": "cbd"
+  },
+  "callback rm": {
+   "err": {
+    "name": "Error",
+    "code": "ENOENT",
+    "errno": -2,
+    "syscall": "lstat",
+    "path": "nope",
+    "message": "ENOENT: no such file or directory, lstat 'nope'",
+    "keys": [
+     "errno",
+     "code",
+     "syscall",
+     "path"
+    ]
+   }
+  },
+  "tree": {
+   ".hidden": "dir",
+   ".hidden/h.ts": "680a",
+   "B c.ts": "62630a",
+   "Z.ts": "7a0a",
+   "_u.ts": "750a",
+   "acopy": "dir",
+   "acopy/b": "dir",
+   "acopy/b/four.js": "340a",
+   "acopy/b/three.ts": "330a",
+   "acopy/one.ts": "310a",
+   "acopy/two.tsx": "320a",
+   "acopy2": "dir",
+   "acopy2/b": "dir",
+   "acopy2/b/four.js": "340a",
+   "acopy2/b/three.ts": "330a",
+   "acopy2/one.ts": "310a",
+   "acopy2/two.tsx": "320a",
+   "app.txt": "61",
+   "bad.bin": "fffee28241c080",
+   "cb.txt": "6362",
+   "cbd": "dir",
+   "cbd/x": "dir",
+   "copy.txt": "766961206c696e6b",
+   "cp.txt": "766961206c696e6b",
+   "dir": "dir",
+   "dir/.dot.ts": "646f740a",
+   "dir/a.txt": "610a",
+   "dir/n1": "dir",
+   "dir/n1/n2": "dir",
+   "dir/sub": "dir",
+   "dir/sub/b.ts": "6578706f727420636f6e73742062203d20310a",
+   "empty": "dir",
+   "file.txt": "766961206c696e6b",
+   "link.txt": "link",
+   "linkdir": "link",
+   "linkdir/.dot.ts": "646f740a",
+   "linkdir/a.txt": "610a",
+   "linkdir/n1": "dir",
+   "linkdir/n1/n2": "dir",
+   "linkdir/sub": "dir",
+   "linkdir/sub/b.ts": "6578706f727420636f6e73742062203d20310a",
+   "loop1": "link",
+   "loop2": "link",
+   "m2": "dir",
+   "m2/a": "dir",
+   "m2/a/b": "dir",
+   "m5": "dir",
+   "new.txt": "646174612b6d6f7265",
+   "p2.txt": "7071",
+   "renamed.bin": "010203",
+   "ro.txt": "726f0a",
+   "src": "dir",
+   "src/a": "dir",
+   "src/a/b": "dir",
+   "src/a/b/four.js": "340a",
+   "src/a/b/three.ts": "330a",
+   "src/a/one.ts": "310a",
+   "src/a/two.tsx": "320a",
+   "src/c": "dir",
+   "src/c/README.md": "720a",
+   "src/c/five.ts": "350a",
+   "src/index.ts": "690a",
+   "src/up": "link",
+   "src/up/.dot.ts": "646f740a",
+   "src/up/a.txt": "610a",
+   "src/up/n1": "dir",
+   "src/up/n1/n2": "dir",
+   "src/up/sub": "dir",
+   "src/up/sub/b.ts": "6578706f727420636f6e73742062203d20310a",
+   "utf8.txt": "68c3a96c6c6f2077c3b6726c6420e29c9320f09f98800a",
+   "é.ts": "650a"
+  },
+  "modes": {
+   "m5": "750",
+   "copy": "644",
+   "ro": "644"
+  }
+ }
+}

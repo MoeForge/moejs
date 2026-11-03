@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // constKind classifies a folded constant.

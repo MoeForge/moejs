@@ -52,7 +52,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 type (
@@ -131,6 +131,14 @@ var (
 	// nesting is too deep (more than 10000 levels)". (Unmarshal's limits
 	// wrap ErrTooLarge instead.)
 	ErrTooDeep = engine.ErrTooDeep
+)
+
+// The errors of RunScript, Load and Link given nil, what a failed
+// CompileScript or Compile returns with its error.
+var (
+	errNilScript = errors.New("moejs: RunScript of a nil *Script")
+	errNilModule = errors.New("moejs: Load of a nil *Module")
+	errNilLink   = errors.New("moejs: Link of a nil *Module")
 )
 
 // SyntaxError is a parse or early error in module source.

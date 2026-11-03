@@ -1,4 +1,4 @@
-module github.com/Calcium-Ion/moejs
+module github.com/MoeForge/moejs
 
 go 1.25
 

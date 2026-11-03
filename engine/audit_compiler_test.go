@@ -18,9 +18,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -846,7 +846,7 @@ func TestAuditCompilerLimits(t *testing.T) {
 		b.WriteString("} export const r = 1;")
 		err := auditCompilerCompile(auditCompilerPrelude + b.String())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "SyntaxError: too many constants")
+		assert.Contains(t, err.Error(), "SyntaxError: function needs more than 65536 constants")
 	})
 	t.Run("constants-60000-run", func(t *testing.T) {
 		var b strings.Builder

@@ -1,0 +1,3946 @@
+{
+ "from utf8 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength utf8 \"\"": {
+  "ok": 0
+ },
+ "from utf8 \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength utf8 \"hello\"": {
+  "ok": 5
+ },
+ "from utf8 \"héllo wörld\"": {
+  "ok": "B:68c3a96c6c6f2077c3b6726c64"
+ },
+ "byteLength utf8 \"héllo wörld\"": {
+  "ok": 13
+ },
+ "from utf8 \"✓ 😀 􏿿\"": {
+  "ok": "B:e29c9320f09f988020f48fbfbf"
+ },
+ "byteLength utf8 \"✓ 😀 􏿿\"": {
+  "ok": 13
+ },
+ "from utf8 \"a\\ud800b\"": {
+  "ok": "B:61efbfbd62"
+ },
+ "byteLength utf8 \"a\\ud800b\"": {
+  "ok": 5
+ },
+ "from utf8 \"\\udc00x\"": {
+  "ok": "B:efbfbd78"
+ },
+ "byteLength utf8 \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from utf8 \"\\u0000ÿ\"": {
+  "ok": "B:007fc280c3bf"
+ },
+ "byteLength utf8 \"\\u0000ÿ\"": {
+  "ok": 6
+ },
+ "from utf8 \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength utf8 \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from utf8 \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength utf8 \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from utf8 \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength utf8 \"a-_b\"": {
+  "ok": 4
+ },
+ "from utf8 \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength utf8 \"ab+/\"": {
+  "ok": 4
+ },
+ "from utf8 \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength utf8 \"abc\"": {
+  "ok": 3
+ },
+ "from utf8 \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength utf8 \"zz12\"": {
+  "ok": 4
+ },
+ "from utf8 \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength utf8 \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from utf8 \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength utf8 \"=\"": {
+  "ok": 1
+ },
+ "from utf8 \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength utf8 \"YQ\"": {
+  "ok": 2
+ },
+ "from utf8 \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength utf8 \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from utf8 \"Āā\"": {
+  "ok": "B:c480c481"
+ },
+ "byteLength utf8 \"Āā\"": {
+  "ok": 4
+ },
+ "from utf-8 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength utf-8 \"\"": {
+  "ok": 0
+ },
+ "from utf-8 \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength utf-8 \"hello\"": {
+  "ok": 5
+ },
+ "from utf-8 \"héllo wörld\"": {
+  "ok": "B:68c3a96c6c6f2077c3b6726c64"
+ },
+ "byteLength utf-8 \"héllo wörld\"": {
+  "ok": 13
+ },
+ "from utf-8 \"✓ 😀 􏿿\"": {
+  "ok": "B:e29c9320f09f988020f48fbfbf"
+ },
+ "byteLength utf-8 \"✓ 😀 􏿿\"": {
+  "ok": 13
+ },
+ "from utf-8 \"a\\ud800b\"": {
+  "ok": "B:61efbfbd62"
+ },
+ "byteLength utf-8 \"a\\ud800b\"": {
+  "ok": 5
+ },
+ "from utf-8 \"\\udc00x\"": {
+  "ok": "B:efbfbd78"
+ },
+ "byteLength utf-8 \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from utf-8 \"\\u0000ÿ\"": {
+  "ok": "B:007fc280c3bf"
+ },
+ "byteLength utf-8 \"\\u0000ÿ\"": {
+  "ok": 6
+ },
+ "from utf-8 \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength utf-8 \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from utf-8 \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength utf-8 \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from utf-8 \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength utf-8 \"a-_b\"": {
+  "ok": 4
+ },
+ "from utf-8 \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength utf-8 \"ab+/\"": {
+  "ok": 4
+ },
+ "from utf-8 \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength utf-8 \"abc\"": {
+  "ok": 3
+ },
+ "from utf-8 \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength utf-8 \"zz12\"": {
+  "ok": 4
+ },
+ "from utf-8 \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength utf-8 \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from utf-8 \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength utf-8 \"=\"": {
+  "ok": 1
+ },
+ "from utf-8 \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength utf-8 \"YQ\"": {
+  "ok": 2
+ },
+ "from utf-8 \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength utf-8 \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from utf-8 \"Āā\"": {
+  "ok": "B:c480c481"
+ },
+ "byteLength utf-8 \"Āā\"": {
+  "ok": 4
+ },
+ "from UTF8 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength UTF8 \"\"": {
+  "ok": 0
+ },
+ "from UTF8 \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength UTF8 \"hello\"": {
+  "ok": 5
+ },
+ "from UTF8 \"héllo wörld\"": {
+  "ok": "B:68c3a96c6c6f2077c3b6726c64"
+ },
+ "byteLength UTF8 \"héllo wörld\"": {
+  "ok": 13
+ },
+ "from UTF8 \"✓ 😀 􏿿\"": {
+  "ok": "B:e29c9320f09f988020f48fbfbf"
+ },
+ "byteLength UTF8 \"✓ 😀 􏿿\"": {
+  "ok": 13
+ },
+ "from UTF8 \"a\\ud800b\"": {
+  "ok": "B:61efbfbd62"
+ },
+ "byteLength UTF8 \"a\\ud800b\"": {
+  "ok": 5
+ },
+ "from UTF8 \"\\udc00x\"": {
+  "ok": "B:efbfbd78"
+ },
+ "byteLength UTF8 \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from UTF8 \"\\u0000ÿ\"": {
+  "ok": "B:007fc280c3bf"
+ },
+ "byteLength UTF8 \"\\u0000ÿ\"": {
+  "ok": 6
+ },
+ "from UTF8 \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength UTF8 \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from UTF8 \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength UTF8 \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from UTF8 \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength UTF8 \"a-_b\"": {
+  "ok": 4
+ },
+ "from UTF8 \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength UTF8 \"ab+/\"": {
+  "ok": 4
+ },
+ "from UTF8 \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength UTF8 \"abc\"": {
+  "ok": 3
+ },
+ "from UTF8 \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength UTF8 \"zz12\"": {
+  "ok": 4
+ },
+ "from UTF8 \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength UTF8 \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from UTF8 \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength UTF8 \"=\"": {
+  "ok": 1
+ },
+ "from UTF8 \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength UTF8 \"YQ\"": {
+  "ok": 2
+ },
+ "from UTF8 \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength UTF8 \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from UTF8 \"Āā\"": {
+  "ok": "B:c480c481"
+ },
+ "byteLength UTF8 \"Āā\"": {
+  "ok": 4
+ },
+ "from hex \"\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"\"": {
+  "ok": 0
+ },
+ "from hex \"hello\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"hello\"": {
+  "ok": 2
+ },
+ "from hex \"héllo wörld\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"héllo wörld\"": {
+  "ok": 5
+ },
+ "from hex \"✓ 😀 􏿿\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"✓ 😀 􏿿\"": {
+  "ok": 3
+ },
+ "from hex \"a\\ud800b\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"a\\ud800b\"": {
+  "ok": 1
+ },
+ "from hex \"\\udc00x\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"\\udc00x\"": {
+  "ok": 1
+ },
+ "from hex \"\\u0000ÿ\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"\\u0000ÿ\"": {
+  "ok": 2
+ },
+ "from hex \"aGVsbG8=\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"aGVsbG8=\"": {
+  "ok": 4
+ },
+ "from hex \"aGVs bG8\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"aGVs bG8\"": {
+  "ok": 4
+ },
+ "from hex \"a-_b\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"a-_b\"": {
+  "ok": 2
+ },
+ "from hex \"ab+/\"": {
+  "ok": "B:ab"
+ },
+ "byteLength hex \"ab+/\"": {
+  "ok": 2
+ },
+ "from hex \"abc\"": {
+  "ok": "B:ab"
+ },
+ "byteLength hex \"abc\"": {
+  "ok": 1
+ },
+ "from hex \"zz12\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"zz12\"": {
+  "ok": 2
+ },
+ "from hex \"deadBEEF\"": {
+  "ok": "B:deadbeef"
+ },
+ "byteLength hex \"deadBEEF\"": {
+  "ok": 4
+ },
+ "from hex \"=\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"=\"": {
+  "ok": 0
+ },
+ "from hex \"YQ\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"YQ\"": {
+  "ok": 1
+ },
+ "from hex \"YQ==YQ==\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"YQ==YQ==\"": {
+  "ok": 4
+ },
+ "from hex \"Āā\"": {
+  "ok": "B:"
+ },
+ "byteLength hex \"Āā\"": {
+  "ok": 1
+ },
+ "from base64 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"\"": {
+  "ok": 0
+ },
+ "from base64 \"hello\"": {
+  "ok": "B:85e965"
+ },
+ "byteLength base64 \"hello\"": {
+  "ok": 3
+ },
+ "from base64 \"héllo wörld\"": {
+  "ok": "B:865968c2b95d"
+ },
+ "byteLength base64 \"héllo wörld\"": {
+  "ok": 8
+ },
+ "from base64 \"✓ 😀 􏿿\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"✓ 😀 􏿿\"": {
+  "ok": 5
+ },
+ "from base64 \"a\\ud800b\"": {
+  "ok": "B:69"
+ },
+ "byteLength base64 \"a\\ud800b\"": {
+  "ok": 2
+ },
+ "from base64 \"\\udc00x\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"\\udc00x\"": {
+  "ok": 1
+ },
+ "from base64 \"\\u0000ÿ\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"\\u0000ÿ\"": {
+  "ok": 3
+ },
+ "from base64 \"aGVsbG8=\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength base64 \"aGVsbG8=\"": {
+  "ok": 5
+ },
+ "from base64 \"aGVs bG8\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength base64 \"aGVs bG8\"": {
+  "ok": 6
+ },
+ "from base64 \"a-_b\"": {
+  "ok": "B:6befdb"
+ },
+ "byteLength base64 \"a-_b\"": {
+  "ok": 3
+ },
+ "from base64 \"ab+/\"": {
+  "ok": "B:69bfbf"
+ },
+ "byteLength base64 \"ab+/\"": {
+  "ok": 3
+ },
+ "from base64 \"abc\"": {
+  "ok": "B:69b7"
+ },
+ "byteLength base64 \"abc\"": {
+  "ok": 2
+ },
+ "from base64 \"zz12\"": {
+  "ok": "B:cf3d76"
+ },
+ "byteLength base64 \"zz12\"": {
+  "ok": 3
+ },
+ "from base64 \"deadBEEF\"": {
+  "ok": "B:75e69d044105"
+ },
+ "byteLength base64 \"deadBEEF\"": {
+  "ok": 6
+ },
+ "from base64 \"=\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"=\"": {
+  "ok": 0
+ },
+ "from base64 \"YQ\"": {
+  "ok": "B:61"
+ },
+ "byteLength base64 \"YQ\"": {
+  "ok": 1
+ },
+ "from base64 \"YQ==YQ==\"": {
+  "ok": "B:61"
+ },
+ "byteLength base64 \"YQ==YQ==\"": {
+  "ok": 4
+ },
+ "from base64 \"Āā\"": {
+  "ok": "B:"
+ },
+ "byteLength base64 \"Āā\"": {
+  "ok": 1
+ },
+ "from base64url \"\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"\"": {
+  "ok": 0
+ },
+ "from base64url \"hello\"": {
+  "ok": "B:85e965"
+ },
+ "byteLength base64url \"hello\"": {
+  "ok": 3
+ },
+ "from base64url \"héllo wörld\"": {
+  "ok": "B:865968c2b95d"
+ },
+ "byteLength base64url \"héllo wörld\"": {
+  "ok": 8
+ },
+ "from base64url \"✓ 😀 􏿿\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"✓ 😀 􏿿\"": {
+  "ok": 5
+ },
+ "from base64url \"a\\ud800b\"": {
+  "ok": "B:69"
+ },
+ "byteLength base64url \"a\\ud800b\"": {
+  "ok": 2
+ },
+ "from base64url \"\\udc00x\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"\\udc00x\"": {
+  "ok": 1
+ },
+ "from base64url \"\\u0000ÿ\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"\\u0000ÿ\"": {
+  "ok": 3
+ },
+ "from base64url \"aGVsbG8=\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength base64url \"aGVsbG8=\"": {
+  "ok": 5
+ },
+ "from base64url \"aGVs bG8\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength base64url \"aGVs bG8\"": {
+  "ok": 6
+ },
+ "from base64url \"a-_b\"": {
+  "ok": "B:6befdb"
+ },
+ "byteLength base64url \"a-_b\"": {
+  "ok": 3
+ },
+ "from base64url \"ab+/\"": {
+  "ok": "B:69bfbf"
+ },
+ "byteLength base64url \"ab+/\"": {
+  "ok": 3
+ },
+ "from base64url \"abc\"": {
+  "ok": "B:69b7"
+ },
+ "byteLength base64url \"abc\"": {
+  "ok": 2
+ },
+ "from base64url \"zz12\"": {
+  "ok": "B:cf3d76"
+ },
+ "byteLength base64url \"zz12\"": {
+  "ok": 3
+ },
+ "from base64url \"deadBEEF\"": {
+  "ok": "B:75e69d044105"
+ },
+ "byteLength base64url \"deadBEEF\"": {
+  "ok": 6
+ },
+ "from base64url \"=\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"=\"": {
+  "ok": 0
+ },
+ "from base64url \"YQ\"": {
+  "ok": "B:61"
+ },
+ "byteLength base64url \"YQ\"": {
+  "ok": 1
+ },
+ "from base64url \"YQ==YQ==\"": {
+  "ok": "B:61"
+ },
+ "byteLength base64url \"YQ==YQ==\"": {
+  "ok": 4
+ },
+ "from base64url \"Āā\"": {
+  "ok": "B:"
+ },
+ "byteLength base64url \"Āā\"": {
+  "ok": 1
+ },
+ "from latin1 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength latin1 \"\"": {
+  "ok": 0
+ },
+ "from latin1 \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength latin1 \"hello\"": {
+  "ok": 5
+ },
+ "from latin1 \"héllo wörld\"": {
+  "ok": "B:68e96c6c6f2077f6726c64"
+ },
+ "byteLength latin1 \"héllo wörld\"": {
+  "ok": 11
+ },
+ "from latin1 \"✓ 😀 􏿿\"": {
+  "ok": "B:13203d0020ffff"
+ },
+ "byteLength latin1 \"✓ 😀 􏿿\"": {
+  "ok": 7
+ },
+ "from latin1 \"a\\ud800b\"": {
+  "ok": "B:610062"
+ },
+ "byteLength latin1 \"a\\ud800b\"": {
+  "ok": 3
+ },
+ "from latin1 \"\\udc00x\"": {
+  "ok": "B:0078"
+ },
+ "byteLength latin1 \"\\udc00x\"": {
+  "ok": 2
+ },
+ "from latin1 \"\\u0000ÿ\"": {
+  "ok": "B:007f80ff"
+ },
+ "byteLength latin1 \"\\u0000ÿ\"": {
+  "ok": 4
+ },
+ "from latin1 \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength latin1 \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from latin1 \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength latin1 \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from latin1 \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength latin1 \"a-_b\"": {
+  "ok": 4
+ },
+ "from latin1 \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength latin1 \"ab+/\"": {
+  "ok": 4
+ },
+ "from latin1 \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength latin1 \"abc\"": {
+  "ok": 3
+ },
+ "from latin1 \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength latin1 \"zz12\"": {
+  "ok": 4
+ },
+ "from latin1 \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength latin1 \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from latin1 \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength latin1 \"=\"": {
+  "ok": 1
+ },
+ "from latin1 \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength latin1 \"YQ\"": {
+  "ok": 2
+ },
+ "from latin1 \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength latin1 \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from latin1 \"Āā\"": {
+  "ok": "B:0001"
+ },
+ "byteLength latin1 \"Āā\"": {
+  "ok": 2
+ },
+ "from binary \"\"": {
+  "ok": "B:"
+ },
+ "byteLength binary \"\"": {
+  "ok": 0
+ },
+ "from binary \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength binary \"hello\"": {
+  "ok": 5
+ },
+ "from binary \"héllo wörld\"": {
+  "ok": "B:68e96c6c6f2077f6726c64"
+ },
+ "byteLength binary \"héllo wörld\"": {
+  "ok": 11
+ },
+ "from binary \"✓ 😀 􏿿\"": {
+  "ok": "B:13203d0020ffff"
+ },
+ "byteLength binary \"✓ 😀 􏿿\"": {
+  "ok": 7
+ },
+ "from binary \"a\\ud800b\"": {
+  "ok": "B:610062"
+ },
+ "byteLength binary \"a\\ud800b\"": {
+  "ok": 3
+ },
+ "from binary \"\\udc00x\"": {
+  "ok": "B:0078"
+ },
+ "byteLength binary \"\\udc00x\"": {
+  "ok": 2
+ },
+ "from binary \"\\u0000ÿ\"": {
+  "ok": "B:007f80ff"
+ },
+ "byteLength binary \"\\u0000ÿ\"": {
+  "ok": 4
+ },
+ "from binary \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength binary \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from binary \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength binary \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from binary \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength binary \"a-_b\"": {
+  "ok": 4
+ },
+ "from binary \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength binary \"ab+/\"": {
+  "ok": 4
+ },
+ "from binary \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength binary \"abc\"": {
+  "ok": 3
+ },
+ "from binary \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength binary \"zz12\"": {
+  "ok": 4
+ },
+ "from binary \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength binary \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from binary \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength binary \"=\"": {
+  "ok": 1
+ },
+ "from binary \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength binary \"YQ\"": {
+  "ok": 2
+ },
+ "from binary \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength binary \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from binary \"Āā\"": {
+  "ok": "B:0001"
+ },
+ "byteLength binary \"Āā\"": {
+  "ok": 2
+ },
+ "from ascii \"\"": {
+  "ok": "B:"
+ },
+ "byteLength ascii \"\"": {
+  "ok": 0
+ },
+ "from ascii \"hello\"": {
+  "ok": "B:68656c6c6f"
+ },
+ "byteLength ascii \"hello\"": {
+  "ok": 5
+ },
+ "from ascii \"héllo wörld\"": {
+  "ok": "B:68e96c6c6f2077f6726c64"
+ },
+ "byteLength ascii \"héllo wörld\"": {
+  "ok": 11
+ },
+ "from ascii \"✓ 😀 􏿿\"": {
+  "ok": "B:13203d0020ffff"
+ },
+ "byteLength ascii \"✓ 😀 􏿿\"": {
+  "ok": 7
+ },
+ "from ascii \"a\\ud800b\"": {
+  "ok": "B:610062"
+ },
+ "byteLength ascii \"a\\ud800b\"": {
+  "ok": 3
+ },
+ "from ascii \"\\udc00x\"": {
+  "ok": "B:0078"
+ },
+ "byteLength ascii \"\\udc00x\"": {
+  "ok": 2
+ },
+ "from ascii \"\\u0000ÿ\"": {
+  "ok": "B:007f80ff"
+ },
+ "byteLength ascii \"\\u0000ÿ\"": {
+  "ok": 4
+ },
+ "from ascii \"aGVsbG8=\"": {
+  "ok": "B:614756736247383d"
+ },
+ "byteLength ascii \"aGVsbG8=\"": {
+  "ok": 8
+ },
+ "from ascii \"aGVs bG8\"": {
+  "ok": "B:6147567320624738"
+ },
+ "byteLength ascii \"aGVs bG8\"": {
+  "ok": 8
+ },
+ "from ascii \"a-_b\"": {
+  "ok": "B:612d5f62"
+ },
+ "byteLength ascii \"a-_b\"": {
+  "ok": 4
+ },
+ "from ascii \"ab+/\"": {
+  "ok": "B:61622b2f"
+ },
+ "byteLength ascii \"ab+/\"": {
+  "ok": 4
+ },
+ "from ascii \"abc\"": {
+  "ok": "B:616263"
+ },
+ "byteLength ascii \"abc\"": {
+  "ok": 3
+ },
+ "from ascii \"zz12\"": {
+  "ok": "B:7a7a3132"
+ },
+ "byteLength ascii \"zz12\"": {
+  "ok": 4
+ },
+ "from ascii \"deadBEEF\"": {
+  "ok": "B:6465616442454546"
+ },
+ "byteLength ascii \"deadBEEF\"": {
+  "ok": 8
+ },
+ "from ascii \"=\"": {
+  "ok": "B:3d"
+ },
+ "byteLength ascii \"=\"": {
+  "ok": 1
+ },
+ "from ascii \"YQ\"": {
+  "ok": "B:5951"
+ },
+ "byteLength ascii \"YQ\"": {
+  "ok": 2
+ },
+ "from ascii \"YQ==YQ==\"": {
+  "ok": "B:59513d3d59513d3d"
+ },
+ "byteLength ascii \"YQ==YQ==\"": {
+  "ok": 8
+ },
+ "from ascii \"Āā\"": {
+  "ok": "B:0001"
+ },
+ "byteLength ascii \"Āā\"": {
+  "ok": 2
+ },
+ "from ucs2 \"\"": {
+  "ok": "B:"
+ },
+ "byteLength ucs2 \"\"": {
+  "ok": 0
+ },
+ "from ucs2 \"hello\"": {
+  "ok": "B:680065006c006c006f00"
+ },
+ "byteLength ucs2 \"hello\"": {
+  "ok": 10
+ },
+ "from ucs2 \"héllo wörld\"": {
+  "ok": "B:6800e9006c006c006f0020007700f60072006c006400"
+ },
+ "byteLength ucs2 \"héllo wörld\"": {
+  "ok": 22
+ },
+ "from ucs2 \"✓ 😀 􏿿\"": {
+  "ok": "B:132720003dd800de2000ffdbffdf"
+ },
+ "byteLength ucs2 \"✓ 😀 􏿿\"": {
+  "ok": 14
+ },
+ "from ucs2 \"a\\ud800b\"": {
+  "ok": "B:610000d86200"
+ },
+ "byteLength ucs2 \"a\\ud800b\"": {
+  "ok": 6
+ },
+ "from ucs2 \"\\udc00x\"": {
+  "ok": "B:00dc7800"
+ },
+ "byteLength ucs2 \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from ucs2 \"\\u0000ÿ\"": {
+  "ok": "B:00007f008000ff00"
+ },
+ "byteLength ucs2 \"\\u0000ÿ\"": {
+  "ok": 8
+ },
+ "from ucs2 \"aGVsbG8=\"": {
+  "ok": "B:61004700560073006200470038003d00"
+ },
+ "byteLength ucs2 \"aGVsbG8=\"": {
+  "ok": 16
+ },
+ "from ucs2 \"aGVs bG8\"": {
+  "ok": "B:61004700560073002000620047003800"
+ },
+ "byteLength ucs2 \"aGVs bG8\"": {
+  "ok": 16
+ },
+ "from ucs2 \"a-_b\"": {
+  "ok": "B:61002d005f006200"
+ },
+ "byteLength ucs2 \"a-_b\"": {
+  "ok": 8
+ },
+ "from ucs2 \"ab+/\"": {
+  "ok": "B:610062002b002f00"
+ },
+ "byteLength ucs2 \"ab+/\"": {
+  "ok": 8
+ },
+ "from ucs2 \"abc\"": {
+  "ok": "B:610062006300"
+ },
+ "byteLength ucs2 \"abc\"": {
+  "ok": 6
+ },
+ "from ucs2 \"zz12\"": {
+  "ok": "B:7a007a0031003200"
+ },
+ "byteLength ucs2 \"zz12\"": {
+  "ok": 8
+ },
+ "from ucs2 \"deadBEEF\"": {
+  "ok": "B:64006500610064004200450045004600"
+ },
+ "byteLength ucs2 \"deadBEEF\"": {
+  "ok": 16
+ },
+ "from ucs2 \"=\"": {
+  "ok": "B:3d00"
+ },
+ "byteLength ucs2 \"=\"": {
+  "ok": 2
+ },
+ "from ucs2 \"YQ\"": {
+  "ok": "B:59005100"
+ },
+ "byteLength ucs2 \"YQ\"": {
+  "ok": 4
+ },
+ "from ucs2 \"YQ==YQ==\"": {
+  "ok": "B:590051003d003d00590051003d003d00"
+ },
+ "byteLength ucs2 \"YQ==YQ==\"": {
+  "ok": 16
+ },
+ "from ucs2 \"Āā\"": {
+  "ok": "B:00010101"
+ },
+ "byteLength ucs2 \"Āā\"": {
+  "ok": 4
+ },
+ "from utf16le \"\"": {
+  "ok": "B:"
+ },
+ "byteLength utf16le \"\"": {
+  "ok": 0
+ },
+ "from utf16le \"hello\"": {
+  "ok": "B:680065006c006c006f00"
+ },
+ "byteLength utf16le \"hello\"": {
+  "ok": 10
+ },
+ "from utf16le \"héllo wörld\"": {
+  "ok": "B:6800e9006c006c006f0020007700f60072006c006400"
+ },
+ "byteLength utf16le \"héllo wörld\"": {
+  "ok": 22
+ },
+ "from utf16le \"✓ 😀 􏿿\"": {
+  "ok": "B:132720003dd800de2000ffdbffdf"
+ },
+ "byteLength utf16le \"✓ 😀 􏿿\"": {
+  "ok": 14
+ },
+ "from utf16le \"a\\ud800b\"": {
+  "ok": "B:610000d86200"
+ },
+ "byteLength utf16le \"a\\ud800b\"": {
+  "ok": 6
+ },
+ "from utf16le \"\\udc00x\"": {
+  "ok": "B:00dc7800"
+ },
+ "byteLength utf16le \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from utf16le \"\\u0000ÿ\"": {
+  "ok": "B:00007f008000ff00"
+ },
+ "byteLength utf16le \"\\u0000ÿ\"": {
+  "ok": 8
+ },
+ "from utf16le \"aGVsbG8=\"": {
+  "ok": "B:61004700560073006200470038003d00"
+ },
+ "byteLength utf16le \"aGVsbG8=\"": {
+  "ok": 16
+ },
+ "from utf16le \"aGVs bG8\"": {
+  "ok": "B:61004700560073002000620047003800"
+ },
+ "byteLength utf16le \"aGVs bG8\"": {
+  "ok": 16
+ },
+ "from utf16le \"a-_b\"": {
+  "ok": "B:61002d005f006200"
+ },
+ "byteLength utf16le \"a-_b\"": {
+  "ok": 8
+ },
+ "from utf16le \"ab+/\"": {
+  "ok": "B:610062002b002f00"
+ },
+ "byteLength utf16le \"ab+/\"": {
+  "ok": 8
+ },
+ "from utf16le \"abc\"": {
+  "ok": "B:610062006300"
+ },
+ "byteLength utf16le \"abc\"": {
+  "ok": 6
+ },
+ "from utf16le \"zz12\"": {
+  "ok": "B:7a007a0031003200"
+ },
+ "byteLength utf16le \"zz12\"": {
+  "ok": 8
+ },
+ "from utf16le \"deadBEEF\"": {
+  "ok": "B:64006500610064004200450045004600"
+ },
+ "byteLength utf16le \"deadBEEF\"": {
+  "ok": 16
+ },
+ "from utf16le \"=\"": {
+  "ok": "B:3d00"
+ },
+ "byteLength utf16le \"=\"": {
+  "ok": 2
+ },
+ "from utf16le \"YQ\"": {
+  "ok": "B:59005100"
+ },
+ "byteLength utf16le \"YQ\"": {
+  "ok": 4
+ },
+ "from utf16le \"YQ==YQ==\"": {
+  "ok": "B:590051003d003d00590051003d003d00"
+ },
+ "byteLength utf16le \"YQ==YQ==\"": {
+  "ok": 16
+ },
+ "from utf16le \"Āā\"": {
+  "ok": "B:00010101"
+ },
+ "byteLength utf16le \"Āā\"": {
+  "ok": 4
+ },
+ "from UTF-16LE \"\"": {
+  "ok": "B:"
+ },
+ "byteLength UTF-16LE \"\"": {
+  "ok": 0
+ },
+ "from UTF-16LE \"hello\"": {
+  "ok": "B:680065006c006c006f00"
+ },
+ "byteLength UTF-16LE \"hello\"": {
+  "ok": 10
+ },
+ "from UTF-16LE \"héllo wörld\"": {
+  "ok": "B:6800e9006c006c006f0020007700f60072006c006400"
+ },
+ "byteLength UTF-16LE \"héllo wörld\"": {
+  "ok": 22
+ },
+ "from UTF-16LE \"✓ 😀 􏿿\"": {
+  "ok": "B:132720003dd800de2000ffdbffdf"
+ },
+ "byteLength UTF-16LE \"✓ 😀 􏿿\"": {
+  "ok": 14
+ },
+ "from UTF-16LE \"a\\ud800b\"": {
+  "ok": "B:610000d86200"
+ },
+ "byteLength UTF-16LE \"a\\ud800b\"": {
+  "ok": 6
+ },
+ "from UTF-16LE \"\\udc00x\"": {
+  "ok": "B:00dc7800"
+ },
+ "byteLength UTF-16LE \"\\udc00x\"": {
+  "ok": 4
+ },
+ "from UTF-16LE \"\\u0000ÿ\"": {
+  "ok": "B:00007f008000ff00"
+ },
+ "byteLength UTF-16LE \"\\u0000ÿ\"": {
+  "ok": 8
+ },
+ "from UTF-16LE \"aGVsbG8=\"": {
+  "ok": "B:61004700560073006200470038003d00"
+ },
+ "byteLength UTF-16LE \"aGVsbG8=\"": {
+  "ok": 16
+ },
+ "from UTF-16LE \"aGVs bG8\"": {
+  "ok": "B:61004700560073002000620047003800"
+ },
+ "byteLength UTF-16LE \"aGVs bG8\"": {
+  "ok": 16
+ },
+ "from UTF-16LE \"a-_b\"": {
+  "ok": "B:61002d005f006200"
+ },
+ "byteLength UTF-16LE \"a-_b\"": {
+  "ok": 8
+ },
+ "from UTF-16LE \"ab+/\"": {
+  "ok": "B:610062002b002f00"
+ },
+ "byteLength UTF-16LE \"ab+/\"": {
+  "ok": 8
+ },
+ "from UTF-16LE \"abc\"": {
+  "ok": "B:610062006300"
+ },
+ "byteLength UTF-16LE \"abc\"": {
+  "ok": 6
+ },
+ "from UTF-16LE \"zz12\"": {
+  "ok": "B:7a007a0031003200"
+ },
+ "byteLength UTF-16LE \"zz12\"": {
+  "ok": 8
+ },
+ "from UTF-16LE \"deadBEEF\"": {
+  "ok": "B:64006500610064004200450045004600"
+ },
+ "byteLength UTF-16LE \"deadBEEF\"": {
+  "ok": 16
+ },
+ "from UTF-16LE \"=\"": {
+  "ok": "B:3d00"
+ },
+ "byteLength UTF-16LE \"=\"": {
+  "ok": 2
+ },
+ "from UTF-16LE \"YQ\"": {
+  "ok": "B:59005100"
+ },
+ "byteLength UTF-16LE \"YQ\"": {
+  "ok": 4
+ },
+ "from UTF-16LE \"YQ==YQ==\"": {
+  "ok": "B:590051003d003d00590051003d003d00"
+ },
+ "byteLength UTF-16LE \"YQ==YQ==\"": {
+  "ok": 16
+ },
+ "from UTF-16LE \"Āā\"": {
+  "ok": "B:00010101"
+ },
+ "byteLength UTF-16LE \"Āā\"": {
+  "ok": 4
+ },
+ "toString utf8 ": {
+  "ok": ""
+ },
+ "toString utf8 0": {
+  "ok": "\u0000"
+ },
+ "toString utf8 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString utf8 255,254,253": {
+  "ok": "���"
+ },
+ "toString utf8 226,130": {
+  "ok": "�"
+ },
+ "toString utf8 226,130,65": {
+  "ok": "�A"
+ },
+ "toString utf8 192,128": {
+  "ok": "��"
+ },
+ "toString utf8 237,160,128": {
+  "ok": "���"
+ },
+ "toString utf8 240,159,152,128": {
+  "ok": "😀"
+ },
+ "toString utf8 240,159,152": {
+  "ok": "�"
+ },
+ "toString utf8 244,144,128,128": {
+  "ok": "����"
+ },
+ "toString utf8 128,65,191": {
+  "ok": "�A�"
+ },
+ "toString utf8 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003������"
+ },
+ "toString utf8 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString utf-8 ": {
+  "ok": ""
+ },
+ "toString utf-8 0": {
+  "ok": "\u0000"
+ },
+ "toString utf-8 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString utf-8 255,254,253": {
+  "ok": "���"
+ },
+ "toString utf-8 226,130": {
+  "ok": "�"
+ },
+ "toString utf-8 226,130,65": {
+  "ok": "�A"
+ },
+ "toString utf-8 192,128": {
+  "ok": "��"
+ },
+ "toString utf-8 237,160,128": {
+  "ok": "���"
+ },
+ "toString utf-8 240,159,152,128": {
+  "ok": "😀"
+ },
+ "toString utf-8 240,159,152": {
+  "ok": "�"
+ },
+ "toString utf-8 244,144,128,128": {
+  "ok": "����"
+ },
+ "toString utf-8 128,65,191": {
+  "ok": "�A�"
+ },
+ "toString utf-8 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003������"
+ },
+ "toString utf-8 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString UTF8 ": {
+  "ok": ""
+ },
+ "toString UTF8 0": {
+  "ok": "\u0000"
+ },
+ "toString UTF8 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString UTF8 255,254,253": {
+  "ok": "���"
+ },
+ "toString UTF8 226,130": {
+  "ok": "�"
+ },
+ "toString UTF8 226,130,65": {
+  "ok": "�A"
+ },
+ "toString UTF8 192,128": {
+  "ok": "��"
+ },
+ "toString UTF8 237,160,128": {
+  "ok": "���"
+ },
+ "toString UTF8 240,159,152,128": {
+  "ok": "😀"
+ },
+ "toString UTF8 240,159,152": {
+  "ok": "�"
+ },
+ "toString UTF8 244,144,128,128": {
+  "ok": "����"
+ },
+ "toString UTF8 128,65,191": {
+  "ok": "�A�"
+ },
+ "toString UTF8 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003������"
+ },
+ "toString UTF8 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString hex ": {
+  "ok": ""
+ },
+ "toString hex 0": {
+  "ok": "00"
+ },
+ "toString hex 104,101,108,108,111": {
+  "ok": "68656c6c6f"
+ },
+ "toString hex 255,254,253": {
+  "ok": "fffefd"
+ },
+ "toString hex 226,130": {
+  "ok": "e282"
+ },
+ "toString hex 226,130,65": {
+  "ok": "e28241"
+ },
+ "toString hex 192,128": {
+  "ok": "c080"
+ },
+ "toString hex 237,160,128": {
+  "ok": "eda080"
+ },
+ "toString hex 240,159,152,128": {
+  "ok": "f09f9880"
+ },
+ "toString hex 240,159,152": {
+  "ok": "f09f98"
+ },
+ "toString hex 244,144,128,128": {
+  "ok": "f4908080"
+ },
+ "toString hex 128,65,191": {
+  "ok": "8041bf"
+ },
+ "toString hex 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "00010203fafbfcfdfeff"
+ },
+ "toString hex 65,0,66": {
+  "ok": "410042"
+ },
+ "toString base64 ": {
+  "ok": ""
+ },
+ "toString base64 0": {
+  "ok": "AA=="
+ },
+ "toString base64 104,101,108,108,111": {
+  "ok": "aGVsbG8="
+ },
+ "toString base64 255,254,253": {
+  "ok": "//79"
+ },
+ "toString base64 226,130": {
+  "ok": "4oI="
+ },
+ "toString base64 226,130,65": {
+  "ok": "4oJB"
+ },
+ "toString base64 192,128": {
+  "ok": "wIA="
+ },
+ "toString base64 237,160,128": {
+  "ok": "7aCA"
+ },
+ "toString base64 240,159,152,128": {
+  "ok": "8J+YgA=="
+ },
+ "toString base64 240,159,152": {
+  "ok": "8J+Y"
+ },
+ "toString base64 244,144,128,128": {
+  "ok": "9JCAgA=="
+ },
+ "toString base64 128,65,191": {
+  "ok": "gEG/"
+ },
+ "toString base64 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "AAECA/r7/P3+/w=="
+ },
+ "toString base64 65,0,66": {
+  "ok": "QQBC"
+ },
+ "toString base64url ": {
+  "ok": ""
+ },
+ "toString base64url 0": {
+  "ok": "AA"
+ },
+ "toString base64url 104,101,108,108,111": {
+  "ok": "aGVsbG8"
+ },
+ "toString base64url 255,254,253": {
+  "ok": "__79"
+ },
+ "toString base64url 226,130": {
+  "ok": "4oI"
+ },
+ "toString base64url 226,130,65": {
+  "ok": "4oJB"
+ },
+ "toString base64url 192,128": {
+  "ok": "wIA"
+ },
+ "toString base64url 237,160,128": {
+  "ok": "7aCA"
+ },
+ "toString base64url 240,159,152,128": {
+  "ok": "8J-YgA"
+ },
+ "toString base64url 240,159,152": {
+  "ok": "8J-Y"
+ },
+ "toString base64url 244,144,128,128": {
+  "ok": "9JCAgA"
+ },
+ "toString base64url 128,65,191": {
+  "ok": "gEG_"
+ },
+ "toString base64url 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "AAECA_r7_P3-_w"
+ },
+ "toString base64url 65,0,66": {
+  "ok": "QQBC"
+ },
+ "toString latin1 ": {
+  "ok": ""
+ },
+ "toString latin1 0": {
+  "ok": "\u0000"
+ },
+ "toString latin1 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString latin1 255,254,253": {
+  "ok": "ÿþý"
+ },
+ "toString latin1 226,130": {
+  "ok": "â"
+ },
+ "toString latin1 226,130,65": {
+  "ok": "âA"
+ },
+ "toString latin1 192,128": {
+  "ok": "À"
+ },
+ "toString latin1 237,160,128": {
+  "ok": "í "
+ },
+ "toString latin1 240,159,152,128": {
+  "ok": "ð"
+ },
+ "toString latin1 240,159,152": {
+  "ok": "ð"
+ },
+ "toString latin1 244,144,128,128": {
+  "ok": "ô"
+ },
+ "toString latin1 128,65,191": {
+  "ok": "A¿"
+ },
+ "toString latin1 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003úûüýþÿ"
+ },
+ "toString latin1 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString binary ": {
+  "ok": ""
+ },
+ "toString binary 0": {
+  "ok": "\u0000"
+ },
+ "toString binary 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString binary 255,254,253": {
+  "ok": "ÿþý"
+ },
+ "toString binary 226,130": {
+  "ok": "â"
+ },
+ "toString binary 226,130,65": {
+  "ok": "âA"
+ },
+ "toString binary 192,128": {
+  "ok": "À"
+ },
+ "toString binary 237,160,128": {
+  "ok": "í "
+ },
+ "toString binary 240,159,152,128": {
+  "ok": "ð"
+ },
+ "toString binary 240,159,152": {
+  "ok": "ð"
+ },
+ "toString binary 244,144,128,128": {
+  "ok": "ô"
+ },
+ "toString binary 128,65,191": {
+  "ok": "A¿"
+ },
+ "toString binary 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003úûüýþÿ"
+ },
+ "toString binary 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString ascii ": {
+  "ok": ""
+ },
+ "toString ascii 0": {
+  "ok": "\u0000"
+ },
+ "toString ascii 104,101,108,108,111": {
+  "ok": "hello"
+ },
+ "toString ascii 255,254,253": {
+  "ok": "~}"
+ },
+ "toString ascii 226,130": {
+  "ok": "b\u0002"
+ },
+ "toString ascii 226,130,65": {
+  "ok": "b\u0002A"
+ },
+ "toString ascii 192,128": {
+  "ok": "@\u0000"
+ },
+ "toString ascii 237,160,128": {
+  "ok": "m \u0000"
+ },
+ "toString ascii 240,159,152,128": {
+  "ok": "p\u001f\u0018\u0000"
+ },
+ "toString ascii 240,159,152": {
+  "ok": "p\u001f\u0018"
+ },
+ "toString ascii 244,144,128,128": {
+  "ok": "t\u0010\u0000\u0000"
+ },
+ "toString ascii 128,65,191": {
+  "ok": "\u0000A?"
+ },
+ "toString ascii 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "\u0000\u0001\u0002\u0003z{|}~"
+ },
+ "toString ascii 65,0,66": {
+  "ok": "A\u0000B"
+ },
+ "toString ucs2 ": {
+  "ok": ""
+ },
+ "toString ucs2 0": {
+  "ok": ""
+ },
+ "toString ucs2 104,101,108,108,111": {
+  "ok": "敨汬"
+ },
+ "toString ucs2 255,254,253": {
+  "ok": "﻿"
+ },
+ "toString ucs2 226,130": {
+  "ok": "苢"
+ },
+ "toString ucs2 226,130,65": {
+  "ok": "苢"
+ },
+ "toString ucs2 192,128": {
+  "ok": "胀"
+ },
+ "toString ucs2 237,160,128": {
+  "ok": "ꃭ"
+ },
+ "toString ucs2 240,159,152,128": {
+  "ok": "鿰肘"
+ },
+ "toString ucs2 240,159,152": {
+  "ok": "鿰"
+ },
+ "toString ucs2 244,144,128,128": {
+  "ok": "郴肀"
+ },
+ "toString ucs2 128,65,191": {
+  "ok": "䆀"
+ },
+ "toString ucs2 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "Ā̂ﯺ﷼￾"
+ },
+ "toString ucs2 65,0,66": {
+  "ok": "A"
+ },
+ "toString utf16le ": {
+  "ok": ""
+ },
+ "toString utf16le 0": {
+  "ok": ""
+ },
+ "toString utf16le 104,101,108,108,111": {
+  "ok": "敨汬"
+ },
+ "toString utf16le 255,254,253": {
+  "ok": "﻿"
+ },
+ "toString utf16le 226,130": {
+  "ok": "苢"
+ },
+ "toString utf16le 226,130,65": {
+  "ok": "苢"
+ },
+ "toString utf16le 192,128": {
+  "ok": "胀"
+ },
+ "toString utf16le 237,160,128": {
+  "ok": "ꃭ"
+ },
+ "toString utf16le 240,159,152,128": {
+  "ok": "鿰肘"
+ },
+ "toString utf16le 240,159,152": {
+  "ok": "鿰"
+ },
+ "toString utf16le 244,144,128,128": {
+  "ok": "郴肀"
+ },
+ "toString utf16le 128,65,191": {
+  "ok": "䆀"
+ },
+ "toString utf16le 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "Ā̂ﯺ﷼￾"
+ },
+ "toString utf16le 65,0,66": {
+  "ok": "A"
+ },
+ "toString UTF-16LE ": {
+  "ok": ""
+ },
+ "toString UTF-16LE 0": {
+  "ok": ""
+ },
+ "toString UTF-16LE 104,101,108,108,111": {
+  "ok": "敨汬"
+ },
+ "toString UTF-16LE 255,254,253": {
+  "ok": "﻿"
+ },
+ "toString UTF-16LE 226,130": {
+  "ok": "苢"
+ },
+ "toString UTF-16LE 226,130,65": {
+  "ok": "苢"
+ },
+ "toString UTF-16LE 192,128": {
+  "ok": "胀"
+ },
+ "toString UTF-16LE 237,160,128": {
+  "ok": "ꃭ"
+ },
+ "toString UTF-16LE 240,159,152,128": {
+  "ok": "鿰肘"
+ },
+ "toString UTF-16LE 240,159,152": {
+  "ok": "鿰"
+ },
+ "toString UTF-16LE 244,144,128,128": {
+  "ok": "郴肀"
+ },
+ "toString UTF-16LE 128,65,191": {
+  "ok": "䆀"
+ },
+ "toString UTF-16LE 0,1,2,3,250,251,252,253,254,255": {
+  "ok": "Ā̂ﯺ﷼￾"
+ },
+ "toString UTF-16LE 65,0,66": {
+  "ok": "A"
+ },
+ "roundtrip hex": {
+  "ok": true
+ },
+ "roundtrip base64": {
+  "ok": true
+ },
+ "roundtrip base64url": {
+  "ok": true
+ },
+ "roundtrip latin1": {
+  "ok": true
+ },
+ "roundtrip utf16le": {
+  "ok": true
+ },
+ "roundtrip utf8": {
+  "ok": "B:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7fefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbdefbfbd"
+ },
+ "roundtrip ascii": {
+  "ok": "B:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+ },
+ "big base64": {
+  "ok": true
+ },
+ "big base64 head": {
+  "ok": "ByZFZIOiweD/Hj1ce5q52PcWNVRzkrHQ7w4tTGuK"
+ },
+ "toString utf8 0 5": {
+  "ok": "hello"
+ },
+ "toString utf8 6 undefined": {
+  "ok": "world"
+ },
+ "toString utf8 -1 3": {
+  "ok": "hel"
+ },
+ "toString utf8 3 100": {
+  "ok": "lo world"
+ },
+ "toString utf8 5 2": {
+  "ok": ""
+ },
+ "toString utf8 NaN 4": {
+  "ok": "hell"
+ },
+ "toString utf8 2 4": {
+  "ok": "ll"
+ },
+ "toString utf8 1.7 4.2": {
+  "ok": "ell"
+ },
+ "toString utf8 undefined 3": {
+  "ok": "hel"
+ },
+ "toString utf8 11 undefined": {
+  "ok": ""
+ },
+ "toString utf8 100 undefined": {
+  "ok": ""
+ },
+ "toString no args": {
+  "ok": "hello world"
+ },
+ "toString undefined": {
+  "ok": "hello world"
+ },
+ "toString bad encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: nope"
+  }
+ },
+ "toString null encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: null"
+  }
+ },
+ "toString number encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: 5"
+  }
+ },
+ "from array": {
+  "ok": "B:0100ff0305000000"
+ },
+ "from arraybuffer shares": {
+  "ok": "0,9,0,0"
+ },
+ "from arraybuffer offset": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_BUFFER_OUT_OF_BOUNDS",
+   "message": "\"offset\" is outside of buffer bounds"
+  }
+ },
+ "from arraybuffer length": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_BUFFER_OUT_OF_BOUNDS",
+   "message": "\"length\" is outside of buffer bounds"
+  }
+ },
+ "from buffer copies": {
+  "ok": "abzb"
+ },
+ "from uint16array": {
+  "ok": "B:0102ff"
+ },
+ "from json": {
+  "ok": "B:010203"
+ },
+ "from array-like": {
+  "ok": "B:070800"
+ },
+ "from object": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The first argument must be of type string or an instance of Buffer, ArrayBuffer, or Array or an Array-like Object. Received an instance of Object"
+  }
+ },
+ "from number": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The first argument must be of type string or an instance of Buffer, ArrayBuffer, or Array or an Array-like Object. Received type number (5)"
+  }
+ },
+ "from null": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The first argument must be of type string or an instance of Buffer, ArrayBuffer, or Array or an Array-like Object. Received null"
+  }
+ },
+ "from valueOf": {
+  "ok": "B:616263"
+ },
+ "from toPrimitive": {
+  "ok": "B:7072696d"
+ },
+ "from empty encoding": {
+  "ok": "B:616263"
+ },
+ "from bad encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: nope"
+  }
+ },
+ "of": {
+  "ok": "B:01022c"
+ },
+ "alloc": {
+  "ok": "B:00000000"
+ },
+ "alloc fill number": {
+  "ok": "B:01010101"
+ },
+ "alloc fill string": {
+  "ok": "B:6162616261"
+ },
+ "alloc fill hex": {
+  "ok": "B:abcdabcdab"
+ },
+ "alloc fill bad hex": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_VALUE",
+   "message": "The argument 'value' is invalid. Received 'zz'"
+  }
+ },
+ "alloc fill buffer": {
+  "ok": "B:0102010201"
+ },
+ "alloc negative": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"size\" is out of range. It must be >= 0 && <= 9007199254740991. Received -1"
+  }
+ },
+ "alloc string": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"size\" argument must be of type number. Received type string ('4')"
+  }
+ },
+ "allocUnsafe": {
+  "ok": 3
+ },
+ "allocUnsafeSlow": {
+  "ok": 3
+ },
+ "concat": {
+  "ok": "B:61626364"
+ },
+ "concat length": {
+  "ok": "B:61626364"
+ },
+ "concat longer": {
+  "ok": "B:61620000"
+ },
+ "concat empty": {
+  "ok": "B:"
+ },
+ "concat bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"list[1]\" argument must be an instance of Buffer or Uint8Array. Received type string ('b')"
+  }
+ },
+ "concat not array": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"list\" argument must be an instance of Array. Received type string ('ab')"
+  }
+ },
+ "isBuffer": {
+  "ok": [
+   true,
+   false,
+   false,
+   false
+  ]
+ },
+ "isEncoding": {
+  "ok": [
+   true,
+   true,
+   true,
+   false,
+   false,
+   false,
+   true,
+   true
+  ]
+ },
+ "byteLength buffer": {
+  "ok": 7
+ },
+ "byteLength arraybuffer": {
+  "ok": 9
+ },
+ "byteLength bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"string\" argument must be of type string or an instance of Buffer or ArrayBuffer. Received type number (5)"
+  }
+ },
+ "compare": {
+  "ok": [
+   -1,
+   1,
+   0,
+   -1
+  ]
+ },
+ "compare bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"buf1\" argument must be an instance of Buffer or Uint8Array. Received type string ('a')"
+  }
+ },
+ "poolSize": {
+  "ok": 65536
+ },
+ "slice": {
+  "ok": "B:6263"
+ },
+ "slice negative": {
+  "ok": "B:6566"
+ },
+ "slice shares": {
+  "ok": "xAz"
+ },
+ "subarray": {
+  "ok": "B:6364"
+ },
+ "subarray isBuffer": {
+  "ok": true
+ },
+ "subarray shares": {
+  "ok": "xAz"
+ },
+ "map isBuffer": {
+  "ok": true
+ },
+ "equals": {
+  "ok": [
+   true,
+   false,
+   true
+  ]
+ },
+ "equals bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"otherBuffer\" argument must be an instance of Buffer or Uint8Array. Received type string ('abcdef')"
+  }
+ },
+ "compare method": {
+  "ok": [
+   1,
+   -1,
+   0,
+   -1
+  ]
+ },
+ "compare range": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"targetEnd\" is out of range. It must be >= 0 && <= 1. Received 5"
+  }
+ },
+ "indexOf [\"c\",null,null]": {
+  "ok": 2
+ },
+ "lastIndexOf [\"c\",null,null]": {
+  "ok": 5
+ },
+ "includes [\"c\",null,null]": {
+  "ok": true
+ },
+ "indexOf [\"cd\",null,null]": {
+  "ok": 2
+ },
+ "lastIndexOf [\"cd\",null,null]": {
+  "ok": -1
+ },
+ "includes [\"cd\",null,null]": {
+  "ok": true
+ },
+ "indexOf [\"x\",null,null]": {
+  "ok": -1
+ },
+ "lastIndexOf [\"x\",null,null]": {
+  "ok": -1
+ },
+ "includes [\"x\",null,null]": {
+  "ok": false
+ },
+ "indexOf [99,null,null]": {
+  "ok": 2
+ },
+ "lastIndexOf [99,null,null]": {
+  "ok": 5
+ },
+ "includes [99,null,null]": {
+  "ok": true
+ },
+ "indexOf [99,3,null]": {
+  "ok": -1
+ },
+ "lastIndexOf [99,3,null]": {
+  "ok": 2
+ },
+ "includes [99,3,null]": {
+  "ok": false
+ },
+ "indexOf [\"b\",-5,null]": {
+  "ok": 1
+ },
+ "lastIndexOf [\"b\",-5,null]": {
+  "ok": 1
+ },
+ "includes [\"b\",-5,null]": {
+  "ok": true
+ },
+ "indexOf [\"\",2,null]": {
+  "ok": 2
+ },
+ "lastIndexOf [\"\",2,null]": {
+  "ok": 2
+ },
+ "includes [\"\",2,null]": {
+  "ok": true
+ },
+ "indexOf [\"\",100,null]": {
+  "ok": 6
+ },
+ "lastIndexOf [\"\",100,null]": {
+  "ok": 6
+ },
+ "includes [\"\",100,null]": {
+  "ok": true
+ },
+ "indexOf [{\"type\":\"Buffer\",\"data\":[101,102]},null,null]": {
+  "ok": 4
+ },
+ "lastIndexOf [{\"type\":\"Buffer\",\"data\":[101,102]},null,null]": {
+  "ok": -1
+ },
+ "includes [{\"type\":\"Buffer\",\"data\":[101,102]},null,null]": {
+  "ok": true
+ },
+ "indexOf [\"ef\",\"latin1\",null]": {
+  "ok": 4
+ },
+ "lastIndexOf [\"ef\",\"latin1\",null]": {
+  "ok": -1
+ },
+ "includes [\"ef\",\"latin1\",null]": {
+  "ok": true
+ },
+ "indexOf [355,null,null]": {
+  "ok": 2
+ },
+ "lastIndexOf [355,null,null]": {
+  "ok": 5
+ },
+ "includes [355,null,null]": {
+  "ok": true
+ },
+ "indexOf [\"a\",1,null]": {
+  "ok": -1
+ },
+ "lastIndexOf [\"a\",1,null]": {
+  "ok": 0
+ },
+ "includes [\"a\",1,null]": {
+  "ok": false
+ },
+ "indexOf [\"f\",-1,null]": {
+  "ok": 5
+ },
+ "lastIndexOf [\"f\",-1,null]": {
+  "ok": -1
+ },
+ "includes [\"f\",-1,null]": {
+  "ok": true
+ },
+ "indexOf [\"abcdefg\",null,null]": {
+  "ok": -1
+ },
+ "lastIndexOf [\"abcdefg\",null,null]": {
+  "ok": -1
+ },
+ "includes [\"abcdefg\",null,null]": {
+  "ok": false
+ },
+ "indexOf [\"6566\",0,\"hex\"]": {
+  "ok": 4
+ },
+ "lastIndexOf [\"6566\",0,\"hex\"]": {
+  "ok": -1
+ },
+ "includes [\"6566\",0,\"hex\"]": {
+  "ok": true
+ },
+ "indexOf bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"value\" argument must be one of type number or string or an instance of Buffer or Uint8Array. Received an instance of Object"
+  }
+ },
+ "indexOf bad encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: nope"
+  }
+ },
+ "toJSON": {
+  "ok": "{\"type\":\"Buffer\",\"data\":[1,2,3]}"
+ },
+ "toJSON empty": {
+  "ok": "{\"type\":\"Buffer\",\"data\":[]}"
+ },
+ "JSON round trip": {
+  "ok": "B:6869"
+ },
+ "fill [65]": {
+  "ok": "B:414141414141"
+ },
+ "fill [\"xy\"]": {
+  "ok": "B:787978797879"
+ },
+ "fill [\"xy\",1]": {
+  "ok": "B:007879787978"
+ },
+ "fill [\"xy\",1,4]": {
+  "ok": "B:007879780000"
+ },
+ "fill [\"6162\",\"hex\"]": {
+  "ok": "B:616261626162"
+ },
+ "fill [\"6162\",0,3,\"hex\"]": {
+  "ok": "B:616261000000"
+ },
+ "fill [65,2,4]": {
+  "ok": "B:000041410000"
+ },
+ "fill [{\"type\":\"Buffer\",\"data\":[1,2]}]": {
+  "ok": "B:010201020102"
+ },
+ "fill [\"\",1]": {
+  "ok": "B:000000000000"
+ },
+ "fill [257]": {
+  "ok": "B:010101010101"
+ },
+ "fill [65,5,2]": {
+  "ok": "B:000000000000"
+ },
+ "fill [65,7]": {
+  "ok": "B:000000000000"
+ },
+ "fill bad encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: nope"
+  }
+ },
+ "write [\"hi\"]": {
+  "ok": [
+   2,
+   "686900000000"
+  ]
+ },
+ "write [\"hi\",2]": {
+  "ok": [
+   2,
+   "000068690000"
+  ]
+ },
+ "write [\"hi\",2,1]": {
+  "ok": [
+   1,
+   "000068000000"
+  ]
+ },
+ "write [\"hello\",4]": {
+  "ok": [
+   2,
+   "000000006865"
+  ]
+ },
+ "write [\"6869\",\"hex\"]": {
+  "ok": [
+   2,
+   "686900000000"
+  ]
+ },
+ "write [\"6869\",1,\"hex\"]": {
+  "ok": [
+   2,
+   "006869000000"
+  ]
+ },
+ "write [\"héllo\",0]": {
+  "ok": [
+   6,
+   "68c3a96c6c6f"
+  ]
+ },
+ "write [\"€€€\",0,5]": {
+  "ok": [
+   3,
+   "e282ac000000"
+  ]
+ },
+ "write [\"€€\",5]": {
+  "ok": [
+   0,
+   "000000000000"
+  ]
+ },
+ "write [\"hi\",7]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 && <= 6. Received 7"
+  }
+ },
+ "write [\"hi\",-1]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 && <= 6. Received -1"
+  }
+ },
+ "write [\"hi\",1.5]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "write [\"ab\",\"ucs2\"]": {
+  "ok": [
+   4,
+   "610062000000"
+  ]
+ },
+ "write [\"abc\",0,3,\"ucs2\"]": {
+  "ok": [
+   2,
+   "610000000000"
+  ]
+ },
+ "write [\"aGk=\",\"base64\"]": {
+  "ok": [
+   2,
+   "686900000000"
+  ]
+ },
+ "write bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "argument must be a string"
+  }
+ },
+ "write bad encoding": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_UNKNOWN_ENCODING",
+   "message": "Unknown encoding: nope"
+  }
+ },
+ "copy ": {
+  "ok": [
+   4,
+   "7778797a"
+  ]
+ },
+ "copy 1": {
+  "ok": [
+   3,
+   "00777879"
+  ]
+ },
+ "copy 1,2": {
+  "ok": [
+   2,
+   "00797a00"
+  ]
+ },
+ "copy 0,1,3": {
+  "ok": [
+   2,
+   "78790000"
+  ]
+ },
+ "copy 0,0,10": {
+  "ok": [
+   2,
+   "7778"
+  ]
+ },
+ "copy 10": {
+  "ok": [
+   0,
+   "00000000"
+  ]
+ },
+ "copy -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"targetStart\" is out of range. It must be >= 0. Received -1"
+  }
+ },
+ "copy 0,7": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"sourceStart\" is out of range. It must be >= 0 && <= 4. Received 7"
+  }
+ },
+ "copy bad": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"target\" argument must be an instance of Buffer or Uint8Array. Received type string ('b')"
+  }
+ },
+ "swap16": {
+  "ok": "B:02010403"
+ },
+ "swap32": {
+  "ok": "B:04030201"
+ },
+ "swap64": {
+  "ok": "B:0807060504030201"
+ },
+ "swap16 bad": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_INVALID_BUFFER_SIZE",
+   "message": "Buffer size must be a multiple of 16-bits"
+  }
+ },
+ "inspect": {
+  "ok": "<Buffer 68 65 6c 6c 6f>"
+ },
+ "inspect long": {
+  "ok": "<Buffer 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ... 10 more bytes>"
+ },
+ "proto chain": {
+  "ok": [
+   true,
+   true,
+   true,
+   "Buffer",
+   3
+  ]
+ },
+ "length": {
+  "ok": [
+   6,
+   3
+  ]
+ },
+ "toLocaleString": {
+  "ok": "x"
+ },
+ "new Buffer": {
+  "ok": "B:616263"
+ },
+ "new Buffer size": {
+  "ok": "B:000000"
+ },
+ "Buffer call": {
+  "ok": "B:6162"
+ },
+ "readUInt8 undefined": {
+  "ok": 1
+ },
+ "readUInt8 0": {
+  "ok": 1
+ },
+ "readUInt8 3": {
+  "ok": 4
+ },
+ "readUInt8 4": {
+  "ok": 255
+ },
+ "readUInt8 8": {
+  "ok": 128
+ },
+ "readUInt8 11": {
+  "ok": 0
+ },
+ "readUInt8 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received 12"
+  }
+ },
+ "readUInt8 -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received -1"
+  }
+ },
+ "readUInt8 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUInt8 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUInt8 NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUint8 undefined": {
+  "ok": 1
+ },
+ "readUint8 0": {
+  "ok": 1
+ },
+ "readUint8 3": {
+  "ok": 4
+ },
+ "readUint8 4": {
+  "ok": 255
+ },
+ "readUint8 8": {
+  "ok": 128
+ },
+ "readUint8 11": {
+  "ok": 0
+ },
+ "readUint8 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received 12"
+  }
+ },
+ "readUint8 -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received -1"
+  }
+ },
+ "readUint8 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUint8 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUint8 NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readInt8 undefined": {
+  "ok": 1
+ },
+ "readInt8 0": {
+  "ok": 1
+ },
+ "readInt8 3": {
+  "ok": 4
+ },
+ "readInt8 4": {
+  "ok": -1
+ },
+ "readInt8 8": {
+  "ok": -128
+ },
+ "readInt8 11": {
+  "ok": 0
+ },
+ "readInt8 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received 12"
+  }
+ },
+ "readInt8 -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 11. Received -1"
+  }
+ },
+ "readInt8 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readInt8 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readInt8 NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUInt16LE undefined": {
+  "ok": 513
+ },
+ "readUInt16LE 0": {
+  "ok": 513
+ },
+ "readUInt16LE 3": {
+  "ok": 65284
+ },
+ "readUInt16LE 4": {
+  "ok": 65279
+ },
+ "readUInt16LE 8": {
+  "ok": 128
+ },
+ "readUInt16LE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 11"
+  }
+ },
+ "readUInt16LE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 12"
+  }
+ },
+ "readUInt16LE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received -1"
+  }
+ },
+ "readUInt16LE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUInt16LE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUInt16LE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUInt16BE undefined": {
+  "ok": 258
+ },
+ "readUInt16BE 0": {
+  "ok": 258
+ },
+ "readUInt16BE 3": {
+  "ok": 1279
+ },
+ "readUInt16BE 4": {
+  "ok": 65534
+ },
+ "readUInt16BE 8": {
+  "ok": 32768
+ },
+ "readUInt16BE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 11"
+  }
+ },
+ "readUInt16BE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 12"
+  }
+ },
+ "readUInt16BE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received -1"
+  }
+ },
+ "readUInt16BE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUInt16BE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUInt16BE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readInt16LE undefined": {
+  "ok": 513
+ },
+ "readInt16LE 0": {
+  "ok": 513
+ },
+ "readInt16LE 3": {
+  "ok": -252
+ },
+ "readInt16LE 4": {
+  "ok": -257
+ },
+ "readInt16LE 8": {
+  "ok": 128
+ },
+ "readInt16LE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 11"
+  }
+ },
+ "readInt16LE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 12"
+  }
+ },
+ "readInt16LE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received -1"
+  }
+ },
+ "readInt16LE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readInt16LE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readInt16LE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readInt16BE undefined": {
+  "ok": 258
+ },
+ "readInt16BE 0": {
+  "ok": 258
+ },
+ "readInt16BE 3": {
+  "ok": 1279
+ },
+ "readInt16BE 4": {
+  "ok": -2
+ },
+ "readInt16BE 8": {
+  "ok": -32768
+ },
+ "readInt16BE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 11"
+  }
+ },
+ "readInt16BE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 12"
+  }
+ },
+ "readInt16BE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received -1"
+  }
+ },
+ "readInt16BE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readInt16BE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readInt16BE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUInt32LE undefined": {
+  "ok": 67305985
+ },
+ "readUInt32LE 0": {
+  "ok": 67305985
+ },
+ "readUInt32LE 3": {
+  "ok": 4261347076
+ },
+ "readUInt32LE 4": {
+  "ok": 4244504319
+ },
+ "readUInt32LE 8": {
+  "ok": 128
+ },
+ "readUInt32LE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readUInt32LE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readUInt32LE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readUInt32LE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUInt32LE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUInt32LE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUInt32BE undefined": {
+  "ok": 16909060
+ },
+ "readUInt32BE 0": {
+  "ok": 16909060
+ },
+ "readUInt32BE 3": {
+  "ok": 83885821
+ },
+ "readUInt32BE 4": {
+  "ok": 4294901244
+ },
+ "readUInt32BE 8": {
+  "ok": 2147483648
+ },
+ "readUInt32BE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readUInt32BE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readUInt32BE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readUInt32BE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUInt32BE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUInt32BE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readInt32LE undefined": {
+  "ok": 67305985
+ },
+ "readInt32LE 0": {
+  "ok": 67305985
+ },
+ "readInt32LE 3": {
+  "ok": -33620220
+ },
+ "readInt32LE 4": {
+  "ok": -50462977
+ },
+ "readInt32LE 8": {
+  "ok": 128
+ },
+ "readInt32LE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readInt32LE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readInt32LE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readInt32LE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readInt32LE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readInt32LE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readInt32BE undefined": {
+  "ok": 16909060
+ },
+ "readInt32BE 0": {
+  "ok": 16909060
+ },
+ "readInt32BE 3": {
+  "ok": 83885821
+ },
+ "readInt32BE 4": {
+  "ok": -66052
+ },
+ "readInt32BE 8": {
+  "ok": -2147483648
+ },
+ "readInt32BE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readInt32BE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readInt32BE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readInt32BE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readInt32BE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readInt32BE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUint16LE undefined": {
+  "ok": 513
+ },
+ "readUint16LE 0": {
+  "ok": 513
+ },
+ "readUint16LE 3": {
+  "ok": 65284
+ },
+ "readUint16LE 4": {
+  "ok": 65279
+ },
+ "readUint16LE 8": {
+  "ok": 128
+ },
+ "readUint16LE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 11"
+  }
+ },
+ "readUint16LE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received 12"
+  }
+ },
+ "readUint16LE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 10. Received -1"
+  }
+ },
+ "readUint16LE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUint16LE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUint16LE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUint32BE undefined": {
+  "ok": 16909060
+ },
+ "readUint32BE 0": {
+  "ok": 16909060
+ },
+ "readUint32BE 3": {
+  "ok": 83885821
+ },
+ "readUint32BE 4": {
+  "ok": 4294901244
+ },
+ "readUint32BE 8": {
+  "ok": 2147483648
+ },
+ "readUint32BE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readUint32BE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readUint32BE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readUint32BE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readUint32BE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readUint32BE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readFloatLE undefined": {
+  "ok": 1.539989614439558e-36
+ },
+ "readFloatLE 0": {
+  "ok": 1.539989614439558e-36
+ },
+ "readFloatLE 3": {
+  "ok": -4.236850346974168e+37
+ },
+ "readFloatLE 4": {
+  "ok": -1.055058432344064e+37
+ },
+ "readFloatLE 8": {
+  "ok": 1.793662034335766e-43
+ },
+ "readFloatLE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readFloatLE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readFloatLE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readFloatLE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readFloatLE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readFloatLE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readFloatBE undefined": {
+  "ok": 2.387939260590663e-38
+ },
+ "readFloatBE 0": {
+  "ok": 2.387939260590663e-38
+ },
+ "readFloatBE 3": {
+  "ok": 6.0184381645167334e-36
+ },
+ "readFloatBE 4": {
+  "ok": null
+ },
+ "readFloatBE 8": {
+  "ok": 0
+ },
+ "readFloatBE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 11"
+  }
+ },
+ "readFloatBE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received 12"
+  }
+ },
+ "readFloatBE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 8. Received -1"
+  }
+ },
+ "readFloatBE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readFloatBE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readFloatBE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readDoubleLE undefined": {
+  "ok": -1.1973476611593863e+294
+ },
+ "readDoubleLE 0": {
+  "ok": -1.1973476611593863e+294
+ },
+ "readDoubleLE 3": {
+  "ok": 7.00704064028685e-310
+ },
+ "readDoubleLE 4": {
+  "ok": 2.73712525011e-312
+ },
+ "readDoubleLE 8": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 8"
+  }
+ },
+ "readDoubleLE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 11"
+  }
+ },
+ "readDoubleLE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 12"
+  }
+ },
+ "readDoubleLE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received -1"
+  }
+ },
+ "readDoubleLE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readDoubleLE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readDoubleLE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readDoubleBE undefined": {
+  "ok": 8.207887215933468e-304
+ },
+ "readDoubleBE 0": {
+  "ok": 8.207887215933468e-304
+ },
+ "readDoubleBE 3": {
+  "ok": 1.344809146141413e-284
+ },
+ "readDoubleBE 4": {
+  "ok": null
+ },
+ "readDoubleBE 8": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 8"
+  }
+ },
+ "readDoubleBE 11": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 11"
+  }
+ },
+ "readDoubleBE 12": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received 12"
+  }
+ },
+ "readDoubleBE -1": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 4. Received -1"
+  }
+ },
+ "readDoubleBE 1.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received 1.5"
+  }
+ },
+ "readDoubleBE 1": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received type string ('1')"
+  }
+ },
+ "readDoubleBE NaN": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be an integer. Received NaN"
+  }
+ },
+ "readUIntLE 0 1": {
+  "ok": 1
+ },
+ "readUIntLE 0 3": {
+  "ok": 197121
+ },
+ "readUIntLE 2 6": {
+  "ok": 278167835051011
+ },
+ "readUIntLE 6 6": {
+  "ok": 8453373
+ },
+ "readUIntLE 0 7": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 7"
+  }
+ },
+ "readUIntLE 0 0": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 0"
+  }
+ },
+ "readUIntLE undefined 2": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received undefined"
+  }
+ },
+ "readUIntLE 1 2.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be an integer. Received 2.5"
+  }
+ },
+ "readUIntBE 0 1": {
+  "ok": 1
+ },
+ "readUIntBE 0 3": {
+  "ok": 66051
+ },
+ "readUIntBE 2 6": {
+  "ok": 3320009653756
+ },
+ "readUIntBE 6 6": {
+  "ok": 279260921069568
+ },
+ "readUIntBE 0 7": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 7"
+  }
+ },
+ "readUIntBE 0 0": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 0"
+  }
+ },
+ "readUIntBE undefined 2": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received undefined"
+  }
+ },
+ "readUIntBE 1 2.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be an integer. Received 2.5"
+  }
+ },
+ "readIntLE 0 1": {
+  "ok": 1
+ },
+ "readIntLE 0 3": {
+  "ok": 197121
+ },
+ "readIntLE 2 6": {
+  "ok": -3307141659645
+ },
+ "readIntLE 6 6": {
+  "ok": 8453373
+ },
+ "readIntLE 0 7": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 7"
+  }
+ },
+ "readIntLE 0 0": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 0"
+  }
+ },
+ "readIntLE undefined 2": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received undefined"
+  }
+ },
+ "readIntLE 1 2.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be an integer. Received 2.5"
+  }
+ },
+ "readIntBE 0 1": {
+  "ok": 1
+ },
+ "readIntBE 0 3": {
+  "ok": 66051
+ },
+ "readIntBE 2 6": {
+  "ok": 3320009653756
+ },
+ "readIntBE 6 6": {
+  "ok": -2214055641088
+ },
+ "readIntBE 0 7": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 7"
+  }
+ },
+ "readIntBE 0 0": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 0"
+  }
+ },
+ "readIntBE undefined 2": {
+  "err": {
+   "name": "TypeError",
+   "code": "ERR_INVALID_ARG_TYPE",
+   "message": "The \"offset\" argument must be of type number. Received undefined"
+  }
+ },
+ "readIntBE 1 2.5": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be an integer. Received 2.5"
+  }
+ },
+ "writeUInt8 [255,0]": {
+  "ok": [
+   1,
+   "ff00000000000000"
+  ]
+ },
+ "writeUInt8 [256,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 255. Received 256"
+  }
+ },
+ "writeUInt8 [-1,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 255. Received -1"
+  }
+ },
+ "writeUInt8 [1,6]": {
+  "ok": [
+   7,
+   "0000000000000100"
+  ]
+ },
+ "writeUInt8 [1.9,0]": {
+  "ok": [
+   1,
+   "0100000000000000"
+  ]
+ },
+ "writeUInt8 [\"7\",0]": {
+  "ok": [
+   1,
+   "0700000000000000"
+  ]
+ },
+ "writeInt8 [-128,0]": {
+  "ok": [
+   1,
+   "8000000000000000"
+  ]
+ },
+ "writeInt8 [127,1]": {
+  "ok": [
+   2,
+   "007f000000000000"
+  ]
+ },
+ "writeInt8 [128,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= -128 and <= 127. Received 128"
+  }
+ },
+ "writeInt8 [-129,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= -128 and <= 127. Received -129"
+  }
+ },
+ "writeUInt16LE [65535,0]": {
+  "ok": [
+   2,
+   "ffff000000000000"
+  ]
+ },
+ "writeUInt16LE [65536,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 65535. Received 65536"
+  }
+ },
+ "writeUInt16LE [258,4]": {
+  "ok": [
+   6,
+   "0000000002010000"
+  ]
+ },
+ "writeUInt16LE [1,5]": {
+  "ok": [
+   7,
+   "0000000000010000"
+  ]
+ },
+ "writeUInt16BE [258,0]": {
+  "ok": [
+   2,
+   "0102000000000000"
+  ]
+ },
+ "writeInt16LE [-2,0]": {
+  "ok": [
+   2,
+   "feff000000000000"
+  ]
+ },
+ "writeInt16LE [32768,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= -32768 and <= 32767. Received 32768"
+  }
+ },
+ "writeInt16BE [-2,0]": {
+  "ok": [
+   2,
+   "fffe000000000000"
+  ]
+ },
+ "writeUInt32LE [3735928559,0]": {
+  "ok": [
+   4,
+   "efbeadde00000000"
+  ]
+ },
+ "writeUInt32LE [4294967296,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 4294967295. Received 4294967296"
+  }
+ },
+ "writeUInt32LE [-1,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 4294967295. Received -1"
+  }
+ },
+ "writeUInt32LE [1,3]": {
+  "ok": [
+   7,
+   "0000000100000000"
+  ]
+ },
+ "writeUInt32BE [3735928559,2]": {
+  "ok": [
+   6,
+   "0000deadbeef0000"
+  ]
+ },
+ "writeInt32LE [-1,0]": {
+  "ok": [
+   4,
+   "ffffffff00000000"
+  ]
+ },
+ "writeInt32LE [2147483648,0]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= -2147483648 and <= 2147483647. Received 2147483648"
+  }
+ },
+ "writeInt32LE [-2147483648,2]": {
+  "ok": [
+   6,
+   "0000000000800000"
+  ]
+ },
+ "writeInt32BE [-2,0]": {
+  "ok": [
+   4,
+   "fffffffe00000000"
+  ]
+ },
+ "writeFloatLE [1.5,0]": {
+  "ok": [
+   4,
+   "0000c03f00000000"
+  ]
+ },
+ "writeFloatLE [null,0]": {
+  "ok": [
+   4,
+   "0000c07f00000000"
+  ]
+ },
+ "writeFloatLE [1e+40,2]": {
+  "ok": [
+   6,
+   "00000000807f0000"
+  ]
+ },
+ "writeFloatBE [-0.25,0]": {
+  "ok": [
+   4,
+   "be80000000000000"
+  ]
+ },
+ "writeDoubleLE [3.141592653589793,0]": {
+  "ok": [
+   8,
+   "182d4454fb210940"
+  ]
+ },
+ "writeDoubleLE [1,-1]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 0. Received -1"
+  }
+ },
+ "writeDoubleBE [1e+300,0]": {
+  "ok": [
+   8,
+   "7e37e43c8800759c"
+  ]
+ },
+ "writeUint8 [9,0]": {
+  "ok": [
+   1,
+   "0900000000000000"
+  ]
+ },
+ "writeUint16LE [9,0]": {
+  "ok": [
+   2,
+   "0900000000000000"
+  ]
+ },
+ "writeUint32BE [9,0]": {
+  "ok": [
+   4,
+   "0000000900000000"
+  ]
+ },
+ "writeUIntLE [1193046,0,3]": {
+  "ok": [
+   3,
+   "5634120000000000"
+  ]
+ },
+ "writeUIntBE [1193046,1,3]": {
+  "ok": [
+   4,
+   "0012345600000000"
+  ]
+ },
+ "writeIntLE [-2,0,6]": {
+  "ok": [
+   6,
+   "feffffffffff0000"
+  ]
+ },
+ "writeIntBE [-2,0,2]": {
+  "ok": [
+   2,
+   "fffe000000000000"
+  ]
+ },
+ "writeUIntLE [16777216,0,3]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"value\" is out of range. It must be >= 0 and <= 16777215. Received 16777216"
+  }
+ },
+ "writeIntLE [0,0,7]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"byteLength\" is out of range. It must be >= 1 and <= 6. Received 7"
+  }
+ },
+ "writeUIntBE [1,6,3]": {
+  "err": {
+   "name": "RangeError",
+   "code": "ERR_OUT_OF_RANGE",
+   "message": "The value of \"offset\" is out of range. It must be >= 0 and <= 5. Received 6"
+  }
+ }
+}

@@ -1,6 +1,6 @@
 package moejs
 
-import "github.com/Calcium-Ion/moejs/engine"
+import "github.com/MoeForge/moejs/engine"
 
 type (
 	// PromiseState is the state of a promise.
@@ -37,25 +37,20 @@ const (
 // exception a queueMicrotask callback threw). A function or generator of
 // another runtime is ErrForeign and settles nothing.
 func (rt *Runtime) NewPromise() (p Value, resolve, reject func(v Value) error) {
-	o, res, rej := rt.realm.NewPromiseWithResolvers()
-	return engine.ObjectValue(o), rt.settler(res), rt.settler(rej)
+	o := rt.realm.NewHostPromise()
+	return engine.ObjectValue(o), rt.settler(o, false), rt.settler(o, true)
 }
 
-// settler calls the resolving function fn with the value it is given.
-func (rt *Runtime) settler(fn *Object) func(v Value) error {
+// settler settles the promise p of NewHostPromise with the value it is
+// given, rejecting it if reject.
+func (rt *Runtime) settler(p *Object, reject bool) func(v Value) error {
 	return func(v Value) (err error) {
 		r := rt.realm
 		if r.IsForeign(v) {
 			return ErrForeign
 		}
-		base := len(rt.argStack)
-		defer rt.guard(&err, r.CallState(), base)
-		rt.argStack = append(rt.argStack, v)
-		top := len(rt.argStack)
-		_, err = r.CallObject(fn, engine.Undefined(), rt.argStack[base:top:top])
-		clear(rt.argStack[base:top])
-		rt.argStack = rt.argStack[:base]
-		return err
+		defer rt.guard(&err, r.CallState(), len(rt.argStack))
+		return r.SettlePromise(p, v, reject)
 	}
 }
 

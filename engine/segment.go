@@ -609,6 +609,19 @@ func segSentenceNext(t *segText, i int) int {
 	upperLower := false // the ATerm came after Upper or Lower (SB7)
 	x := segSOther
 	for j := i; j < n; {
+		if term == 0 {
+			// Outside a terminator sequence only a paragraph separator or
+			// a terminator does anything but set x: skip to the next one,
+			// and give x what the code points skipped would have.
+			p := segSentenceSkip(t, s, j)
+			if p == n {
+				return n
+			}
+			if p > j {
+				x = segSentenceLast(t, s, i, j, p, x)
+				j = p
+			}
+		}
 		c, k := t.unit(j), j+1
 		if c < 0 {
 			c, k = segSurrogate(t.u, j)
@@ -651,6 +664,65 @@ func segSentenceNext(t *segText, i int) int {
 		x, j = y, k
 	}
 	return n
+}
+
+// segSentenceStops are the sentence classes of segSentenceSkip, and
+// segSentenceASCIIStops the ASCII characters of those classes, all below
+// 64: LF, CR, '!', '.' and '?' (TestSegSentenceASCIIStops).
+const (
+	segSentenceStops             = 1<<segSCR | 1<<segSLF | 1<<segSSep | 1<<segSATerm | 1<<segSSTerm
+	segSentenceASCIIStops uint64 = 1<<'\n' | 1<<'\r' | 1<<'!' | 1<<'.' | 1<<'?'
+)
+
+// segSentenceSkip returns the index of the first code point from j that is
+// a paragraph separator or a terminator, or t.len().
+func segSentenceSkip(t *segText, s *segTrie, j int) int {
+	if t.u == nil {
+		a := t.ascii
+		for j < len(a) && (a[j] >= 64 || segSentenceASCIIStops>>a[j]&1 == 0) {
+			j++
+		}
+		return j
+	}
+	u := t.u
+	for j < len(u) {
+		switch c := u[j]; {
+		case c < 0x80:
+			if c < 64 && segSentenceASCIIStops>>c&1 != 0 {
+				return j
+			}
+			j++
+		case c&0xF800 != 0xD800:
+			// segTrie.of below U+10000.
+			if segSentenceStops>>(s.data[int(s.bmp[c>>6])|int(c&63)]&15)&1 != 0 {
+				return j
+			}
+			j++
+		default:
+			d, k := segSurrogate(u, j)
+			if segSentenceStops>>(s.of(d)&15)&1 != 0 {
+				return j
+			}
+			j = k
+		}
+	}
+	return j
+}
+
+// segSentenceLast returns what segSentenceNext, starting at i, leaves in x
+// after the code points [j, p), none of which ends a sentence or starts a
+// terminator sequence, when it had x before them: the class of the last
+// one that SB5 does not fold into the one before it, an Extend or Format
+// only at i.
+func segSentenceLast(t *segText, s *segTrie, i, j, p int, x uint8) uint8 {
+	for p > j {
+		var c rune
+		c, p = t.before(j, p)
+		if y := s.of(c); p == i || y != segSExtend && y != segSFormat {
+			return y
+		}
+	}
+	return x
 }
 
 // segSB8 reports whether the code points from j that are no OLetter, Upper,

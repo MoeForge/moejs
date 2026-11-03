@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 	"unsafe"
 )
 
@@ -277,6 +277,11 @@ func (r *Realm) resumeFrame(g *genFrame, v, mode Value) (Value, error) {
 	}
 	regs := st.stack[base:top:top]
 	copy(regs, g.regs)
+	// The frame's registers are on the stack until it suspends again, which
+	// saves them back: the saved ones would keep what the frame drops, past
+	// any await it continues in place (awaitNext). Their length sizes the
+	// next resumption, and the buffer takes the next suspension.
+	clear(g.regs)
 	if g.state != genSuspendedStart {
 		regs[g.recv], regs[g.recv+1] = v, mode
 	}

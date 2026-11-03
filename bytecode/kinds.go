@@ -127,9 +127,13 @@ func RegisterWrites(op Op, w, x uint32, write func(r, k int, kind RegKind)) bool
 		write(a+1, 1, RegIndex)
 		write(a+3, 1, RegAny)
 
-	// Suspensions: a resumption writes the value and the mode.
-	case Yield, Await, AsyncYield:
+	// Suspensions: a resumption writes the value and the mode, and an async
+	// function call's first Await leaves its state in R[B].
+	case Yield, AsyncYield:
 		write(a, 2, RegAny)
+	case Await:
+		write(a, 2, RegAny)
+		write(b, 1, RegAny)
 	case Delegate:
 		write(a, 2, RegAny)
 		write(b, 2, RegAny)

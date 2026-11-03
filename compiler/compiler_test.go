@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -345,13 +345,13 @@ func TestModuleTopLevelAwait(t *testing.T) {
 	fn := compileModule(t, `export const x = await 1;`)
 	assert.True(t, fn.Async, "a module with top-level await is an async body")
 	o := ops(fn)
-	assert.Contains(t, o, bytecode.AsyncStart)
 	assert.Contains(t, o, bytecode.Await)
 	assert.Contains(t, o, bytecode.AsyncReturn)
+	assert.Contains(t, o, bytecode.AsyncThrow)
 	fn = compileModule(t, `export const x = 1;`)
 	assert.False(t, fn.Async)
 	o = ops(fn)
-	assert.NotContains(t, o, bytecode.AsyncStart)
+	assert.NotContains(t, o, bytecode.AsyncReturn)
 	assert.Equal(t, bytecode.RetUndef, o[len(o)-1])
 }
 

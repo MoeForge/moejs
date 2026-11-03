@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/Calcium-Ion/moejs/bytecode"
+import "github.com/MoeForge/moejs/bytecode"
 
 // The iteration protocol (ES2025 §7.4.1-7.4.12) shared by the interpreter
 // (for-of, spread, array destructuring) and the builtins (Array.from,
@@ -350,9 +350,10 @@ func (r *Realm) iterCloseThrow(it, pos *Value, err error) error {
 
 // iterOp executes an iteration op of the frame whose registers start at
 // base, past the fast paths the interpreter runs inline, and returns the
-// next pc. Keeping these paths out of the dispatch loop keeps it below the
-// compiler's big-function size, so its small helpers stay inlined. For
-// IterThrow a nil error means the record is closed and the caller throws.
+// next pc (IterNext has its own, iterNext). Keeping these paths out of the
+// dispatch loop keeps it below the compiler's big-function size, so its
+// small helpers stay inlined. For IterThrow a nil error means the record is
+// closed and the caller throws.
 func (r *Realm) iterOp(fd *FunctionData, base int, w uint32, pc int) (int, error) {
 	st := &r.interp
 	top := base + int(fd.code.NumRegs)
@@ -361,7 +362,6 @@ func (r *Realm) iterOp(fd *FunctionData, base int, w uint32, pc int) (int, error
 	// The record registers are copied: next and return may grow the stack.
 	it, pos := regs[a], regs[a+1]
 	var v Value
-	var done bool
 	var err error
 	switch bytecode.Op(w) {
 	case bytecode.IterInit:
@@ -370,17 +370,6 @@ func (r *Realm) iterOp(fd *FunctionData, base int, w uint32, pc int) (int, error
 			regs[a], regs[a+1] = it, pos
 		}
 		return pc, err
-	case bytecode.IterNext:
-		v, done, err = r.iterStep(&it, &pos)
-		regs = st.stack[base:top:top]
-		regs[a], regs[a+1] = it, pos
-		if err != nil {
-			return pc, err
-		}
-		if done {
-			return pc + int(int16(w>>16)), nil
-		}
-		regs[a+2] = v
 	case bytecode.IterValue, bytecode.IterRest:
 		if bytecode.Op(w) == bytecode.IterValue {
 			v, _, err = r.iterStep(&it, &pos)
@@ -410,6 +399,38 @@ func (r *Realm) iterOp(fd *FunctionData, base int, w uint32, pc int) (int, error
 			return pc, r.iterCloseThrow(&it, &pos, nil)
 		}
 	}
+	return pc, nil
+}
+
+// iterNext is iterOp for IterNext outside an array's fast mode. It steps a
+// segment iterator itself: that runs no JavaScript, so the record stays in
+// its registers, and the step costs its checks and the segment.
+func (r *Realm) iterNext(fd *FunctionData, base int, w uint32, pc int) (int, error) {
+	st := &r.interp
+	top := base + int(fd.code.NumRegs)
+	regs := st.stack[base:top:top]
+	a := int(uint8(w >> 8))
+	if sg := r.segmentIterator(regs[a], regs[a+1]); sg != nil {
+		v, done := sg.step(r)
+		if done {
+			regs[a] = Undefined()
+			return pc + int(int16(w>>16)), nil
+		}
+		regs[a+2] = v
+		return pc, nil
+	}
+	// The record registers are copied: next may grow the stack.
+	it, pos := regs[a], regs[a+1]
+	v, done, err := r.iterStep(&it, &pos)
+	regs = st.stack[base:top:top]
+	regs[a], regs[a+1] = it, pos
+	if err != nil {
+		return pc, err
+	}
+	if done {
+		return pc + int(int16(w>>16)), nil
+	}
+	regs[a+2] = v
 	return pc, nil
 }
 

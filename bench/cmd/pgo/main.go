@@ -1,8 +1,10 @@
 // Command pgo profiles the moejs hook suite (every recorded fixture case of
 // every plugin, single goroutine, through the native API) and writes the
-// CPU profile to the repository root as default.pgo.
+// CPU profile to the repository root as default.pgo. Run it with -trimpath,
+// so that the profile names source files by module and import path rather
+// than by where the checkout and the Go installation are.
 //
-//	go run ./cmd/pgo [-duration 30s] [-engine moejs] [-out ../default.pgo]
+//	go run -trimpath ./cmd/pgo [-duration 30s] [-engine moejs] [-out ../default.pgo]
 package main
 
 import (
@@ -14,8 +16,8 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/bench"
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs/bench"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 func main() {

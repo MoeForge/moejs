@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // FuzzParse checks that the parser does not panic, that a URL it returns

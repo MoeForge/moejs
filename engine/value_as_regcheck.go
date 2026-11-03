@@ -20,6 +20,11 @@ func (v Value) asPrivate() *PrivateName {
 	return (*PrivateName)(v.ptr)
 }
 
+func (v Value) asAsyncFrame() *asyncFrame {
+	checkPayload(v, tagAsync, "asAsyncFrame")
+	return (*asyncFrame)(v.ptr)
+}
+
 // AsString returns the *String payload. Only valid when IsString.
 func (v Value) AsString() *String { checkPayload(v, tagString, "AsString"); return (*String)(v.ptr) }
 

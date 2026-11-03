@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 func TestBigIntOperators(t *testing.T) {

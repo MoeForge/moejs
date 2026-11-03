@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,8 +43,9 @@ JSON.stringify(result);`)
 
 // TestIntlConcurrent formats in every data locale from runtimes on many
 // goroutines at once, shared and mutable, so the first use of each locale's
-// tables, of the time zones and of the default formatters races (run it
-// with -race), and checks that every runtime gets the same results.
+// tables, of the time zones, of the default formatters and of the shared
+// strings of one-code-point segments races (run it with -race), and checks
+// that every runtime gets the same results.
 func TestIntlConcurrent(t *testing.T) {
 	s, err := moejs.CompileScript("intl.js", `
 const locales = ["en", "zh-Hans", "zh-Hant", "ja", "ko", "de", "fr", "es", "pt", "ru", "it", "sv"];
@@ -61,6 +62,15 @@ for (const l of locales) {
     new Intl.DateTimeFormat(l, {timeZone: "Asia/Tokyo", timeZoneName: "long"}).formatRange(d, d.getTime() + 86400e3),
     (1234.5).toLocaleString(), (12n ** 20n).toLocaleString(l), d.toLocaleString(), d.toLocaleDateString(l), [1.5, d].toLocaleString(l),
   );
+}
+const text = "你好，世界！日本語のテキスト。한국어 문장. Emoji: 👍🏽 🇯🇵 😀 🦀 ü é ñ Ω.";
+for (const granularity of ["grapheme", "word", "sentence"]) {
+  const counts = {}, seen = new Map();
+  for (const {segment} of new Intl.Segmenter("en", {granularity}).segment(text)) {
+    counts[segment] = (counts[segment] || 0) + 1;
+    seen.set(segment, segment.length);
+  }
+  out.push(JSON.stringify(counts), JSON.stringify([...seen]));
 }
 out.join("\n");`)
 	require.NoError(t, err)

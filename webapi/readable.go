@@ -3,7 +3,7 @@ package webapi
 import (
 	"math"
 
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/engine"
 )
 
 // The Streams Standard's ReadableStream with its default controller and
@@ -27,7 +27,10 @@ type readableStream struct {
 	// held are the JavaScript values the source's algorithms call, under
 	// a memory limit, until they are cleared: the algorithms are Go
 	// closures, which the limit's measurements do not see into.
-	held      *[4]engine.Value
+	held *[4]engine.Value
+	// src reports what a source implemented in Go keeps outside the
+	// JavaScript heap, or is nil.
+	src       engine.LiveReporter
 	state     rsState
 	disturbed bool
 }

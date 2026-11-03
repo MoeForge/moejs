@@ -63,6 +63,10 @@ const (
 	// environment, held by the environment slot of an import binding and
 	// read through by GetImport (module.go).
 	tagImport
+	// tagAsync is internal: the *asyncFrame of an async function call that
+	// awaited, held by the register of its frame that names the call to
+	// Await and AsyncReturn (async.go).
+	tagAsync
 )
 
 // NumberValue boxes a float64, canonicalizing NaN.
@@ -131,6 +135,9 @@ func privateValue(p *PrivateName) Value { return Value{ptr: unsafe.Pointer(p), b
 // importRef boxes a reference to an exported binding's slot (internal).
 func importRef(slot *Value) Value { return Value{ptr: unsafe.Pointer(slot), bits: tagImport} }
 
+// asyncFrameValue boxes an async function call's state (internal).
+func asyncFrameValue(af *asyncFrame) Value { return Value{ptr: unsafe.Pointer(af), bits: tagAsync} }
+
 // setScalar stores x, a value that holds no pointer (a number, a boolean,
 // undefined, null or the hole), into *v. Over a value that holds no pointer
 // either it writes only the bits: a store of the pointer word, nil included,
@@ -192,6 +199,8 @@ func (v Value) isAccessor() bool { return v.ptr != nil && v.bits == tagAccessor 
 func (v Value) isPrivate() bool { return v.ptr != nil && v.bits == tagPrivate }
 
 func (v Value) isImportRef() bool { return v.ptr != nil && v.bits == tagImport }
+
+func (v Value) isAsyncFrame() bool { return v.ptr != nil && v.bits == tagAsync }
 
 // AsNumber returns the float64 payload. Only valid when IsNumber.
 func (v Value) AsNumber() float64 { return math.Float64frombits(v.bits) }

@@ -85,7 +85,7 @@ go tool pprof -sample_index=alloc_objects -top -nodecount=25 results/bench.test 
 go tool pprof -sample_index=alloc_space -top -nodecount=25 results/bench.test results/moejs.mem.prof | tee results/alloc_space_top.txt
 
 echo "== pgo"
-maybe_flock go run ./cmd/pgo -duration 30s | tee results/pgo_profile.txt
+maybe_flock go run -trimpath ./cmd/pgo -duration 30s | tee results/pgo_profile.txt
 run hooksuite_pgo_off "${PIN[@]}" go test -run xxx -bench 'BenchmarkHookSuite$/moejs' -benchmem -count 5 -pgo=off .
 run hooksuite_pgo_on  "${PIN[@]}" go test -run xxx -bench 'BenchmarkHookSuite$/moejs' -benchmem -count 5 -pgo=../default.pgo .
 echo "== done"

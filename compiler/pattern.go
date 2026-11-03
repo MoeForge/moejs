@@ -3,8 +3,8 @@ package compiler
 import (
 	"strconv"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // bindPattern stores the value in register src into pat: an identifier, a
@@ -60,7 +60,7 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 	excl := -1
 	if p.Rest != nil {
 		excl = f.alloc()
-		f.emitABx(bytecode.NewArray, excl, f.checkBx(len(p.Props)))
+		f.emitABx(bytecode.NewArray, excl, capHint(len(p.Props)))
 	}
 	for _, prop := range p.Props {
 		m := f.nregs

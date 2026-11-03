@@ -33,10 +33,11 @@
 // # Streaming
 //
 // A response body is a ReadableStream whose source reads the
-// http.Response's Body on a goroutine only when the stream asks for a
-// chunk: when a read waits and the queue is empty. The Go side never reads
-// ahead of JavaScript. Each chunk is a Uint8Array over the bytes the read
-// returned, not copied again, charged to the runtime's memory limit
+// http.Response's Body on a goroutine, from the stream's first read on, at
+// most one chunk ahead of what JavaScript took: the chunk read ahead waits
+// until the stream takes it, and the next read runs while JavaScript works
+// on it. Each chunk is a Uint8Array over the bytes the read returned, not
+// copied again, charged to the runtime's memory limit
 // (moejs.Options.MemoryLimit) in the task that hands it over. text(),
 // json(), arrayBuffer() and bytes() hand the whole body over in one task,
 // so a body larger than the limit stops the loop with the limit's error,
@@ -59,10 +60,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/eventloop"
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/eventloop"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 // Options configures Install.
@@ -204,7 +205,7 @@ func (e *env) captureIntrinsics() *intrinsics {
 	name := func(s string) engine.PropertyKey { return r.KeyFromGoString(s) }
 	// The prototype of a promise of the realm is %Promise.prototype%,
 	// whatever the global Promise is.
-	p, _, _ := r.NewPromiseWithResolvers()
+	p := r.NewHostPromise()
 	proto := p.Proto()
 	x := &intrinsics{then: get(proto, e.keys.then), promise: get(proto, e.keys.constructor)}
 	x.promiseResolve = get(x.promise, name("resolve"))
@@ -432,22 +433,19 @@ var globalNames = [...]struct {
 
 // install defines the globals, each created on first read.
 func (e *env) install() {
-	r := e.r
-	n := len(globalNames)
-	for i, g := range globalNames[:n-2] {
-		id := g.id
-		r.Global.DefineLazyProperty(r, atoms.globals[i], func(*engine.Realm) engine.Value {
-			return engine.ObjectValue(e.class(id).ctor)
-		})
-	}
-	r.Global.DefineLazyProperty(r, atoms.globals[n-2], func(*engine.Realm) engine.Value {
+	e.r.Global.DefineLazyProperties(e.r, atoms.globals[:], e.global)
+}
+
+// global creates the global globalNames[i].
+func (e *env) global(r *engine.Realm, i int) engine.Value {
+	switch n := len(globalNames); i {
+	case n - 2:
 		return engine.ObjectValue(r.NewNativeFunction(r.InternGoString("fetch"), 1, e.fetch))
-	})
-	r.Global.DefineLazyProperty(r, atoms.globals[n-1], func(*engine.Realm) engine.Value {
-		t := &eventTarget{}
-		o, _ := e.newObject(clsPerformance, nil, t)
+	case n - 1:
+		o, _ := e.newObject(clsPerformance, nil, &eventTarget{})
 		return engine.ObjectValue(o)
-	})
+	}
+	return engine.ObjectValue(e.class(globalNames[i].id).ctor)
 }
 
 // specs returns the description of the class id.
@@ -572,14 +570,13 @@ func (e *env) fn(length int, f engine.NativeFunc) *engine.Object {
 
 // --- promises -------------------------------------------------------------------
 
-// promise is a promise with its resolving functions.
+// promise is a promise the package settles (engine.Realm.NewHostPromise).
 type promise struct {
-	p, resolve, reject *engine.Object
+	p *engine.Object
 }
 
 func (e *env) newPromise() promise {
-	p, res, rej := e.r.NewPromiseWithResolvers()
-	return promise{p, res, rej}
+	return promise{e.r.NewHostPromise()}
 }
 
 // value returns the promise as a value.
@@ -594,14 +591,12 @@ func (p promise) settled() bool {
 // fulfill resolves the promise with v; it returns only an interrupt's
 // error, as the jobs run later.
 func (e *env) fulfill(p promise, v engine.Value) error {
-	_, err := e.r.CallObject(p.resolve, undefined, []engine.Value{v})
-	return err
+	return e.r.SettlePromise(p.p, v, false)
 }
 
 // rejectP rejects the promise with reason.
 func (e *env) rejectP(p promise, reason engine.Value) error {
-	_, err := e.r.CallObject(p.reject, undefined, []engine.Value{reason})
-	return err
+	return e.r.SettlePromise(p.p, reason, true)
 }
 
 // resolved returns a promise resolved with v (PromiseResolve).

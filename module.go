@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/compiler"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // Module is a compiled ES module. It is immutable: any number of runtimes
@@ -214,8 +214,12 @@ func (e *ResolveError) Unwrap() error { return e.Err }
 // at the import in the importing module, and so is an indirect export; a
 // failed resolution is a *ResolveError. Link runs no JavaScript: a panic of
 // resolve propagates. A module that imports nothing and uses neither
-// import() nor import.meta is returned as is.
+// import() nor import.meta is returned as is. A nil entry, what a failed
+// Compile returns, is an error.
 func Link(entry *Module, resolve Resolver) (*Module, error) {
+	if entry == nil {
+		return nil, errNilLink
+	}
 	if entry.code.Module.Links == nil {
 		return entry, nil
 	}

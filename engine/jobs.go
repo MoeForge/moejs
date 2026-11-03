@@ -56,6 +56,12 @@ type jobState struct {
 	result Value
 	// tracker receives the HostPromiseRejectionTracker operations.
 	tracker func(p *Object, op PromiseRejectionOperation)
+	// af is the state of the async function call the running job resumes,
+	// which only Go frames hold until its registers are back on the stack:
+	// under a memory limit, a root of the measurement an interrupt check
+	// makes first (asyncFrame.promiseSettled, resumeFrame). A Go panic out
+	// of the job leaves it, for RestoreCallState and DropJobs to drop.
+	af *asyncFrame
 }
 
 // jobState returns the realm's job state, creating it on first use.
@@ -209,7 +215,8 @@ func (r *Realm) dropJobs(reaction *promiseReaction, err error) {
 // of the next one. The modules in asynchronous evaluation those jobs would
 // have continued fail with err. A no-op inside a call, where the jobs are
 // the outermost call's. It also clears what a JSON.parse the panic stopped
-// left on the realm's kept stack (jsonStack).
+// left on the realm's kept stack (jsonStack), and the state of an async
+// function call a job the panic stopped had resumed (jobState.af).
 func (r *Realm) DropJobs(err error) {
 	if r.callDepth != 0 || r.lazy == nil {
 		return
@@ -222,6 +229,7 @@ func (r *Realm) DropJobs(err error) {
 	}
 	r.jobsPending = false
 	r.lazy.jobs.clearKept()
+	r.lazy.jobs.af = nil
 	r.dropJobs(nil, err)
 }
 

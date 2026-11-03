@@ -3,7 +3,7 @@ package whatwgurl_test
 import (
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/webapi/internal/whatwgurl"
+	"github.com/MoeForge/moejs/webapi/internal/whatwgurl"
 )
 
 func BenchmarkParse(b *testing.B) {

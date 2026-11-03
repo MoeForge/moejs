@@ -1,288 +1,288 @@
-{"meta": {"date": "2026-10-24", "node": "v24.22.0 icu 78.3", "go": "go1.26.6", "cpu": "Intel(R) Xeon(R) CPU E5-2667 v4 @ 3.20GHz", "cpus": "0-7", "canaries": [{"name": "cpu", "floor": 248000.0}, {"name": "mem", "floor": 525.0}]}}
-{"round": 1, "canary": "cpu", "when": "before", "value": 262126.84}
-{"round": 1, "canary": "mem", "when": "before", "value": 536.1819378342623}
-{"round": 1, "engine": "moejs", "row": "yen_format", "value": 400.3, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "yen_parts", "value": 1342.0, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "decimal_format", "value": 393.1, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "tokyo_format", "value": 405.5, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "tokyo_parts", "value": 1737.0, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "number_tolocale", "value": 378.4, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "date_tolocale", "value": 450.3, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "construct_nf", "value": 4826.0, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "construct_dtf", "value": 5547.0, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "yen_format", "value": 556.2, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "yen_parts", "value": 2337.3, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "decimal_format", "value": 548.9, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "tokyo_format", "value": 1262.7, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "tokyo_parts", "value": 3055.3, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "number_tolocale", "value": 466.2, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "date_tolocale", "value": 1548.6, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "construct_nf", "value": 20430.3, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "construct_dtf", "value": 86577.0, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "seg_graphemes", "value": 179.6, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "seg_words", "value": 228.1, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "seg_sentences", "value": 406.4, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "construct_seg", "value": 1184.0, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "seg_graphemes", "value": 113.9, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "seg_words", "value": 217.3, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "seg_sentences", "value": 307.7, "unit": "ns"}
-{"round": 1, "engine": "node", "row": "construct_seg", "value": 14062.0, "unit": "ns"}
-{"round": 1, "engine": "moejs", "row": "first_tolocale", "value": 211.05, "unit": "us", "samples": [417.9, 208.4, 211.7, 189.0, 210.4, 673.2, 187.6, 212.3, 206.2, 219.6]}
-{"round": 1, "engine": "node", "row": "first_tolocale", "value": 17137.45, "unit": "us", "samples": [17845.4, 17232.5, 17240.3, 17080.7, 16826.3, 17570.9, 17086.7, 17051.6, 17188.2, 17052.8]}
-{"round": 1, "engine": "moejs", "row": "fetch_small1", "value": 175.832, "unit": "us", "samples": [180.562, 175.832, 175.712]}
-{"round": 1, "engine": "moejs", "row": "fetch_small8", "value": 41.298, "unit": "us", "samples": [41.41, 40.566, 41.298]}
-{"round": 1, "engine": "moejs", "row": "fetch_stream", "value": 1937.1, "unit": "MBps", "samples": [1937.1, 1859.3, 1961.9]}
-{"round": 1, "engine": "moejs", "row": "fetch_sse", "value": 6.393, "unit": "us", "samples": [6.393, 5.796, 6.421]}
-{"round": 1, "engine": "node", "row": "fetch_small1", "value": 387.728, "unit": "us", "samples": [397.536, 387.728, 370.014]}
-{"round": 1, "engine": "node", "row": "fetch_small8", "value": 236.849, "unit": "us", "samples": [243.509, 236.849, 232.589]}
-{"round": 1, "engine": "node", "row": "fetch_stream", "value": 844.4, "unit": "MBps", "samples": [844.4, 790, 852]}
-{"round": 1, "engine": "node", "row": "fetch_sse", "value": 2.565, "unit": "us", "samples": [1.857, 2.565, 4.628]}
-{"round": 1, "canary": "cpu", "when": "after", "value": 262786.634}
-{"round": 1, "canary": "mem", "when": "after", "value": 571.3266006827986}
-{"round": 1, "status": "kept", "foreign": -0.001, "start": "21:35:36", "end": "21:37:09", "why": []}
-{"round": 2, "canary": "cpu", "when": "before", "value": 261224.868}
-{"round": 2, "canary": "mem", "when": "before", "value": 594.774593116575}
-{"round": 2, "engine": "node", "row": "yen_format", "value": 552.5, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "yen_parts", "value": 2441.6, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "decimal_format", "value": 547.2, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "tokyo_format", "value": 1248.5, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "tokyo_parts", "value": 3076.0, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "number_tolocale", "value": 467.1, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "date_tolocale", "value": 1536.9, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "construct_nf", "value": 20420.9, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "construct_dtf", "value": 86298.0, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "yen_format", "value": 434.5, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "yen_parts", "value": 1353.0, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "decimal_format", "value": 390.4, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "tokyo_format", "value": 404.7, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "tokyo_parts", "value": 1742.0, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "number_tolocale", "value": 380.1, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "date_tolocale", "value": 450.8, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "construct_nf", "value": 4739.0, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "construct_dtf", "value": 5622.0, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "seg_graphemes", "value": 113.8, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "seg_words", "value": 217.2, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "seg_sentences", "value": 307.5, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "construct_seg", "value": 14030.0, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "seg_graphemes", "value": 178.1, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "seg_words", "value": 227.1, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "seg_sentences", "value": 400.4, "unit": "ns"}
-{"round": 2, "engine": "moejs", "row": "construct_seg", "value": 1160.0, "unit": "ns"}
-{"round": 2, "engine": "node", "row": "first_tolocale", "value": 17194.25, "unit": "us", "samples": [17314.5, 17084.9, 17104.3, 17116.6, 17390.6, 17564.6, 17186.0, 17059.6, 17334.7, 17202.5]}
-{"round": 2, "engine": "moejs", "row": "first_tolocale", "value": 221.45, "unit": "us", "samples": [361.6, 224.0, 218.9, 218.1, 216.7, 194.9, 258.5, 241.2, 230.3, 211.9]}
-{"round": 2, "engine": "node", "row": "fetch_small1", "value": 415.118, "unit": "us", "samples": [415.118, 406.284, 439.565]}
-{"round": 2, "engine": "node", "row": "fetch_small8", "value": 284.416, "unit": "us", "samples": [284.416, 283.845, 291.348]}
-{"round": 2, "engine": "node", "row": "fetch_stream", "value": 771.4, "unit": "MBps", "samples": [816.6, 712.4, 771.4]}
-{"round": 2, "engine": "node", "row": "fetch_sse", "value": 4.65, "unit": "us", "samples": [2.934, 4.659, 4.65]}
-{"round": 2, "engine": "moejs", "row": "fetch_small1", "value": 179.802, "unit": "us", "samples": [179.802, 178.097, 181.843]}
-{"round": 2, "engine": "moejs", "row": "fetch_small8", "value": 42.04, "unit": "us", "samples": [42.04, 43.732, 40.176]}
-{"round": 2, "engine": "moejs", "row": "fetch_stream", "value": 1836.5, "unit": "MBps", "samples": [1836.5, 1820.5, 1884.2]}
-{"round": 2, "engine": "moejs", "row": "fetch_sse", "value": 6.345, "unit": "us", "samples": [6.345, 5.869, 7.132]}
-{"round": 2, "canary": "cpu", "when": "after", "value": 262605.844}
-{"round": 2, "canary": "mem", "when": "after", "value": 610.9562571006094}
-{"round": 2, "status": "kept", "foreign": 0.011, "start": "21:37:14", "end": "21:38:48", "why": []}
-{"round": 3, "canary": "cpu", "when": "before", "value": 262057.851}
-{"round": 3, "canary": "mem", "when": "before", "value": 562.5903570754069}
-{"round": 3, "engine": "moejs", "row": "yen_format", "value": 399.1, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "yen_parts", "value": 1319.0, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "decimal_format", "value": 412.9, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "tokyo_format", "value": 405.7, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "tokyo_parts", "value": 1792.0, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "number_tolocale", "value": 382.4, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "date_tolocale", "value": 454.0, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "construct_nf", "value": 4737.0, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "construct_dtf", "value": 5443.0, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "yen_format", "value": 553.4, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "yen_parts", "value": 2346.7, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "decimal_format", "value": 545.7, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "tokyo_format", "value": 1263.8, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "tokyo_parts", "value": 3085.4, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "number_tolocale", "value": 466.1, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "date_tolocale", "value": 1537.0, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "construct_nf", "value": 20849.6, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "construct_dtf", "value": 85628.6, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "seg_graphemes", "value": 179.8, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "seg_words", "value": 234.7, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "seg_sentences", "value": 406.3, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "construct_seg", "value": 1183.0, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "seg_graphemes", "value": 113.6, "unit": "ns"}
+{"meta": {"date": "2026-10-25", "node": "v24.22.0 icu 78.3", "go": "go1.26.6", "cpu": "Intel(R) Xeon(R) CPU E5-2667 v4 @ 3.20GHz", "cpus": "0-7", "canaries": [{"name": "cpu", "floor": 248000.0}, {"name": "mem", "floor": 525.0}]}}
+{"round": 1, "canary": "cpu", "when": "before", "value": 259858.311}
+{"round": 1, "canary": "mem", "when": "before", "value": 569.2559145827852}
+{"round": 1, "engine": "moejs", "row": "yen_format", "value": 428.9, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "yen_parts", "value": 1711.0, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "decimal_format", "value": 416.9, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "tokyo_format", "value": 477.3, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "tokyo_parts", "value": 2148.0, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "number_tolocale", "value": 450.2, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "date_tolocale", "value": 502.2, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "construct_nf", "value": 5935.0, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "construct_dtf", "value": 6331.0, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "yen_format", "value": 552.9, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "yen_parts", "value": 2357.3, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "decimal_format", "value": 551.8, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "tokyo_format", "value": 1298.5, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "tokyo_parts", "value": 3134.5, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "number_tolocale", "value": 462.0, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "date_tolocale", "value": 1546.6, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "construct_nf", "value": 21239.6, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "construct_dtf", "value": 90327.8, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "seg_graphemes", "value": 134.9, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "seg_words", "value": 207.1, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "seg_sentences", "value": 361.6, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "construct_seg", "value": 1275.0, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "seg_graphemes", "value": 114.0, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "seg_words", "value": 222.2, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "seg_sentences", "value": 327.7, "unit": "ns"}
+{"round": 1, "engine": "node", "row": "construct_seg", "value": 13561.0, "unit": "ns"}
+{"round": 1, "engine": "moejs", "row": "first_tolocale", "value": 238.3, "unit": "us", "samples": [513.2, 219.7, 389.7, 244.6, 405.7, 228.8, 339.6, 224.9, 226.9, 232.0]}
+{"round": 1, "engine": "node", "row": "first_tolocale", "value": 17253.55, "unit": "us", "samples": [17502.4, 17373.8, 17142.1, 17057.6, 17168.2, 17299.8, 17167.7, 17246.5, 17260.6, 17653.3]}
+{"round": 1, "engine": "moejs", "row": "fetch_small1", "value": 194.087, "unit": "us", "samples": [192.289, 197.909, 194.087]}
+{"round": 1, "engine": "moejs", "row": "fetch_small8", "value": 40.843, "unit": "us", "samples": [42.832, 40.753, 40.843]}
+{"round": 1, "engine": "moejs", "row": "fetch_stream", "value": 1896, "unit": "MBps", "samples": [1763.8, 1896, 2026.3]}
+{"round": 1, "engine": "moejs", "row": "fetch_sse", "value": 5.707, "unit": "us", "samples": [5.707, 5.604, 6.058]}
+{"round": 1, "engine": "node", "row": "fetch_small1", "value": 427.313, "unit": "us", "samples": [429.065, 427.313, 401.087]}
+{"round": 1, "engine": "node", "row": "fetch_small8", "value": 248.963, "unit": "us", "samples": [262.368, 234.344, 248.963]}
+{"round": 1, "engine": "node", "row": "fetch_stream", "value": 802.2, "unit": "MBps", "samples": [864.2, 802.2, 784.4]}
+{"round": 1, "engine": "node", "row": "fetch_sse", "value": 3.34, "unit": "us", "samples": [2.337, 4.465, 3.34]}
+{"round": 1, "canary": "cpu", "when": "after", "value": 259922.61}
+{"round": 1, "canary": "mem", "when": "after", "value": 563.3284885493679}
+{"round": 1, "status": "kept", "foreign": 0.017, "start": "12:41:31", "end": "12:43:04", "why": []}
+{"round": 2, "canary": "cpu", "when": "before", "value": 260930.141}
+{"round": 2, "canary": "mem", "when": "before", "value": 575.9431900967968}
+{"round": 2, "engine": "node", "row": "yen_format", "value": 550.9, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "yen_parts", "value": 2350.6, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "decimal_format", "value": 553.6, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "tokyo_format", "value": 1252.3, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "tokyo_parts", "value": 3080.9, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "number_tolocale", "value": 466.6, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "date_tolocale", "value": 1548.2, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "construct_nf", "value": 20209.2, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "construct_dtf", "value": 86447.2, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "yen_format", "value": 402.9, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "yen_parts", "value": 1306.0, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "decimal_format", "value": 380.6, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "tokyo_format", "value": 393.2, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "tokyo_parts", "value": 1781.0, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "number_tolocale", "value": 383.6, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "date_tolocale", "value": 449.1, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "construct_nf", "value": 4712.0, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "construct_dtf", "value": 5662.0, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "seg_graphemes", "value": 113.9, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "seg_words", "value": 218.1, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "seg_sentences", "value": 309.6, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "construct_seg", "value": 13175.0, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "seg_graphemes", "value": 131.4, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "seg_words", "value": 196.5, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "seg_sentences", "value": 330.2, "unit": "ns"}
+{"round": 2, "engine": "moejs", "row": "construct_seg", "value": 1421.0, "unit": "ns"}
+{"round": 2, "engine": "node", "row": "first_tolocale", "value": 17411.75, "unit": "us", "samples": [18215.9, 17143.9, 19290.5, 19232.4, 17394.4, 22133.2, 17137.0, 17197.6, 17399.4, 17424.1]}
+{"round": 2, "engine": "moejs", "row": "first_tolocale", "value": 229.65, "unit": "us", "samples": [466.8, 232.7, 340.5, 281.0, 231.0, 228.3, 224.6, 181.3, 213.4, 226.3]}
+{"round": 2, "engine": "node", "row": "fetch_small1", "value": 420.402, "unit": "us", "samples": [436.34, 420.402, 381.675]}
+{"round": 2, "engine": "node", "row": "fetch_small8", "value": 234.12, "unit": "us", "samples": [234.12, 236.276, 228.882]}
+{"round": 2, "engine": "node", "row": "fetch_stream", "value": 832.2, "unit": "MBps", "samples": [832.2, 821.3, 853.2]}
+{"round": 2, "engine": "node", "row": "fetch_sse", "value": 4.507, "unit": "us", "samples": [4.507, 4.406, 4.713]}
+{"round": 2, "engine": "moejs", "row": "fetch_small1", "value": 189.93, "unit": "us", "samples": [183.007, 189.93, 196.339]}
+{"round": 2, "engine": "moejs", "row": "fetch_small8", "value": 42.242, "unit": "us", "samples": [42.713, 42.242, 39.967]}
+{"round": 2, "engine": "moejs", "row": "fetch_stream", "value": 2036.6, "unit": "MBps", "samples": [1908.8, 2036.6, 2065.3]}
+{"round": 2, "engine": "moejs", "row": "fetch_sse", "value": 5.822, "unit": "us", "samples": [6.372, 5.822, 5.698]}
+{"round": 2, "canary": "cpu", "when": "after", "value": 262170.136}
+{"round": 2, "canary": "mem", "when": "after", "value": 552.4649813103345}
+{"round": 2, "status": "kept", "foreign": 0.015, "start": "12:45:08", "end": "12:46:41", "why": []}
+{"round": 3, "canary": "cpu", "when": "before", "value": 262557.797}
+{"round": 3, "canary": "mem", "when": "before", "value": 588.0974267456904}
+{"round": 3, "engine": "moejs", "row": "yen_format", "value": 387.3, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "yen_parts", "value": 1365.0, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "decimal_format", "value": 378.4, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "tokyo_format", "value": 421.5, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "tokyo_parts", "value": 1700.0, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "number_tolocale", "value": 397.6, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "date_tolocale", "value": 462.3, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "construct_nf", "value": 4860.0, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "construct_dtf", "value": 5323.0, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "yen_format", "value": 554.1, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "yen_parts", "value": 2391.6, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "decimal_format", "value": 554.3, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "tokyo_format", "value": 1264.0, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "tokyo_parts", "value": 3091.3, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "number_tolocale", "value": 472.8, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "date_tolocale", "value": 1570.2, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "construct_nf", "value": 19914.3, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "construct_dtf", "value": 86861.9, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "seg_graphemes", "value": 135.5, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "seg_words", "value": 196.3, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "seg_sentences", "value": 311.6, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "construct_seg", "value": 1210.0, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "seg_graphemes", "value": 114.3, "unit": "ns"}
 {"round": 3, "engine": "node", "row": "seg_words", "value": 217.1, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "seg_sentences", "value": 307.6, "unit": "ns"}
-{"round": 3, "engine": "node", "row": "construct_seg", "value": 13762.0, "unit": "ns"}
-{"round": 3, "engine": "moejs", "row": "first_tolocale", "value": 223.55, "unit": "us", "samples": [380.0, 223.0, 231.3, 224.6, 216.7, 208.2, 214.5, 224.1, 229.4, 215.9]}
-{"round": 3, "engine": "node", "row": "first_tolocale", "value": 17258.65, "unit": "us", "samples": [17699.4, 17538.8, 17190.3, 16860.7, 17038.2, 17343.4, 17051.2, 17500.0, 17327.0, 17131.0]}
-{"round": 3, "engine": "moejs", "row": "fetch_small1", "value": 180.679, "unit": "us", "samples": [180.679, 177.651, 184.948]}
-{"round": 3, "engine": "moejs", "row": "fetch_small8", "value": 41.99, "unit": "us", "samples": [43.368, 41.99, 41.173]}
-{"round": 3, "engine": "moejs", "row": "fetch_stream", "value": 1862.7, "unit": "MBps", "samples": [1862.7, 1829.7, 1962.6]}
-{"round": 3, "engine": "moejs", "row": "fetch_sse", "value": 6.702, "unit": "us", "samples": [7.643, 6.702, 6.692]}
-{"round": 3, "engine": "node", "row": "fetch_small1", "value": 393.77, "unit": "us", "samples": [403.181, 393.77, 372.183]}
-{"round": 3, "engine": "node", "row": "fetch_small8", "value": 240.857, "unit": "us", "samples": [245.448, 240.857, 240.372]}
-{"round": 3, "engine": "node", "row": "fetch_stream", "value": 848.6, "unit": "MBps", "samples": [882.5, 848.6, 830.6]}
-{"round": 3, "engine": "node", "row": "fetch_sse", "value": 4.693, "unit": "us", "samples": [4.693, 3.072, 5.256]}
-{"round": 3, "canary": "cpu", "when": "after", "value": 263070.647}
-{"round": 3, "canary": "mem", "when": "after", "value": 570.112200260415}
-{"round": 3, "status": "kept", "foreign": 0.007, "start": "21:38:53", "end": "21:40:25", "why": []}
-{"round": 4, "canary": "cpu", "when": "before", "value": 261636.015}
-{"round": 4, "canary": "mem", "when": "before", "value": 548.6908313302854}
-{"round": 4, "engine": "node", "row": "yen_format", "value": 586.3, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "yen_parts", "value": 2347.6, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "decimal_format", "value": 555.2, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "tokyo_format", "value": 1281.2, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "tokyo_parts", "value": 3124.3, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "number_tolocale", "value": 461.7, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "date_tolocale", "value": 1524.2, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "construct_nf", "value": 20079.3, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "construct_dtf", "value": 87116.7, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "yen_format", "value": 426.0, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "yen_parts", "value": 1320.0, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "decimal_format", "value": 390.8, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "tokyo_format", "value": 404.4, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "tokyo_parts", "value": 1707.0, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "number_tolocale", "value": 377.5, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "date_tolocale", "value": 450.8, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "construct_nf", "value": 4703.0, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "construct_dtf", "value": 5166.0, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "seg_graphemes", "value": 114.5, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "seg_words", "value": 217.9, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "seg_sentences", "value": 308.0, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "construct_seg", "value": 13618.0, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "seg_graphemes", "value": 178.7, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "seg_words", "value": 229.6, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "seg_sentences", "value": 401.8, "unit": "ns"}
-{"round": 4, "engine": "moejs", "row": "construct_seg", "value": 1170.0, "unit": "ns"}
-{"round": 4, "engine": "node", "row": "first_tolocale", "value": 17124.25, "unit": "us", "samples": [17660.0, 16952.8, 17500.9, 17035.6, 16907.5, 17212.9, 16905.9, 17424.3, 17374.7, 16859.0]}
-{"round": 4, "engine": "moejs", "row": "first_tolocale", "value": 229.45, "unit": "us", "samples": [392.2, 208.8, 189.2, 252.8, 182.4, 258.0, 250.1, 260.7, 199.2, 207.1]}
-{"round": 4, "engine": "node", "row": "fetch_small1", "value": 415.497, "unit": "us", "samples": [415.497, 403.485, 469.811]}
-{"round": 4, "engine": "node", "row": "fetch_small8", "value": 235.94, "unit": "us", "samples": [241.903, 235.876, 235.94]}
-{"round": 4, "engine": "node", "row": "fetch_stream", "value": 839.1, "unit": "MBps", "samples": [811.8, 839.1, 841.3]}
-{"round": 4, "engine": "node", "row": "fetch_sse", "value": 2.855, "unit": "us", "samples": [1.969, 2.855, 4.142]}
-{"round": 4, "engine": "moejs", "row": "fetch_small1", "value": 175.176, "unit": "us", "samples": [175.176, 172.33, 178.6]}
-{"round": 4, "engine": "moejs", "row": "fetch_small8", "value": 42.187, "unit": "us", "samples": [40.338, 44.052, 42.187]}
-{"round": 4, "engine": "moejs", "row": "fetch_stream", "value": 1787.6, "unit": "MBps", "samples": [1769.6, 1806.4, 1787.6]}
-{"round": 4, "engine": "moejs", "row": "fetch_sse", "value": 5.688, "unit": "us", "samples": [5.688, 6.932, 5.622]}
-{"round": 4, "canary": "cpu", "when": "after", "value": 261684.846}
-{"round": 4, "canary": "mem", "when": "after", "value": 557.2506981426242}
-{"round": 4, "status": "kept", "foreign": 0.006, "start": "21:40:30", "end": "21:42:03", "why": []}
-{"round": 5, "canary": "cpu", "when": "before", "value": 262374.664}
-{"round": 5, "canary": "mem", "when": "before", "value": 598.8040638157055}
-{"round": 5, "engine": "moejs", "row": "yen_format", "value": 399.2, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "yen_parts", "value": 1322.0, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "decimal_format", "value": 388.1, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "tokyo_format", "value": 406.7, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "tokyo_parts", "value": 1736.0, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "number_tolocale", "value": 377.5, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "date_tolocale", "value": 471.8, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "construct_nf", "value": 5230.0, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "construct_dtf", "value": 5718.0, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "yen_format", "value": 552.8, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "yen_parts", "value": 2344.7, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "decimal_format", "value": 546.3, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "tokyo_format", "value": 1259.2, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "tokyo_parts", "value": 3083.1, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "number_tolocale", "value": 465.0, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "date_tolocale", "value": 1537.0, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "construct_nf", "value": 19994.6, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "construct_dtf", "value": 87111.0, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "seg_graphemes", "value": 182.4, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "seg_words", "value": 234.3, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "seg_sentences", "value": 396.3, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "construct_seg", "value": 1149.0, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "seg_graphemes", "value": 114.4, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "seg_words", "value": 217.5, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "seg_sentences", "value": 307.2, "unit": "ns"}
-{"round": 5, "engine": "node", "row": "construct_seg", "value": 13296.0, "unit": "ns"}
-{"round": 5, "engine": "moejs", "row": "first_tolocale", "value": 243.9, "unit": "us", "samples": [393.3, 330.9, 210.8, 209.9, 418.0, 262.9, 224.9, 224.2, 327.0, 221.9]}
-{"round": 5, "engine": "node", "row": "first_tolocale", "value": 17245.4, "unit": "us", "samples": [17394.9, 18554.5, 17066.9, 16991.8, 17084.8, 17142.0, 24739.0, 17140.4, 17348.8, 17430.1]}
-{"round": 5, "engine": "moejs", "row": "fetch_small1", "value": 182.973, "unit": "us", "samples": [185.698, 179.094, 182.973]}
-{"round": 5, "engine": "moejs", "row": "fetch_small8", "value": 42.276, "unit": "us", "samples": [42.276, 42.223, 44.239]}
-{"round": 5, "engine": "moejs", "row": "fetch_stream", "value": 1751.1, "unit": "MBps", "samples": [1711.4, 1751.1, 1890.7]}
-{"round": 5, "engine": "moejs", "row": "fetch_sse", "value": 6.026, "unit": "us", "samples": [5.773, 6.182, 6.026]}
-{"round": 5, "engine": "node", "row": "fetch_small1", "value": 415.636, "unit": "us", "samples": [417.353, 415.636, 366.752]}
-{"round": 5, "engine": "node", "row": "fetch_small8", "value": 237.288, "unit": "us", "samples": [237.288, 240.574, 233.21]}
-{"round": 5, "engine": "node", "row": "fetch_stream", "value": 829.5, "unit": "MBps", "samples": [839.5, 829.5, 813.9]}
-{"round": 5, "engine": "node", "row": "fetch_sse", "value": 4.606, "unit": "us", "samples": [4.622, 2.496, 4.606]}
-{"round": 5, "canary": "cpu", "when": "after", "value": 262115.827}
-{"round": 5, "canary": "mem", "when": "after", "value": 563.8075465122737}
-{"round": 5, "status": "kept", "foreign": -0.003, "start": "21:42:08", "end": "21:43:40", "why": []}
-{"round": 6, "canary": "cpu", "when": "before", "value": 263421.014}
-{"round": 6, "canary": "mem", "when": "before", "value": 578.9788344701908}
-{"round": 6, "engine": "node", "row": "yen_format", "value": 553.6, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "yen_parts", "value": 2344.1, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "decimal_format", "value": 544.2, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "tokyo_format", "value": 1262.1, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "tokyo_parts", "value": 3081.2, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "number_tolocale", "value": 468.9, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "date_tolocale", "value": 1540.5, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "construct_nf", "value": 20303.9, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "construct_dtf", "value": 85060.6, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "yen_format", "value": 405.0, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "yen_parts", "value": 1349.0, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "decimal_format", "value": 397.2, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "tokyo_format", "value": 411.5, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "tokyo_parts", "value": 1854.0, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "number_tolocale", "value": 387.6, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "date_tolocale", "value": 457.3, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "construct_nf", "value": 4856.0, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "construct_dtf", "value": 5533.0, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "seg_graphemes", "value": 115.4, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "seg_words", "value": 221.9, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "seg_sentences", "value": 308.3, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "construct_seg", "value": 13564.0, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "seg_graphemes", "value": 190.7, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "seg_words", "value": 248.3, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "seg_sentences", "value": 400.8, "unit": "ns"}
-{"round": 6, "engine": "moejs", "row": "construct_seg", "value": 1167.0, "unit": "ns"}
-{"round": 6, "engine": "node", "row": "first_tolocale", "value": 17393.55, "unit": "us", "samples": [18485.1, 17454.2, 17373.7, 17248.3, 17101.3, 17094.8, 17705.2, 17413.4, 18223.0, 17044.8]}
-{"round": 6, "engine": "moejs", "row": "first_tolocale", "value": 234.1, "unit": "us", "samples": [1865.1, 243.5, 236.9, 258.6, 226.5, 229.1, 234.7, 233.5, 226.2, 213.5]}
-{"round": 6, "engine": "node", "row": "fetch_small1", "value": 419.645, "unit": "us", "samples": [430.458, 419.645, 395.799]}
-{"round": 6, "engine": "node", "row": "fetch_small8", "value": 236.584, "unit": "us", "samples": [240.756, 236.584, 235.138]}
-{"round": 6, "engine": "node", "row": "fetch_stream", "value": 753.8, "unit": "MBps", "samples": [792.6, 753.8, 745.7]}
-{"round": 6, "engine": "node", "row": "fetch_sse", "value": 2.645, "unit": "us", "samples": [2.05, 2.645, 6.651]}
-{"round": 6, "engine": "moejs", "row": "fetch_small1", "value": 184.191, "unit": "us", "samples": [177.311, 189.184, 184.191]}
-{"round": 6, "engine": "moejs", "row": "fetch_small8", "value": 42.317, "unit": "us", "samples": [42.754, 42.283, 42.317]}
-{"round": 6, "engine": "moejs", "row": "fetch_stream", "value": 1887.9, "unit": "MBps", "samples": [1691.2, 1932.7, 1887.9]}
-{"round": 6, "engine": "moejs", "row": "fetch_sse", "value": 6.699, "unit": "us", "samples": [6.699, 5.794, 7.709]}
-{"round": 6, "canary": "cpu", "when": "after", "value": 262286.245}
-{"round": 6, "canary": "mem", "when": "after", "value": 584.0403893190228}
-{"round": 6, "status": "kept", "foreign": 0.011, "start": "21:43:45", "end": "21:45:18", "why": []}
-{"round": 7, "canary": "cpu", "when": "before", "value": 259732.097}
-{"round": 7, "canary": "mem", "when": "before", "value": 587.4250363047029}
-{"round": 7, "engine": "moejs", "row": "yen_format", "value": 398.4, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "yen_parts", "value": 1338.0, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "decimal_format", "value": 390.7, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "tokyo_format", "value": 404.8, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "tokyo_parts", "value": 1761.0, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "number_tolocale", "value": 381.3, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "date_tolocale", "value": 449.9, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "construct_nf", "value": 4782.0, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "construct_dtf", "value": 5399.0, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "yen_format", "value": 552.8, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "yen_parts", "value": 2342.6, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "decimal_format", "value": 555.3, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "tokyo_format", "value": 1251.4, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "tokyo_parts", "value": 3078.2, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "number_tolocale", "value": 464.1, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "date_tolocale", "value": 1537.1, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "construct_nf", "value": 20267.5, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "construct_dtf", "value": 84844.8, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "seg_graphemes", "value": 175.0, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "seg_words", "value": 225.7, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "seg_sentences", "value": 397.9, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "construct_seg", "value": 1165.0, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "seg_graphemes", "value": 114.8, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "seg_words", "value": 218.9, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "seg_sentences", "value": 309.2, "unit": "ns"}
-{"round": 7, "engine": "node", "row": "construct_seg", "value": 16487.0, "unit": "ns"}
-{"round": 7, "engine": "moejs", "row": "first_tolocale", "value": 230.45, "unit": "us", "samples": [390.9, 190.5, 211.4, 244.3, 231.3, 219.4, 219.5, 229.6, 235.3, 257.1]}
-{"round": 7, "engine": "node", "row": "first_tolocale", "value": 17251.2, "unit": "us", "samples": [17352.2, 17699.7, 17282.6, 17365.1, 17041.7, 17113.5, 17110.5, 17475.5, 17219.8, 16905.6]}
-{"round": 7, "engine": "moejs", "row": "fetch_small1", "value": 185.765, "unit": "us", "samples": [185.765, 176.818, 188.347]}
-{"round": 7, "engine": "moejs", "row": "fetch_small8", "value": 42.4, "unit": "us", "samples": [42.4, 43.061, 42.057]}
-{"round": 7, "engine": "moejs", "row": "fetch_stream", "value": 1821.5, "unit": "MBps", "samples": [1871.3, 1815.6, 1821.5]}
-{"round": 7, "engine": "moejs", "row": "fetch_sse", "value": 6.793, "unit": "us", "samples": [6.793, 5.622, 7.121]}
-{"round": 7, "engine": "node", "row": "fetch_small1", "value": 391.285, "unit": "us", "samples": [407.1, 391.285, 372.416]}
-{"round": 7, "engine": "node", "row": "fetch_small8", "value": 241.901, "unit": "us", "samples": [244.512, 238.783, 241.901]}
-{"round": 7, "engine": "node", "row": "fetch_stream", "value": 789.5, "unit": "MBps", "samples": [864.5, 762.9, 789.5]}
-{"round": 7, "engine": "node", "row": "fetch_sse", "value": 2.634, "unit": "us", "samples": [1.974, 2.634, 6.27]}
-{"round": 7, "canary": "cpu", "when": "after", "value": 259245.012}
-{"round": 7, "canary": "mem", "when": "after", "value": 573.4520757724401}
-{"round": 7, "status": "kept", "foreign": 0.013, "start": "21:45:23", "end": "21:46:54", "why": []}
+{"round": 3, "engine": "node", "row": "seg_sentences", "value": 310.7, "unit": "ns"}
+{"round": 3, "engine": "node", "row": "construct_seg", "value": 12673.0, "unit": "ns"}
+{"round": 3, "engine": "moejs", "row": "first_tolocale", "value": 244.0, "unit": "us", "samples": [459.6, 232.7, 223.0, 220.1, 268.5, 235.1, 218.7, 414.2, 254.8, 252.9]}
+{"round": 3, "engine": "node", "row": "first_tolocale", "value": 17186.8, "unit": "us", "samples": [18338.6, 17207.7, 16982.4, 17203.1, 17170.5, 17141.7, 17007.1, 17360.7, 17237.7, 17124.6]}
+{"round": 3, "engine": "moejs", "row": "fetch_small1", "value": 182.797, "unit": "us", "samples": [187.835, 175.723, 182.797]}
+{"round": 3, "engine": "moejs", "row": "fetch_small8", "value": 39.675, "unit": "us", "samples": [40.102, 39.383, 39.675]}
+{"round": 3, "engine": "moejs", "row": "fetch_stream", "value": 1879.1, "unit": "MBps", "samples": [1908.9, 1860, 1879.1]}
+{"round": 3, "engine": "moejs", "row": "fetch_sse", "value": 5.121, "unit": "us", "samples": [5.121, 5.11, 5.847]}
+{"round": 3, "engine": "node", "row": "fetch_small1", "value": 402.054, "unit": "us", "samples": [417.025, 402.054, 381.458]}
+{"round": 3, "engine": "node", "row": "fetch_small8", "value": 240.113, "unit": "us", "samples": [246.189, 240.113, 238.162]}
+{"round": 3, "engine": "node", "row": "fetch_stream", "value": 814.5, "unit": "MBps", "samples": [855.9, 814.5, 756.8]}
+{"round": 3, "engine": "node", "row": "fetch_sse", "value": 4.388, "unit": "us", "samples": [5.578, 2.221, 4.388]}
+{"round": 3, "canary": "cpu", "when": "after", "value": 263483.271}
+{"round": 3, "canary": "mem", "when": "after", "value": 547.7923948903073}
+{"round": 3, "status": "kept", "foreign": 0.007, "start": "12:48:18", "end": "12:49:50", "why": []}
+{"round": 4, "canary": "cpu", "when": "before", "value": 262383.902}
+{"round": 4, "canary": "mem", "when": "before", "value": 559.8547305775389}
+{"round": 4, "engine": "node", "row": "yen_format", "value": 554.7, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "yen_parts", "value": 2345.3, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "decimal_format", "value": 546.4, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "tokyo_format", "value": 1251.0, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "tokyo_parts", "value": 3073.8, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "number_tolocale", "value": 462.7, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "date_tolocale", "value": 1535.6, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "construct_nf", "value": 19939.6, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "construct_dtf", "value": 84426.5, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "yen_format", "value": 397.7, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "yen_parts", "value": 1384.0, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "decimal_format", "value": 382.7, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "tokyo_format", "value": 390.6, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "tokyo_parts", "value": 1809.0, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "number_tolocale", "value": 383.9, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "date_tolocale", "value": 471.6, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "construct_nf", "value": 4931.0, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "construct_dtf", "value": 5487.0, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "seg_graphemes", "value": 114.4, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "seg_words", "value": 217.8, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "seg_sentences", "value": 306.7, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "construct_seg", "value": 12912.0, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "seg_graphemes", "value": 134.3, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "seg_words", "value": 187.3, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "seg_sentences", "value": 313.8, "unit": "ns"}
+{"round": 4, "engine": "moejs", "row": "construct_seg", "value": 1153.0, "unit": "ns"}
+{"round": 4, "engine": "node", "row": "first_tolocale", "value": 17265.4, "unit": "us", "samples": [17392.1, 17306.0, 17213.8, 17224.8, 17429.3, 16911.0, 17203.6, 17449.4, 17497.9, 17214.3]}
+{"round": 4, "engine": "moejs", "row": "first_tolocale", "value": 217.45, "unit": "us", "samples": [414.5, 257.1, 186.7, 224.7, 214.1, 220.8, 194.7, 224.0, 195.4, 212.0]}
+{"round": 4, "engine": "node", "row": "fetch_small1", "value": 411.602, "unit": "us", "samples": [461.264, 411.602, 362.681]}
+{"round": 4, "engine": "node", "row": "fetch_small8", "value": 231.564, "unit": "us", "samples": [238.104, 231.237, 231.564]}
+{"round": 4, "engine": "node", "row": "fetch_stream", "value": 864.4, "unit": "MBps", "samples": [874.7, 830.1, 864.4]}
+{"round": 4, "engine": "node", "row": "fetch_sse", "value": 3.195, "unit": "us", "samples": [4.442, 1.997, 3.195]}
+{"round": 4, "engine": "moejs", "row": "fetch_small1", "value": 175.808, "unit": "us", "samples": [175.044, 175.808, 179.664]}
+{"round": 4, "engine": "moejs", "row": "fetch_small8", "value": 41.244, "unit": "us", "samples": [42.403, 40.03, 41.244]}
+{"round": 4, "engine": "moejs", "row": "fetch_stream", "value": 1919, "unit": "MBps", "samples": [1897.3, 1919, 2089.2]}
+{"round": 4, "engine": "moejs", "row": "fetch_sse", "value": 5.793, "unit": "us", "samples": [5.793, 4.978, 6.194]}
+{"round": 4, "canary": "cpu", "when": "after", "value": 262434.874}
+{"round": 4, "canary": "mem", "when": "after", "value": 557.7258812175401}
+{"round": 4, "status": "kept", "foreign": 0.011, "start": "12:51:23", "end": "12:52:55", "why": []}
+{"round": 5, "canary": "cpu", "when": "before", "value": 261459.521}
+{"round": 5, "canary": "mem", "when": "before", "value": 558.9039971508276}
+{"round": 5, "engine": "moejs", "row": "yen_format", "value": 408.4, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "yen_parts", "value": 1313.0, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "decimal_format", "value": 381.4, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "tokyo_format", "value": 389.4, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "tokyo_parts", "value": 1691.0, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "number_tolocale", "value": 385.6, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "date_tolocale", "value": 465.0, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "construct_nf", "value": 4694.0, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "construct_dtf", "value": 5826.0, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "yen_format", "value": 554.9, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "yen_parts", "value": 2365.2, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "decimal_format", "value": 561.9, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "tokyo_format", "value": 1273.7, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "tokyo_parts", "value": 3086.5, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "number_tolocale", "value": 459.9, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "date_tolocale", "value": 1512.7, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "construct_nf", "value": 19797.0, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "construct_dtf", "value": 86445.2, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "seg_graphemes", "value": 139.8, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "seg_words", "value": 183.8, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "seg_sentences", "value": 323.5, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "construct_seg", "value": 1144.0, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "seg_graphemes", "value": 113.8, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "seg_words", "value": 219.0, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "seg_sentences", "value": 307.4, "unit": "ns"}
+{"round": 5, "engine": "node", "row": "construct_seg", "value": 13025.0, "unit": "ns"}
+{"round": 5, "engine": "moejs", "row": "first_tolocale", "value": 222.15, "unit": "us", "samples": [742.0, 245.5, 229.8, 218.1, 209.4, 396.9, 219.2, 216.0, 225.1, 212.0]}
+{"round": 5, "engine": "node", "row": "first_tolocale", "value": 17261.75, "unit": "us", "samples": [17659.0, 17325.2, 17387.5, 17040.4, 17141.1, 17403.0, 17198.3, 16928.7, 17088.5, 18931.2]}
+{"round": 5, "engine": "moejs", "row": "fetch_small1", "value": 176.216, "unit": "us", "samples": [193.667, 173.163, 176.216]}
+{"round": 5, "engine": "moejs", "row": "fetch_small8", "value": 38.14, "unit": "us", "samples": [37.452, 38.716, 38.14]}
+{"round": 5, "engine": "moejs", "row": "fetch_stream", "value": 2017, "unit": "MBps", "samples": [2067, 2017, 1901.2]}
+{"round": 5, "engine": "moejs", "row": "fetch_sse", "value": 5.772, "unit": "us", "samples": [5.772, 4.962, 6.152]}
+{"round": 5, "engine": "node", "row": "fetch_small1", "value": 410.36, "unit": "us", "samples": [436.181, 410.36, 372.686]}
+{"round": 5, "engine": "node", "row": "fetch_small8", "value": 233.144, "unit": "us", "samples": [237.203, 233.144, 231.217]}
+{"round": 5, "engine": "node", "row": "fetch_stream", "value": 844.1, "unit": "MBps", "samples": [863, 831.8, 844.1]}
+{"round": 5, "engine": "node", "row": "fetch_sse", "value": 2.665, "unit": "us", "samples": [2.034, 2.665, 3.132]}
+{"round": 5, "canary": "cpu", "when": "after", "value": 262038.714}
+{"round": 5, "canary": "mem", "when": "after", "value": 543.438139244368}
+{"round": 5, "status": "kept", "foreign": 0.011, "start": "12:54:28", "end": "12:56:01", "why": []}
+{"round": 6, "canary": "cpu", "when": "before", "value": 260912.371}
+{"round": 6, "canary": "mem", "when": "before", "value": 571.8886122777212}
+{"round": 6, "engine": "node", "row": "yen_format", "value": 555.8, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "yen_parts", "value": 2349.8, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "decimal_format", "value": 544.3, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "tokyo_format", "value": 1250.1, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "tokyo_parts", "value": 3090.3, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "number_tolocale", "value": 465.5, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "date_tolocale", "value": 1542.3, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "construct_nf", "value": 20178.2, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "construct_dtf", "value": 85551.7, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "yen_format", "value": 391.6, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "yen_parts", "value": 1352.0, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "decimal_format", "value": 377.4, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "tokyo_format", "value": 386.5, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "tokyo_parts", "value": 1778.0, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "number_tolocale", "value": 385.7, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "date_tolocale", "value": 450.2, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "construct_nf", "value": 4825.0, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "construct_dtf", "value": 5558.0, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "seg_graphemes", "value": 115.8, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "seg_words", "value": 218.9, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "seg_sentences", "value": 309.7, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "construct_seg", "value": 12829.0, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "seg_graphemes", "value": 136.5, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "seg_words", "value": 187.0, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "seg_sentences", "value": 317.3, "unit": "ns"}
+{"round": 6, "engine": "moejs", "row": "construct_seg", "value": 1159.0, "unit": "ns"}
+{"round": 6, "engine": "node", "row": "first_tolocale", "value": 17403.9, "unit": "us", "samples": [17614.5, 17408.0, 18262.6, 17529.4, 18248.7, 17278.2, 17041.8, 17214.0, 17399.8, 17318.6]}
+{"round": 6, "engine": "moejs", "row": "first_tolocale", "value": 223.65, "unit": "us", "samples": [439.8, 176.1, 222.7, 214.7, 193.4, 256.5, 229.3, 224.6, 241.7, 217.6]}
+{"round": 6, "engine": "node", "row": "fetch_small1", "value": 393.219, "unit": "us", "samples": [409.842, 393.219, 372.816]}
+{"round": 6, "engine": "node", "row": "fetch_small8", "value": 241.85, "unit": "us", "samples": [241.85, 242.782, 238.416]}
+{"round": 6, "engine": "node", "row": "fetch_stream", "value": 805.2, "unit": "MBps", "samples": [855.6, 790.4, 805.2]}
+{"round": 6, "engine": "node", "row": "fetch_sse", "value": 5.161, "unit": "us", "samples": [5.161, 3.014, 5.203]}
+{"round": 6, "engine": "moejs", "row": "fetch_small1", "value": 177.21, "unit": "us", "samples": [182.919, 176.779, 177.21]}
+{"round": 6, "engine": "moejs", "row": "fetch_small8", "value": 38.757, "unit": "us", "samples": [38.379, 39.349, 38.757]}
+{"round": 6, "engine": "moejs", "row": "fetch_stream", "value": 1797.1, "unit": "MBps", "samples": [1919.5, 1779.6, 1797.1]}
+{"round": 6, "engine": "moejs", "row": "fetch_sse", "value": 6.476, "unit": "us", "samples": [6.788, 5.208, 6.476]}
+{"round": 6, "canary": "cpu", "when": "after", "value": 262016.115}
+{"round": 6, "canary": "mem", "when": "after", "value": 545.2842233675475}
+{"round": 6, "status": "kept", "foreign": 0.009, "start": "12:57:35", "end": "12:59:11", "why": []}
+{"round": 7, "canary": "cpu", "when": "before", "value": 259308.457}
+{"round": 7, "canary": "mem", "when": "before", "value": 577.1135761254613}
+{"round": 7, "engine": "moejs", "row": "yen_format", "value": 390.8, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "yen_parts", "value": 1367.0, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "decimal_format", "value": 386.8, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "tokyo_format", "value": 394.1, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "tokyo_parts", "value": 1840.0, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "number_tolocale", "value": 408.6, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "date_tolocale", "value": 452.7, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "construct_nf", "value": 4862.0, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "construct_dtf", "value": 5723.0, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "yen_format", "value": 554.1, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "yen_parts", "value": 2544.9, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "decimal_format", "value": 546.4, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "tokyo_format", "value": 1249.4, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "tokyo_parts", "value": 3084.0, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "number_tolocale", "value": 464.2, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "date_tolocale", "value": 1537.8, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "construct_nf", "value": 20044.4, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "construct_dtf", "value": 87204.6, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "seg_graphemes", "value": 131.8, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "seg_words", "value": 186.6, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "seg_sentences", "value": 324.1, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "construct_seg", "value": 1183.0, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "seg_graphemes", "value": 114.9, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "seg_words", "value": 218.8, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "seg_sentences", "value": 308.1, "unit": "ns"}
+{"round": 7, "engine": "node", "row": "construct_seg", "value": 13753.0, "unit": "ns"}
+{"round": 7, "engine": "moejs", "row": "first_tolocale", "value": 223.65, "unit": "us", "samples": [502.9, 226.7, 260.5, 188.4, 191.2, 224.6, 222.7, 217.8, 228.7, 212.8]}
+{"round": 7, "engine": "node", "row": "first_tolocale", "value": 17420.75, "unit": "us", "samples": [17544.8, 17296.7, 17688.3, 17901.3, 17188.1, 17805.6, 17184.7, 17057.1, 17143.2, 17548.9]}
+{"round": 7, "engine": "moejs", "row": "fetch_small1", "value": 176.257, "unit": "us", "samples": [172.763, 179.474, 176.257]}
+{"round": 7, "engine": "moejs", "row": "fetch_small8", "value": 40.728, "unit": "us", "samples": [41.057, 40.728, 40.219]}
+{"round": 7, "engine": "moejs", "row": "fetch_stream", "value": 1846.8, "unit": "MBps", "samples": [1846.8, 1923.7, 1780.8]}
+{"round": 7, "engine": "moejs", "row": "fetch_sse", "value": 5.078, "unit": "us", "samples": [5.055, 5.085, 5.078]}
+{"round": 7, "engine": "node", "row": "fetch_small1", "value": 417.429, "unit": "us", "samples": [437.048, 417.429, 376.082]}
+{"round": 7, "engine": "node", "row": "fetch_small8", "value": 239.099, "unit": "us", "samples": [243.118, 239.099, 229.32]}
+{"round": 7, "engine": "node", "row": "fetch_stream", "value": 787.3, "unit": "MBps", "samples": [815.8, 787.3, 767.7]}
+{"round": 7, "engine": "node", "row": "fetch_sse", "value": 4.988, "unit": "us", "samples": [4.56, 4.988, 5.235]}
+{"round": 7, "canary": "cpu", "when": "after", "value": 259786.456}
+{"round": 7, "canary": "mem", "when": "after", "value": 560.1597558848946}
+{"round": 7, "status": "kept", "foreign": 0.005, "start": "13:00:44", "end": "13:02:14", "why": []}

@@ -1,8 +1,8 @@
 package compiler
 
 import (
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // Hook compiles the source text the engine evaluates at run time: eval

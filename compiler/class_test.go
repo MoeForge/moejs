@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs/bytecode"
+	"github.com/MoeForge/moejs/engine"
 	"github.com/stretchr/testify/assert"
 )
 

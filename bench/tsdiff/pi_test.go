@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/syntax"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/syntax"
 )
 
 // piAnySrc is a value whose every property is another such value, which

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/bench/engines"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/bench/engines"
 )
 
 // The host flow reproduces new-api's plugin host around one hook call, per

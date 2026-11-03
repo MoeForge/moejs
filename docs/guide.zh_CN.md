@@ -1,6 +1,6 @@
 # moejs 使用指南
 
-每个函数的说明见[包文档](https://pkg.go.dev/github.com/Calcium-Ion/moejs)，完整示例见 [README](../README.zh_CN.md)。
+每个函数的说明见[包文档](https://pkg.go.dev/github.com/MoeForge/moejs)，完整示例见 [README](../README.zh_CN.md)。
 
 [English](guide.md)
 
@@ -30,12 +30,22 @@
 随同时处理的请求数乘以单个请求的大小增长，宿主自己为每个请求保留的数据还要另算。`ParseJSONString`，以及对宿主的 map、切片和字符串调用
 `FromGo`，都不会复制输入里不含转义的 ASCII 字符串，比如 base64 数据。非 ASCII 或不短于 64 KiB 的字符串先保留 UTF-8 原文，JavaScript 第一次读取内容时才转成 UTF-16，读长度不需要转换。设了内存上限时，它在创建时就按转换后的大小记账。
 
+运行时还会通过引擎的暂存区，也就是解释器的寄存器和帧记录，让已结束调用的值保持可达，直到后面的调用覆盖它们。所以一次调用创建后又丢弃的值，
+在调用返回后可能仍留在 Go 堆里；JavaScript 已经无法访问它，内存限制的测量也就看不到它。池化运行时的宿主在两个请求之间调用
+`ReleaseCallData`，它会连同请求的数据一起释放这块暂存区。`eventloop` 包的 `Run` 在结束时释放暂存区，所以一个运行时依次跑多个事件循环程序时，
+不会保留上一个程序的值。
+
 在默认的 `GOGC=100` 下，Go 进程的常驻内存大约是活跃堆的两倍，因为回收器要等堆在活跃部分之外再增长同样多，才开始下一次回收。goroutine
 很多，或者回收周期很长、又和其他任务争抢 CPU 时，常驻内存还会更高。
 
 要限制内存，就把 `GOMEMLIMIT` 设在预计的活跃堆峰值之上并留出充足余量，因为这个上限计入的是 Go 运行时的全部内存，不只是堆，`GOGC`
 保持默认值。这样在进程接近上限之前，吞吐量不受影响。`GOMEMLIMIT` 低于活跃堆时，回收器会一直运行，吞吐量大幅下降。调低 `GOGC` 则是在
 整个进程范围内用吞吐量换内存。
+
+async 函数调用返回的 promise 在调用返回或抛出之后只保留它的结果，任何时候都不保留这次调用的帧。调用停在 `await` 时，帧、帧里的局部变量和
+它捕获的作用域由它等待的那个 promise 保留：如果调用在等一个永远不会兑现、也没有别处引用的 promise（`await new Promise(() => {})`），
+即使它自己的 promise 还被持有，这次调用也会被回收。`then` 返回的 promise 在它来源的 promise 兑现之前会保留处理函数。要释放它们，
+就丢掉这些 promise，或者兑现它们等待的 promise。
 
 举个例子：8.1 MB 的 JSON 请求体，带五张 base64 图片，同时处理 32 个请求，`GOMAXPROCS=8`，宿主在请求结束前一直保留请求体（Intel i5-13500H，
 Linux，go1.26.6，每次运行 10 秒，取 3 次的中位数）。用 `ParseJSON` 时，活跃堆约 500 MB，常驻内存约 1.1 GB。用 `ParseJSONString`
@@ -398,6 +408,16 @@ res, err := rt.CallFunction(fn, moejs.Undefined(), arg)
 
 这两个选项作用于运行时里的动态代码。宿主自己调用的 `Compile` 和 `CompileScript` 照常编译。
 
+### 代码规模的上限
+
+一个函数（或一个脚本、一个模块的顶层）的字节码至多用 256 个寄存器、65,536 个常量（名字、字符串，以及 -32,768 到 32,767 以外的数）、
+65,536 处属性和全局变量访问、65,536 个嵌套函数，每条跳转跨过的指令不超过 32,767 条。超过上限的代码不能编译：`Compile`、
+`CompileScript` 等返回指明该上限的 `*SyntaxError`，`eval` 和 `Function` 系列构造函数抛出它。脚本声明的名字与常量分开存放，
+所以 100,000 个 `var` 声明的脚本可以运行；但 100,000 个 `var x = …` 不行，因为每次赋值都要用到它的全局名字。
+这么大的代码拆成多个函数、脚本或模块就能编译，每一部分各有自己的上限。
+
+`RunScript`、`Load` 和 `Link` 遇到 nil 的 `*Script` 或 `*Module`（编译失败时返回的就是 nil）返回错误。
+
 ## 值
 
 ### 传入 Go 值
@@ -750,8 +770,10 @@ cancel() // 让这次运行中仍在进行的 fetch 失败，并关闭它们的 
 
 ### 流式读取
 
-响应体是一个 `ReadableStream`。它的数据源只在流需要数据块时，也就是有读取在等待而队列为空时，才在一个 goroutine 上读取
-`http.Response` 的 body。Go 这一侧从不抢在 JavaScript 前面读取。读得慢的一方因此会通过 TCP 流量控制拖住服务器，内存占用以 socket 缓冲区为上限。
+响应体是一个 `ReadableStream`。从流的第一次读取起，一个 goroutine 读取 `http.Response` 的 body，最多比 JavaScript 已取走的
+多读一个数据块：它读一个数据块，等流取走，在 JavaScript 处理这一块时读下一块，让等待网络和 JavaScript 的工作重叠。读取时若预读的数据块
+已经就绪就立即取走，否则等正在进行的那次读取。读得慢的一方因此仍会通过 TCP 流量控制拖住服务器，内存占用以 socket 缓冲区加每个 body
+一个数据块为上限。
 
 ```js
 const response = await fetch(url, { method: "POST", body, signal });
@@ -763,15 +785,16 @@ for (;;) {
 }
 ```
 
-每个数据块都是一个 `Uint8Array`，内容是对 body 的一次读取返回的字节。至少填满读缓冲区一半的数据块直接交出，不复制；
-更小的数据块复制到一个刚好够大的缓冲区里，读缓冲区留给下一次读取。读缓冲区从 16 KiB 开始，读取一直填满时增长到 256 KiB；
+每个数据块都是一个 `Uint8Array`，内容是对 body 的一次读取返回的字节，即已经到达的数据，最多一个读缓冲区。至少填满读缓冲区一半的数据块
+直接交出，不复制；更小的数据块在 goroutine 上复制到一个刚好够大的缓冲区里，读缓冲区留给下一次读取。读缓冲区从 16 KiB 开始，读取一直填满时增长到 256 KiB；
 设置了 `MemoryLimit` 时最多增长到上限的八分之一，且不小于 4 KiB，这样一次只保留一个数据块的脚本离上限还很远。
 `for await (const chunk of response.body)`、`pipeThrough` 和 `pipeTo` 也这样读取。JavaScript 没碰过流的响应，
 `text()`、`json()` 等方法在 Go 这一侧一次读完整个 body。被它们读取的 body 就是已使用的：它的流已锁定、已被扰动，
 再次读取、`clone()` 或 `text()` 都是 `TypeError`。
 
 交给 JavaScript 的每个字节都在分配之前、在循环上计入运行时的 `MemoryLimit`；在 `eventloop` 下，上限限制的是整次运行跨任务保留和分配的内存，
-见上文的内存上限一节。流式读取的数据块在交出它的那个任务里计入。整体读取的 body 随到随计：一个 goroutine 最多读到已计入部分之后一个窗口
+见上文的内存上限一节。流式读取的数据块在交出它的那个任务里计入；在此之前，只要 JavaScript 还能到达这个流，预读的数据块和读缓冲区
+虽然只有 Go 持有，也计入每一次对运行保留内存的测量。整体读取的 body 随到随计：一个 goroutine 最多读到已计入部分之后一个窗口
 （最大的读缓冲区）或 body 末尾，循环先计入这些字节，再读下一个窗口。Go 持有的 body 最多比已计入的多一个窗口，比一个窗口小的 body
 只花一个任务。已读的字节虽然只有 Go 持有，也计入每一次对运行保留内存的测量，并且只计一次。这个包在循环上的计入属于宿主自己：
 将要越过上限时立即测量，和 `RebaseAllocation` 一样。计入失败时关闭 body，读取以带有上限消息的
@@ -804,8 +827,8 @@ gzip 和 deflate 编码的 body 会被解码：请求没有自己设置 `Accept-
 - 响应之前的网络错误、被拒绝的请求和重定向错误都以 `TypeError: fetch failed` 拒绝。它的 `cause` 是一个 `Error`，
   内容是 Go 错误的文本；常见情况下还带有 Node 的 `code`（`ECONNREFUSED`、`ECONNRESET`、`ETIMEDOUT`、`ENOTFOUND`）。
 - 流式读取期间的错误（例如连接被重置）让流以 `TypeError: terminated` 出错，正在等待的和之后的读取都以它拒绝。
-- body 读完、出错、取消、中止以及 `Close` 都会立即关闭 body 并结束请求的 context，不等垃圾回收。作为最后的保障，
-  JavaScript 没读就丢掉的响应，其 body 会在回收器释放它时关闭。这可能晚很多，宿主不应依赖它：读完或取消 body，并调用 `Close`。
+- body 读完、出错、取消、中止以及 `Close` 都会立即关闭 body 并结束请求的 context，不等垃圾回收；读取 body 的 goroutine
+  随之停止，它预读的数据块被丢弃。作为最后的保障，JavaScript 丢掉的响应（没读或读了一部分），其 body 会在回收器释放它时关闭。这可能晚很多，宿主不应依赖它：读完或取消 body，并调用 `Close`。
 
 ### 冻结的内建对象和 polyfill
 
@@ -848,6 +871,180 @@ species 构造函数，所以脚本定义的 `Promise[Symbol.species]` getter �
   数据源的 `pull` 不返回 promise 时立即算作完成，而不是晚一个微任务。
 - `URL` 遵循当前的 URL 标准，包括国际化域名，不报告不导致解析失败的校验错误。
 - `performance` 有 `now()`、`timeOrigin` 和 `toJSON()`，没有 mark、measure 和性能条目。
+
+## Node.js 模块
+
+### 安装
+
+`node` 包给运行时提供 `node:fs`、`node:fs/promises` 和 `node:buffer`，也可以用裸名 `fs`、`fs/promises` 和 `buffer`
+导入，供读写工作区文件的程序使用，比如编码代理在沙箱里写的程序。它运行在事件循环上，I/O 只用 Go 标准库。
+
+```go
+imp := node.Importer(hostImporter) // 宿主没有 Importer 时传 nil
+rt := moejs.NewRuntime(moejs.Options{Importer: imp, MemoryLimit: 256 << 20})
+loop, err := eventloop.New(rt, eventloop.Options{})
+api, err := node.InstallLoop(loop, node.Options{
+	FS: &node.FSOptions{
+		Root:  "/srv/sandboxes/42", // 宿主上的目录
+		Mount: "/workspace",        // JavaScript 看到它的位置
+		Cwd:   "/workspace/app",    // 相对路径的基准
+		Write: false,               // 默认只读
+		Allow: func(op, path string) error {
+			if filepath.Base(path) == ".env" {
+				return fs.ErrNotExist
+			}
+			return nil
+		},
+	},
+	Buffer: true, // 全局 Buffer
+})
+defer api.Close()
+```
+
+`node.Importer` 包装宿主的 `Importer`：本包的说明符解析到本包的模块，其余说明符交给宿主的 `Resolve`，所以 `import()` 宿主自己的模块
+和以前一样。`node.Resolver` 对传给 `moejs.Link` 的 `Resolver` 做同样的事，供静态导入这些模块的程序使用。模块每个进程编译一次，从各自
+的 `import.meta` 读取要导出的内容，由 `Install` 为自己的运行时填好：没有调用 `Install` 的运行时，或者选项里没有 `FS` 的运行时，
+`import("node:fs")` 会以 `Error` 失败。`node:buffer` 不需要 `FS`。
+
+`InstallLoop` 把本包装到 `eventloop` 包的循环上；`Install` 接受任何 `node.Loop`（见下）。每个运行时调用其中一个一次，在循环运行之前
+或者在循环上调用。`Close` 关闭根目录，还在等 worker 的操作以 `EBADF` 失败；之后文件系统函数都以 `EBADF` 失败。
+
+### 宿主自己的循环
+
+自己驱动事件循环、不用 `eventloop` 包的宿主，给 `Install` 一个 `node.Loop`：
+
+```go
+type Loop interface {
+	Runtime() *moejs.Runtime
+	Post(task func(*moejs.Runtime) error) bool
+	Hold() (release func())
+}
+```
+
+- `Post` 从任意 goroutine 排入一个任务。循环在运行时的 goroutine 上、在其他回调之间像运行回调那样运行它，并像处理回调的错误那样处理
+  它的错误：中断（比如内存上限的中断）和异常（比如 `fs.readFile` 的回调抛出的异常）都结束程序，就像未捕获的异常结束 Node.js 那样。
+  任务在返回之前运行它排入的 promise 任务，所以循环不必为它运行什么。循环结束后 `Post` 返回 false，任务被丢弃。
+- `Hold` 在操作进行期间让循环不要结束：没有别的事可做的循环，只要还有未释放的 hold 就继续等待。它在运行时的 goroutine 上调用；
+  `release` 可以在任意 goroutine 上调用，只调用一次，并且在该操作的 `Post` 之后。
+
+每个 promise 和回调形式的操作在开始时取一个 hold，工作完成后投递一个任务，由它兑现 promise 或调用回调。同步函数两者都不需要。
+靠 channel 唤醒的循环几行就能实现：`Post` 在互斥锁下追加到队列并通知 channel，`Hold` 计数，循环等待工作时把大于零的计数当作还有
+工作要来。本包的测试就在这样的循环上运行。
+
+### 沙箱
+
+每个路径都在 `FSOptions.Root` 之内解析：
+
+- 相对路径接在 `Cwd` 后面。绝对路径必须在 `Mount` 之下（默认是根目录自己在宿主上的路径），不在其下的路径以 `EACCES` 失败；
+  `Mount` 与宿主路径不同时，根目录的宿主路径也是这样。
+- 路径的其余部分交给操作系统解析，并通过 `os.Root` 限制在根目录内（Linux 的 amd64 和 arm64 上用 `openat2` 加
+  `RESOLVE_BENEATH`，一次调用解析整条路径）。`..` 和符号链接按系统的方式解析，即在它前面的链接之后解析；离开根目录的路径以
+  `EACCES` 失败。根目录内的链接照常可用，目标是根目录下绝对路径的链接也可以。`realpath`、`glob` 和 `readlink` 返回 `Mount` 下的
+  路径。
+- 没有 `Write` 时，所有修改文件系统的函数都以 `EROFS` 失败，带 `W_OK` 的 `access` 和带写入 `flag` 的 `readFile` 也一样。
+- `Allow(op, path)` 在每次访问之前看到它：`op` 是 `"read"` 或 `"write"`，同 Node.js 的权限模型；`path` 是 `Mount` 下的绝对路径。
+  `errors.Is` 能匹配 `fs.ErrNotExist` 的错误让访问以 `ENOENT` 失败，`syscall.Errno` 以该 errno 失败，其他错误以 `EACCES` 失败。它被问到
+  什么、能保证什么，见下一节。
+- 本包不创建链接：`cp` 复制链接指向的内容。
+- 限制是按路径的。宿主在根目录内为根目录外的文件建的硬链接是根目录内的一个路径，程序可以通过它读到那个文件。程序不能创建链接。
+- 在 Windows 上，`\` 和 `/` 都是路径分隔符，和 Node.js 一样。
+- 在 Linux 上，对本包最近一毫秒内解析过的目录中的名字做 stat、打开或列目录，只需一次系统调用：本包保留该目录的描述符（在根目录之下
+  打开），只用它访问这一个名字，且不跟随链接（名字本身是链接时，从根目录出发在根目录之下跟随）。本包自己的 `rename`、`rm`、`rmdir`
+  和 `unlink` 在返回之前丢弃这些描述符，所以程序自己的改动（它们出不了根目录）立刻可见。缓存带来的是一个窗口：目录被解析后的至多一
+  毫秒内，描述符跟着目录本身走，而不是跟着路径走。如果别的进程在这期间改名或替换了这个目录，程序仍然会在它的新位置访问到它，哪怕
+  新位置在根目录之外：别的进程把目录移出根目录、往里面写东西、再移回来，程序就可能读到它写的内容。不用缓存时，每次都重新解析路径，
+  唯一的窗口是路径解析和使用之间的那一段，os.Root 路径也有这个窗口。别的进程可能在程序运行时重排目录树时，设置
+  `FSOptions.NoDescriptorCache`；这样根目录以下的 `stat` 需要三次系统调用而不是一次。
+
+### Allow 钩子
+
+钩子先按程序写出的路径逐级被问到每个目录，然后被问到路径解析经过的每个名字（包括链接指向的名字），每次都在查看它之前：目录按
+`"read"` 问，路径本身按操作的 `op` 问。被拒的目录让整个操作以钩子的错误失败，所以程序得不到它里面的任何信息：哪些名字存在、它们是
+什么类型、其中的链接指向哪里，都得不到。只有链接本身和它的目标都被放行时才会跟随链接。`realpath` 也这样问。
+
+钩子还管着整体改动一个目录的操作所涉及的下层内容。带 `recursive` 的 `rm` 对它要删除的每个条目都问 `"write"`，有一个被拒就什么都
+不删；对目录做 `rename` 时，会问其下的每个条目，原路径和新路径都问；带 `recursive` 的 `mkdir` 问它要创建的每个目录。
+
+钩子不能保证的：
+
+- 它管的是路径，不是文件。文件的路径随改名而变，按路径写的策略对程序的改名只能管到它写出的那些路径：改名一个祖先目录，会把前缀策略
+  拒绝的内容移到它可能放行的路径上，除非策略也拒绝这次改名（改名移动的每个条目都会问钩子）。如果策略必须在程序怎么改名都成立，
+  就给它 `Write: false`，或者把 `Root` 收窄到它可以写的区域。
+- 它管的是名字，不是列表：对放行的目录做 `readdir` 和 `glob` 会列出其中所有名字，包括被拒的。
+- 路径在访问之前解析。程序如果从另一个进行中的操作在两者之间把链接改名到位，可以和钩子竞争；根目录的限制不受影响。
+- 在忽略大小写的文件系统上（macOS 和 Windows 默认如此），钩子收到的是程序的拼写，而系统不论大小写都能解析：在这些系统上比较名字
+  要忽略大小写。
+- 钩子调用得很频繁，路径的每一级目录都调用一次，递归的 `rm` 和 `rename` 更多：要让它快。
+
+### 错误
+
+错误和 Node.js 的一样：一个 `Error`，自身属性依次为 `errno`、`code`、`syscall`、`path`，`rename`、`copyFile` 和 `cp` 还有
+`dest`，消息也是 Node 的格式，比如 `ENOENT: no such file or directory, open 'a.txt'`。`path` 是程序传入的原样路径。syscall 名和
+消息逐个用例对齐 Node.js 24（对目录 `readFile` 得到 `read` 的 `EISDIR`，没有路径；`realpathSync` 报出失败的那一级路径）：本包的测试
+在 Node.js 里跑同样的用例并比较。参数错误抛出 Node 的 `TypeError` 和 `RangeError`，带 `ERR_INVALID_ARG_TYPE` 之类的 `code`。
+Node 的 `node:fs` 里本包没有实现的函数抛出 `ERR_METHOD_NOT_IMPLEMENTED`。
+
+### 有哪些
+
+- 读：`readFile`、`readdir`（`withFileTypes`、`recursive`、`encoding`）、`stat` 和 `lstat`（`Stats` 带全部字段、惰性的日期和
+  `is*` 方法；`throwIfNoEntry`）、`access` 和 `fs.constants`、`exists` 和 `existsSync`、`realpath`、`readlink`，以及 `glob` 和
+  `globSync`（`cwd`、模式或函数形式的 `exclude`、`withFileTypes`、`followSymlinks`）。每个函数都有同步、回调和 promise 三种形式；
+  `fs.promises.glob` 返回异步迭代器。
+- 写（需要 `Write`）：`writeFile`、`appendFile`、`mkdir`（`recursive`）、`rm`（`recursive`、`force`）、`rmdir`、`unlink`、`rename`、
+  `copyFile` 和 `cp`（`recursive`、`force`、`errorOnExist`）。
+- `Buffer`，`Uint8Array` 的子类：`from`（`utf8`、`hex`、`base64`、`base64url`、`latin1`/`binary`、`ascii` 或 `utf16le`/`ucs2`
+  编码的字符串，数组，类数组，与之共享内存的 `ArrayBuffer`，Buffer 的 JSON）、`alloc`、`allocUnsafe`、`concat`、`isBuffer`、
+  `isEncoding`、`byteLength`、`compare`，以及方法 `toString`、`write`、`slice` 和 `subarray`（都共享内存）、`equals`、`compare`、
+  `indexOf`、`lastIndexOf`、`includes`、`toJSON`、`fill`、`copy`、`swap16/32/64`，两种字节序的 8、16、32 位整数和 float、
+  double 的读写，以及 1 到 6 字节整数的读写。解码按 WHATWG 的 UTF-8 解码器进行，和 Node.js 一样。
+
+### 顺序
+
+`readdir` 返回按字节排序的名字，和 Node.js 在 Unix 上一样（libuv 会排序）。递归列表沿用 Node 的顺序：同步和回调形式是广度优先，
+promise 形式是 Node 的栈顺序；和 Node.js 一样，会跟随指向目录的链接。`glob` 返回排好序的匹配；Node.js 按自己的遍历顺序返回，这个顺序没有文档说明。`fs.promises.glob` 和 Node 的 async generator 一样
+返回异步迭代器，错误的模式或选项不会直接抛出，而是让它的 `next()` reject。模式与 Node 一样是
+minimatch 的：`*`、`?`、字符类、`**`、花括号和 extglob；不匹配点文件，除非模式写出了点；`**` 不跟随链接，除非设置
+`followSymlinks`；和 Node.js 一样，反斜杠是路径分隔符而不是转义字符。没有 extglob 的段匹配一个名字的时间与名字长度成线性；有 extglob
+的段编译成 Go 正则表达式（就像 minimatch 编译成 RegExp），匹配时间线性、内存有界。RE2 正则无法表达的 `!(...)` 通过尝试名字的各种切分
+来匹配，工作量有上限并检查运行时的中断：一个段至多含一个 `!(...)`，且不能在其他 extglob 里面；耗时过长的名字会让遍历失败。模式至多
+64 KiB（同 minimatch），一次调用的模式和 `exclude` 模式中所有不同的字符串合计也至多 64 KiB，数组重复同一个字符串多少次都只复制
+和编译一次，至多 65536 个。一个模式的花括号展开为它的前 4096 个模式，一次调用的所有模式展开后合计至多 1 MiB：展开的耗时与产出成正比，
+一超过 1 MiB 就停下，花括号至多嵌套 1024 层，展开过程中检查运行时的中断。段的解析时间与其长度成线性，连续的普通字符算一个记号，
+extglob 至多嵌套 256 层，一次调用至多 65536 个记号。每段以及整次调用编译出的表达式大小都有上限。展开和表达式占用的内存计入内存上限，
+表达式之间检查运行时的中断。匹配的工作量（名字的字节数乘以在其上运行的表达式大小）会被计数：随着增长检查运行时的中断和 `Close`，超过上限的
+调用以 `TypeError` 失败。超过这些上限的模式或调用是 `TypeError`。
+
+### 事件循环和限制
+
+同步函数在循环上运行，和 Node.js 一样。promise 和回调形式把文件系统工作放到 `FSOptions.Workers` 个 goroutine 组成的池里做
+（默认 4 个，与 libuv 的线程池一样大）；超出的操作在队列里等，不各占一个 goroutine。它们在循环的 tasks 阶段的任务里完成，进行中的
+操作让 `Run` 保持运行。回调里抛出的异常会像定时器回调的异常一样停止循环。
+
+本包交给 JavaScript 的内容（文件内容、名字和路径）在创建之前就在循环上计入内存上限（`moejs.Options.MemoryLimit`）。大于上限的文件
+在读取之前就失败，抛出 `code` 为 `ERR_FS_FILE_TOO_LARGE` 的 `RangeError`，就像 Node 拒绝大于 2 GiB 的文件那样；保留的读取内容
+超过上限的程序会带着上限的错误停下。worker 为 JavaScript 读取和列出的内容，同一时刻最多占用一个上限：worker 在读文件之前先从这份预算
+里取出文件大小。列表（递归的或 glob 的）在增长时计入上限（或从预算中取），而不是完成后才计入。工作已完成的结果在循环结算它之前
+继续占着它的那一份。增长放不下的操作会等待（这是背压），等的是不需要它也会释放的那些：等待循环结算的结果，以及比它先开始的操作。
+所以没有操作会等自己，也没有两个操作互相等待；最早开始的操作宁可超出预算，也不等更晚的，而且只有它会超出：更早的操作和待结算的结果
+把占用的都释放之后才轮到它，所以 worker 占用的最多是上限再加这一个操作的增长。等待会在运行时中断和 `Close` 时结束。单个
+操作本身就需要超过上限（比如一个比上限还大的列表）时，以程序可以捕获的 `RangeError` 失败，同步形式和其他形式都一样，而不是让程序停下。
+预算在每条路径上都会释放：循环结算结果时、工作失败时、中断让工作停下时（结果被丢弃，它的 promise 保持 pending，就像中断对其他
+promise 那样）、循环被 Terminate 而拒绝结算时，以及 `Close` 时。被中断的程序里，中断到来时还没在 worker 上开始的操作也会被丢弃，而不是为一个
+已被宿主停下的程序继续执行，所以宿主清除中断后再次运行这个运行时，不必等它们。
+
+长时间的遍历（递归 `readdir`、`glob`、`cp`、递归 `rm` 以及钩子的遍历）和 `Buffer` 的长循环，会在运行时的中断（`Interrupt`、
+`Terminate`、内存上限）和 `Close` 时停下，同步形式和其他形式都一样。
+
+### 与 Node.js 的差异
+
+- 没有流（`createReadStream` 之类）、文件句柄（`fs.promises.open`、`fs.open`）、`watch` 和 `bigint` 形式的 stats。TODO.md
+  列出了它们。
+- Linux 上的 `birthtimeMs` 等于 `ctimeMs`，和 libuv 不用 `statx` 时一样。
+- `cp` 没有 `filter`，复制链接指向的内容而不是链接本身。
+- 每个 Buffer 有自己的 `ArrayBuffer`：没有内存池，所以除切片外 `byteOffset` 都是 0，`allocUnsafe` 返回清零的内存。
+  `buffer.kMaxLength` 是 moejs 最大的 `ArrayBuffer`，即 2 GiB - 1。
+- `fs.constants` 是 Linux 的值。
+- base64 的速度约为每秒 1 GB；Node.js 用 SIMD，大输入上约快四倍。
 
 ## 隔离
 

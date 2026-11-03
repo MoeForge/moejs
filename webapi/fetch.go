@@ -22,12 +22,13 @@ import (
 	"time"
 	"weak"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/engine"
 )
 
-// fetch and its Go side. A request runs on a goroutine of its own; its
-// response body is read on a goroutine for each chunk the stream asks for.
+// fetch and its Go side. A request runs on a goroutine of its own; the
+// stream of its response body is read on another, a chunk ahead of what
+// the stream took.
 // The conn of a request owns its context and body, and is the only state
 // the goroutines share with the loop.
 
@@ -732,7 +733,7 @@ func (f *fetchState) responded(resp *http.Response, err error) error {
 			}
 		}
 		f.c.setBody(rc)
-		f.net = &netBody{e: e, f: f, size: min(minChunk, e.chunkMax()), length: resp.ContentLength}
+		f.net = &netBody{e: e, f: f, length: resp.ContentLength}
 		runtime.AddCleanup(f.net, func(c *conn) { c.finish(errCollected) }, f.c)
 		res.body = body{net: f.net}
 	}
@@ -811,9 +812,8 @@ type netBody struct {
 	e      *env
 	f      *fetchState
 	stream *readableStream
-	// buf is the buffer of the next read; size its length.
-	buf    []byte
-	size   int
+	// rd reads the body for its stream, from the stream's first pull on.
+	rd     *bodyReader
 	length int64 // Content-Length, -1 when unknown
 	// consume is the promise of a text(), json() or other read of the
 	// whole body, while it runs.
@@ -824,8 +824,8 @@ type netBody struct {
 }
 
 // readable creates the body's stream, a stream of bytes: its source reads
-// one chunk from Go each time the stream pulls, which a read with an empty
-// queue does.
+// the body on a goroutine one chunk ahead of what the stream took
+// (bodyReader).
 func (nb *netBody) readable() *readableStream {
 	e := nb.e
 	nb.stream = e.newReadable(0, nb.pull, func(engine.Value) (engine.Value, error) {
@@ -839,8 +839,12 @@ func (nb *netBody) readable() *readableStream {
 	return nb.stream
 }
 
-// end finishes the request and drops the abort algorithm.
+// end finishes the request and drops the abort algorithm. The stream no
+// longer reports the reader: the goroutine drops what it holds.
 func (nb *netBody) end(cause error) {
+	if nb.stream != nil {
+		nb.stream.src = nil
+	}
 	if !nb.finished {
 		nb.finished = true
 		nb.f.c.finish(cause)
@@ -866,70 +870,84 @@ func (nb *netBody) terminated(err error) engine.Value {
 	return nb.e.netError("terminated", nb.f.c.cause(err))
 }
 
+// bodyReader reads a body for its stream on a goroutine of its own, one
+// chunk ahead of what the stream took: it reads a chunk, which waits until
+// the stream takes it, and reads the next while JavaScript works on that
+// one, so that the network's wait overlaps JavaScript's work. A chunk is
+// what one read returned, everything the connection had, up to the
+// buffer's size. The goroutine keeps no reference to the netBody, so that
+// a body nobody reads is still collected, which closes the body and stops
+// the goroutine.
+type bodyReader struct {
+	next chan int // the chunk was taken; the largest buffer to read into next
+
+	mu sync.Mutex
+	// chunk is the chunk read ahead, what charging it costs, and the
+	// read's error; ready while they wait to be taken.
+	chunk []byte
+	cost  int
+	err   error
+	ready bool
+	// wake, while the stream waits for the chunk, posts its delivery.
+	wake func()
+	// bufLen is the length of the goroutine's buffer, which it holds
+	// while it reads.
+	bufLen int
+}
+
+// pull takes the chunk read ahead, or waits for the read that runs. The
+// first pull starts the goroutine.
 func (nb *netBody) pull(rc *rsController) error {
 	e := nb.e
-	body := nb.f.c.startRead()
-	if body == nil {
-		nb.end(nil)
-		return rc.errorWith(nb.terminated(context.Cause(nb.f.c.ctx)))
-	}
-	if nb.buf == nil {
-		nb.buf = make([]byte, nb.size)
-	}
-	buf := nb.buf
-	done := e.loop.Hold()
-	go func() {
-		n, err := readSome(body, buf)
-		nb.f.c.endRead()
-		if !e.post(func() error { return nb.delivered(rc, buf, n, err) }) {
-			nb.f.c.finish(ErrClosed)
+	br := nb.rd
+	if br == nil {
+		body := nb.f.c.startRead()
+		if body == nil {
+			nb.end(nil)
+			return rc.errorWith(nb.terminated(context.Cause(nb.f.c.ctx)))
 		}
-		done(nil)
-	}()
-	return nil
+		br = &bodyReader{next: make(chan int, 1)}
+		nb.rd = br
+		rc.s.src = br
+		go br.run(nb.f.c, body, min(minChunk, e.chunkMax()))
+	}
+	br.mu.Lock()
+	if !br.ready {
+		hold := e.loop.Hold()
+		br.wake = func() {
+			if !e.post(func() error { return nb.take(rc) }) {
+				nb.f.c.finish(ErrClosed)
+			}
+			hold(nil)
+		}
+		br.mu.Unlock()
+		return nil
+	}
+	br.mu.Unlock()
+	return nb.take(rc)
 }
 
-// readSome reads at least one byte or an error. A panic of r's Read is an
-// error.
-func readSome(r io.Reader, buf []byte) (n int, err error) {
-	defer recoverRead(&err)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 || err != nil {
-			return n, err
-		}
-	}
-}
-
-// delivered hands a read's result to the stream, on the loop. A chunk that
-// fills most of the buffer is given away with it, a small one is copied so
-// that the buffer serves the next read.
-func (nb *netBody) delivered(rc *rsController, buf []byte, n int, err error) error {
+// take hands the chunk read ahead to the stream, on the loop, and lets the
+// goroutine read the next one meanwhile.
+func (nb *netBody) take(rc *rsController) error {
 	e := nb.e
 	if rc.s.state != rsReadable || rc.pull == nil {
 		nb.end(errCanceled)
 		return nil
 	}
-	if n > 0 {
-		var chunk []byte
-		keep := 2*n < len(buf)
-		cost := n
-		if !keep {
-			cost = len(buf) // JavaScript keeps the whole buffer
-		}
+	br := nb.rd
+	br.mu.Lock()
+	chunk, cost, err := br.chunk, br.cost, br.err
+	br.chunk, br.ready = nil, false
+	br.mu.Unlock()
+	if err == nil {
+		br.next <- e.chunkMax()
+	}
+	if len(chunk) > 0 {
 		if cerr := e.r.ChargeMemory(cost); cerr != nil {
 			nb.end(cerr)
 			_ = rc.errorWith(e.limitError(cerr))
 			return cerr
-		}
-		if keep {
-			chunk = append([]byte(nil), buf[:n]...)
-		} else {
-			chunk = buf[:n:n]
-			nb.buf = nil
-			if n == len(buf) {
-				nb.size = min(2*nb.size, e.chunkMax())
-			}
 		}
 		u, uerr := e.uint8Array(chunk)
 		if uerr != nil {
@@ -950,6 +968,89 @@ func (nb *netBody) delivered(rc *rsController, buf []byte, n int, err error) err
 		return rc.errorWith(nb.terminated(err))
 	}
 	return rc.pulled()
+}
+
+// run reads the body until its end, an error, or the end of the request,
+// and then marks the read over. A chunk that fills most of the buffer is
+// handed over with it, and the next read gets a new buffer, twice as large
+// when the chunk filled it, up to the stream's largest (chunkMax); a small
+// one is copied, so that the buffer serves the next read.
+func (br *bodyReader) run(c *conn, body io.Reader, size int) {
+	defer c.endRead()
+	var buf []byte
+	for {
+		if buf == nil {
+			buf = make([]byte, size)
+			br.mu.Lock()
+			br.bufLen = size
+			br.mu.Unlock()
+		}
+		n, err := readSome(body, buf)
+		var chunk []byte
+		cost := n
+		switch {
+		case n == 0:
+		case 2*n < len(buf):
+			chunk = append([]byte(nil), buf[:n]...)
+		default:
+			chunk, cost = buf[:n:n], len(buf) // JavaScript keeps the whole buffer
+			if n == len(buf) {
+				size = 2 * len(buf)
+			}
+			buf = nil
+		}
+		if err != nil {
+			br.put(chunk, cost, err, 0) // the goroutine ends, and drops buf
+			return
+		}
+		br.put(chunk, cost, nil, len(buf))
+		select {
+		case max := <-br.next:
+			size = min(size, max)
+		case <-c.ctx.Done():
+			// Close, a context or the collector ended the request: the
+			// chunk not taken is dropped for the request's error.
+			br.put(nil, 0, context.Cause(c.ctx), 0)
+			return
+		}
+	}
+}
+
+// put makes chunk, its cost and err the chunk read ahead, and posts its
+// delivery when the stream waits for it.
+func (br *bodyReader) put(chunk []byte, cost int, err error, bufLen int) {
+	br.mu.Lock()
+	br.chunk, br.cost, br.err, br.ready, br.bufLen = chunk, cost, err, true, bufLen
+	wake := br.wake
+	br.wake = nil
+	br.mu.Unlock()
+	if wake != nil {
+		wake()
+	}
+}
+
+// ReportLive reports the bytes the goroutine holds: its buffer and the
+// chunk not yet taken.
+func (br *bodyReader) ReportLive(_ func(engine.Value), addBytes func(int)) {
+	br.mu.Lock()
+	n := br.bufLen
+	if br.ready {
+		n += br.cost
+	}
+	br.mu.Unlock()
+	addBytes(n)
+}
+
+// readSome reads at least one byte or an error. A panic of r's Read is an
+// error.
+func readSome(r io.Reader, buf []byte) (n int, err error) {
+	defer recoverRead(&err)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 || err != nil {
+			return n, err
+		}
+	}
 }
 
 // readAll reads the whole body and calls done with it on the loop; a

@@ -180,11 +180,11 @@ const (
 
 	// --- async functions and iteration (dispatched after the generator ops) ---
 	AsyncFunc       // A     make the fresh closure R[A] an async function or async generator function
-	AsyncStart      // A     R[A] = the state of an async function call with `this` R[A]; the call returns its promise
+	AsyncStart      // A     unused: an async function body starts with a LoadThis (Await); the op keeps its number, by which the interpreter's jump table is laid out
 	AsyncGenStart   // A     R[A] = new async generator with `this` R[A]; suspends it, and the call returns it
-	Await           // AB    R[B] (the async state) awaits R[A]; resumed with R[A] = the result, R[A+1] = undefined (fulfilled) or true (rejected)
-	AsyncReturn     // AB    resolve the promise of async function R[B] with R[A]; R[A] = the promise
-	AsyncThrow      // AB    reject the promise of async function R[B] with R[A]; R[A] = the promise
+	Await           // AB    the frame awaits R[A] (R[B]: the async function call's this, then its state; or the async generator); resumed with R[A] = the result, R[A+1] = undefined (fulfilled) or true (rejected)
+	AsyncReturn     // AB    resolve the async function call's promise (its state is R[B] once it awaited) with R[A]; R[A] = the promise
+	AsyncThrow      // AB    reject the async function call's promise (its state is R[B] once it awaited) with R[A]; R[A] = the promise
 	AsyncYield      // AB    async generator R[B] settles its head request with {value: R[A], done: false}; resumed as Yield
 	AsyncIterInit   // AB    R[A] = GetIterator(R[B], async), R[A+1] = its next method
 	AsyncIterNext   // A     R[A+2] = Call(R[A+1], R[A])

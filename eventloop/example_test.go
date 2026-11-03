@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
 )
 
 // ExampleLoop_Run runs a script that sets timers: Run returns once the

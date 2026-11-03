@@ -7,7 +7,7 @@ package engine
 import (
 	"math"
 
-	"github.com/Calcium-Ion/moejs/bytecode"
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // errThrown is the in-frame throw marker: the thrown value travels in the
@@ -776,7 +776,7 @@ func (r *Realm) run(fi int, fd *FunctionData, base int, env *Env, this Value, ca
 					}
 				}
 			}
-			pc, err = r.iterOp(fd, base, w, pc)
+			pc, err = r.iterNext(fd, base, w, pc)
 			regs, fr = regs.refresh(), &st.frames[fi]
 		case bytecode.IterValue, bytecode.IterRest, bytecode.IterClose:
 			pc, err = r.iterOp(fd, base, w, pc)
