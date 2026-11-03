@@ -636,6 +636,50 @@ func TestLazyCanonicalQuoteInterrupt(t *testing.T) {
 	require.Nil(t, cacheOf(s))
 }
 
+// TestLazyVerbatimQuotePendingInterrupt: AppendJSON copies a verbatim
+// string where it would escape it, and observes an interrupt pending at the
+// call where quoteASCII does: in a string longer than interruptStride
+// bytes, before writing it, and not in a shorter one, which is written, as
+// a small value is, and goes into a json.RawMessage.
+func TestLazyVerbatimQuotePendingInterrupt(t *testing.T) {
+	r := NewRealm()
+	v, err := r.JSONParseGoString(`{"msg":"line1\nline2"}`)
+	require.NoError(t, err)
+	msg, err := v.AsObject().Get(r, r.KeyFromGoString("msg"), v)
+	require.NoError(t, err)
+	require.Equal(t, lazyJSONVerbatim, msg.AsString().lazyMode())
+	short, err := r.JSONParseGoString(`"\n` + strings.Repeat("a", interruptStride-2) + `"`)
+	require.NoError(t, err)
+	long, err := r.JSONParseGoString(`"\n` + strings.Repeat("a", interruptStride-1) + `"`)
+	require.NoError(t, err)
+	for _, s := range []*String{short.AsString(), long.AsString()} {
+		require.Equal(t, lazyJSONVerbatim, s.lazyMode())
+	}
+	r.Interrupt("pending")
+	t.Cleanup(r.ClearInterrupt)
+
+	out, ok, err := r.AppendJSON(nil, v)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, `{"msg":"line1\nline2"}`, string(out))
+	var raw struct {
+		Msg json.RawMessage `json:"msg"`
+	}
+	complete, err := r.Unmarshal(v, &raw)
+	require.NoError(t, err)
+	require.True(t, complete)
+	require.Equal(t, `"line1\nline2"`, string(raw.Msg))
+	out, _, err = r.AppendJSON(nil, short)
+	require.NoError(t, err)
+	require.Len(t, out, interruptStride+2)
+
+	var ie *InterruptedError
+	_, _, err = r.AppendJSON(nil, long)
+	require.ErrorAs(t, err, &ie)
+	require.Nil(t, cacheOf(msg.AsString()))
+	require.Nil(t, cacheOf(long.AsString()))
+}
+
 // TestLazyFromGoMemoryLimit: a Go string converted on its own charges
 // nothing, as converting it eagerly charges nothing; a measurement counts
 // it as decoded.

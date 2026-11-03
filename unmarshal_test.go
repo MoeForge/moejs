@@ -123,3 +123,24 @@ export function str() { return {S: "x".repeat(5000)}; }
 	require.NoError(t, rt.Unmarshal(str, &s))
 	require.Len(t, s.S, 5000)
 }
+
+// TestUnmarshalInterruptParsedText: a small value ParseJSONString read out
+// of text with escapes, which keeps them to write them as they are, is
+// written by AppendJSON and goes into a json.RawMessage with an interrupt
+// pending at the call, as a small value a script made does.
+func TestUnmarshalInterruptParsedText(t *testing.T) {
+	rt := moejs.NewRuntime(moejs.Options{})
+	v, err := rt.ParseJSONString(`{"msg":"line1\nline2"}`)
+	require.NoError(t, err)
+	rt.Interrupt("pending")
+	defer rt.ClearInterrupt()
+
+	out, err := rt.AppendJSON(nil, v)
+	require.NoError(t, err)
+	require.Equal(t, `{"msg":"line1\nline2"}`, string(out))
+	var raw struct {
+		Msg json.RawMessage `json:"msg"`
+	}
+	require.NoError(t, rt.Unmarshal(v, &raw))
+	require.Equal(t, `"line1\nline2"`, string(raw.Msg))
+}

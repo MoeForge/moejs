@@ -1418,7 +1418,10 @@ func (js *jsonStringifier) quoteLazy(s *String) error {
 	if !copyJSON && !(js.raw && s.validLazyUTF8()) {
 		return js.quote(s.resolved())
 	}
-	if copyJSON {
+	if copyJSON && len(s.s) > interruptStride {
+		// The copy observes an interrupt where quoteASCII would, past its
+		// first interruptStride bytes, and once, before writing: a short
+		// value is written whatever is pending, as a call's small value is.
 		if err := js.r.CheckInterrupt(); err != nil {
 			return err
 		}
