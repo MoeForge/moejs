@@ -248,17 +248,34 @@ func (s *String) GoString() string {
 // literals keep them (fromWTF8Text). knownUTF8 lets JSON reuse validation;
 // false means unknown, not necessarily invalid.
 func (s *String) wtf8() (text string, knownUTF8 bool) {
+	text, _, knownUTF8 = s.wtf8Root()
+	return text, knownUTF8
+}
+
+// wtf8Root is wtf8 that also returns the String whose bytes text is, the
+// share root of a parse of text (memAccount.shareText): s when text is its
+// units, a rope's flattening included, or its UTF-8 source; the decoded
+// String of a lazy string whose source is not, when that decoded to ASCII;
+// nil for a copy. s's kind decides, not where text's bytes are: a rope's s
+// is written by flatten and read only through published, and a parse
+// rooted at no String would keep a decoded String's bytes in a String of
+// its own, which the live measurement counts again.
+func (s *String) wtf8Root() (text string, root *String, knownUTF8 bool) {
 	if g, ok := s.sourceUTF8(); ok {
-		return g, true
+		return g, s, true
 	}
 	f := s
 	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
-		return f.s, true
+		root = s
+		if s.isLazy() {
+			root = s.resolved() // decoded already: f is that String
+		}
+		return f.s, root, true
 	}
-	return wtf8FromUTF16(f.units()), false
+	return wtf8FromUTF16(f.units()), nil, false
 }
 
 func utf16ToGoString(u []uint16) string {

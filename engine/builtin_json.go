@@ -195,25 +195,14 @@ type jsonStack struct {
 const jsonStackMax = 256
 
 func (p *jsonParser) parse(text *String) (Value, error) {
-	src, knownUTF8 := text.wtf8()
+	src, root, knownUTF8 := text.wtf8Root()
 	p.knownUTF8 = knownUTF8
-	// src is text's own bytes when text is ASCII, a flattened rope's or a
-	// lazy string's source; a rope's data word is read atomically only
-	// (flatten), so its published bytes are compared through published.
-	own := text.s
-	if text.kind == strRope {
-		f, _ := text.published()
-		own = f.s
-	}
-	if len(src) > 0 && unsafe.StringData(src) == unsafe.StringData(own) {
-		return p.parseText(src, text)
-	}
-	return p.parseText(src, nil)
+	return p.parseText(src, root)
 }
 
 // parseText parses src, UTF-8 or WTF-8; the strings of the result may alias
-// it. src is the units or lazy source of text, or the host's text or a
-// working copy when text is nil.
+// it. text is the String whose bytes src is (String.wtf8Root), nil for the
+// host's text or a working copy.
 func (p *jsonParser) parseText(src string, text *String) (Value, error) {
 	p.src = src
 	l := p.r.lazyState()

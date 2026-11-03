@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,5 +98,67 @@ func TestLazyHostSubstringShareRoot(t *testing.T) {
 		sub = top.Substring(10, 200)
 		require.Same(t, top, sub.right, "top-level %.8q", text)
 		require.Equal(t, top.UTF16()[10:200], sub.UTF16())
+	}
+}
+
+// TestLazyJSONTextParseSharesDecoded: JSON text held as a JSON string with
+// escapes (double-encoded JSON) decodes to an ASCII String of its own, out
+// of which a parse under a memory limit reads its values: they share that
+// String, which the live measurement counts once, with the lazy string, and
+// not again in a String of the parse's own over the same bytes.
+func TestLazyJSONTextParseSharesDecoded(t *testing.T) {
+	r := NewRealmWith(RealmOptions{MemoryLimit: 1 << 40})
+	outer, err := json.Marshal(`{"k":"` + strings.Repeat("x", 1<<16) + `"}`)
+	require.NoError(t, err)
+	v, err := r.JSONParseGoString(string(outer))
+	require.NoError(t, err)
+	s := v.AsString()
+	require.True(t, s.isLazy())
+	parsed, err := r.JSONParse(s)
+	require.NoError(t, err)
+	k, err := parsed.AsObject().Get(r, r.KeyFromGoString("k"), parsed)
+	require.NoError(t, err)
+	decoded := cacheOf(s)
+	require.NotNil(t, decoded)
+	require.Equal(t, strASCII, decoded.kind)
+	assert.Same(t, decoded, k.AsString().right, "the decoded String is the parse's share root")
+	var seen liveSet
+	w := liveWalker{seen: &seen}
+	w.str(s)
+	counted := w.size
+	w.str(k.AsString())
+	assert.Equal(t, int64(stringHeaderSize), w.size-counted, "the value adds its header: the decoded String counted with s")
+	w.seen.release()
+}
+
+// TestJSONParseRopeConcurrent: realms on two goroutines parse one rope
+// while a third flattens it to export it. A parse reads the rope's units
+// only through the flattening it publishes (run with -race).
+func TestJSONParseRopeConcurrent(t *testing.T) {
+	body := strings.Repeat("a", 1<<16)
+	for range 20 {
+		rope, err := NewRealm().Concat(asciiString(`"`), asciiString(body+`"`))
+		require.NoError(t, err)
+		require.Equal(t, strRope, rope.kind)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			<-start
+			if g := rope.GoString(); g != `"`+body+`"` {
+				t.Errorf("exported %d bytes", len(g))
+			}
+		})
+		for range 2 {
+			r := NewRealm()
+			wg.Go(func() {
+				<-start
+				v, err := r.JSONParse(rope)
+				if err != nil || v.AsString().Len() != len(body) {
+					t.Error("parse", err)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
 	}
 }
