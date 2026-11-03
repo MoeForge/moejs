@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 )
 
 // lazyStringPlugin is a gateway hook over chat messages: forward rebuilds
