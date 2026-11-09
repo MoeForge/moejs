@@ -26,8 +26,8 @@ func BenchmarkArrayPush(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		if arr.ArrayLength() == 1<<16 {
-			arr.elements = arr.elements[:0]
-			arr.internal.(*ArrayData).length = 0
+			arr.setElems(arr.elems()[:0])
+			arr.setArrayLen(0)
 		}
 		if _, err := r.CallObject(push, this, args); err != nil {
 			b.Fatal(err)

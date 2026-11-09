@@ -155,7 +155,7 @@ func intlDateTimeFormatConstruct(r *Realm, args []Value, newTarget *Object) (Val
 	}
 	r.markPrototype(proto)
 	o := r.newObject(ClassIntlDateTimeFormat, r.rootShapeFor(proto))
-	o.internal = f
+	setExtData(o, kindIntlDateTimeFormat, f)
 	return ObjectValue(o), nil
 }
 
@@ -844,7 +844,6 @@ func (r *Realm) intlPartObject(shape *Shape, source bool) *Object {
 		o.slots = p.slots[:]
 	}
 	o.shape = shape
-	o.proto = r.ObjectPrototype
 	o.class = ClassObject
 	o.flags = flagExtensible
 	return o

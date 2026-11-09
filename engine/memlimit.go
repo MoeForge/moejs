@@ -17,11 +17,11 @@ import (
 // storage of their properties and elements as it grows, strings by their
 // header and units, Map and Set tables, ArrayBuffers, environments,
 // suspended generator frames, BigInt results, the code eval and the
-// Function constructors compile, and the wrappers FromGo and JSON.parse
-// build. The count is approximate: a producer charges what it asks the Go
-// allocator for, not the size class it gets, and the places that grow a
-// slice without one of the charge points below are not counted, nor are
-// the register stack and frame table, which the call depth limit bounds.
+// Function constructors compile, the wrappers FromGo and JSON.parse build,
+// and the register stack and frame table as they grow (moveStack,
+// growFrames). The count is approximate: a producer charges what it asks
+// the Go allocator for, not the size class it gets, and the places that
+// grow a slice without one of the charge points below are not counted.
 // Nothing is credited back as it is freed: the account counts allocation
 // since the last reset (ReleaseCallData, ResetAllocation) or measurement.
 //
@@ -207,13 +207,12 @@ const (
 	stringHeaderSize = int(unsafe.Sizeof(String{}))
 	// valueSize is a slot, an element or a register.
 	valueSize = int(unsafe.Sizeof(Value{}))
-	// dictEntrySize is a named property of an object in dictionary mode:
-	// its entry and its index entry.
-	dictEntrySize = int(unsafe.Sizeof(dictEntry{})) + 32
 	// sparseEntrySize is an element outside dense storage, a map entry.
 	sparseEntrySize = int(unsafe.Sizeof(propCell{})) + 16
 	// shapeSize is a shape and the record of its transition.
 	shapeSize = int(unsafe.Sizeof(Shape{})) + 32
+	// shapePropSize is an entry of a shape's props.
+	shapePropSize = int(unsafe.Sizeof(shapeProp{}))
 )
 
 // appendValue appends v to s as append does, charging the storage when s
@@ -225,13 +224,36 @@ func (r *Realm) appendValue(s []Value, v Value) []Value {
 	return append(s, v)
 }
 
-// growValues returns s with room for n more values, grown as append grows
-// it, and charges the new storage.
+// growValues returns s with room for n more values and charges the new
+// storage. Up to growLargeMin values it grows as append does, doubling;
+// past them append grows by a quarter and then less, so an array filled by
+// push allocates about five times its final size in all, and the copies
+// were 23 % of the bytes a server render of a React page allocated. There
+// s keeps doubling: about twice the final size in all. Growing by half, as
+// QuickJS grows its arrays, saved less, and from growLargeMin to about
+// 1,500 values allocated more than append, which grows by more than half
+// up to there.
+//
+// From half of growLargeMin, the storage of an array literal site's latest
+// result may jump to the room the site's large results took instead
+// (siteTable.grow).
 func (r *Realm) growValues(s []Value, n int) []Value {
-	s = slices.Grow(s, n)
+	if c := cap(s); c >= growLargeMin && len(s)+n > c {
+		ns := make([]Value, len(s), max(len(s)+n, 2*c))
+		copy(ns, s)
+		s = ns
+	} else if c >= siteBigMin && len(s)+n > c && r.lazy != nil && r.lazy.sites != nil {
+		s = r.lazy.sites.grow(s, n)
+	} else {
+		s = slices.Grow(s, n)
+	}
 	r.charge(cap(s) * valueSize)
 	return s
 }
+
+// growLargeMin is the capacity from which growValues doubles a slice where
+// append grows it by less.
+const growLargeMin = 256
 
 // SetMemoryLimit sets the number of bytes the realm's JavaScript may
 // retain, as the last measurement of its heap found, plus allocate since
@@ -488,17 +510,18 @@ func (r *Realm) memoryLimitHit(m *memAccount) {
 }
 
 // shareText sets the share root of the strings a parse reads out of src
-// (jsonParser.plain): text, whose units src is, or a String of its own for
-// the host's text, a working copy or a text FromGo carved (shareRoot),
-// which keeps its bytes for the live measurement to count; its kind is
-// strASCII whatever the bytes, and it is never a value.
+// (jsonParser.plain, Realm.lazyStringSized): text, whose units or lazy source src
+// is, or a String of its own for the host's text, a working copy or a text
+// FromGo carved (shareRoot), which keeps its bytes for the live measurement
+// to count; its kind is strASCII whatever the bytes, and it is never a
+// value.
 func (m *memAccount) shareText(src string, text *String) {
 	switch {
 	case len(src) < shareMin:
 		text = nil // values count their own units (shareRoot)
 	case text == nil:
 		text = &String{s: src, kind: strASCII}
-	case text.kind != strRope:
+	case !text.needsFlat():
 		if text = text.shareRoot(); text == nil {
 			text = &String{s: src, kind: strASCII}
 		}
@@ -511,11 +534,11 @@ func (m *memAccount) shareText(src string, text *String) {
 // units.
 func (r *Realm) substring(s *String, start, end int) *String {
 	if lz := r.lazy; lz != nil && lz.mem != nil && start < end && (start > 0 || end < s.Len()) {
-		// A rope's kind never changes: its contents are read through a
-		// view (flat), which only its kind is read of, so it stays on the
-		// stack.
+		// A rope's or lazy string's kind never changes: its contents are
+		// read through flat, of whose result only the kind is read, so a
+		// rope's view stays on the stack.
 		f := s
-		if s.kind == strRope {
+		if s.needsFlat() {
 			f = s.flat(new(String))
 		}
 		n := 0

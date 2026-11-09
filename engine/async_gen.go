@@ -52,7 +52,7 @@ func (r *Realm) newAsyncGenerator(fn *Object, fd *FunctionData, this Value) (*Ob
 	ag.re.reactor = ag
 	r.chargeObject(unsafe.Sizeof(asyncGenerator{}) + uintptr(len(ag.g.regs)*valueSize))
 	o := initObject(&ag.obj, ClassAsyncGenerator, r.rootShapeFor(proto))
-	o.internal = ag
+	setExtData(o, kindAsyncGenerator, ag)
 	return o, nil
 }
 
@@ -174,7 +174,7 @@ func (r *Realm) asyncGenEnqueue(this, v, mode Value, method string) (Value, erro
 	p := r.newPromise()
 	var ag *asyncGenerator
 	if this.IsObject() && this.AsObject().class == ClassAsyncGenerator {
-		ag = this.AsObject().internal.(*asyncGenerator)
+		ag = extDataOf(this.AsObject(), kindAsyncGenerator)
 	}
 	if ag == nil {
 		return r.rejectWith(p, r.TypeError("AsyncGenerator.prototype.%s called on incompatible receiver %s", method, r.DisplayString(this)))

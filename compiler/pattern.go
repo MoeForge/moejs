@@ -72,8 +72,10 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 		if prop.Computed {
 			k = f.alloc()
 			f.expr(prop.Key, k)
-			if f.isRefTarget(prop.Value) {
+			if f.isRefTarget(prop.Value) || excl >= 0 {
 				// The target's evaluation may run code: ToPropertyKey first.
+				// With a rest element the key converted once is also the one
+				// the rest excludes (CopyDataPropsEx would convert it again).
 				f.emitAB(bytecode.ToPropertyKey, k, k)
 			}
 		} else if name = f.literalKeyName(prop.Key); isArrayIndexName(name) || excl >= 0 {

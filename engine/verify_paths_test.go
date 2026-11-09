@@ -184,11 +184,11 @@ func TestVerifierControlFlow(t *testing.T) {
 	_, err = NewRealm().metaFor(catch)
 	verifierError(t, err, "handler 0 continues at 2, which starts no instruction")
 
-	// The source picks the X word: x < 51209 compares with the integer
-	// whose bits are Move R[200], R[0]. A jump onto it, as a compiler bug
-	// could make, fails.
-	require.Equal(t, uint32(51209), x, "Move's opcode moved: the source no longer encodes Move R[200], R[0]")
-	code := verifyScript(t, `function f(x) { if (x < 51209) return 1; return 0; } f(0)`)
+	// The source picks the X word: x < k compares with the integer k whose
+	// bits are Move R[200], R[0]. A jump onto it, as a compiler bug could
+	// make, fails.
+	k := strconv.Itoa(int(x))
+	code := verifyScript(t, `function f(x) { if (x < `+k+`) return 1; return 0; } f(0)`)
 	f := code.Children[0]
 	at := -1
 	for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
@@ -198,7 +198,7 @@ func TestVerifierControlFlow(t *testing.T) {
 	}
 	require.GreaterOrEqual(t, at, 0, "no compare against the X word %d", x)
 	r := NewRealm()
-	assert.Equal(t, "1", runScriptsIn(t, r, `(function f(x) { if (x < 51209) return 1; return 0; })(0)`))
+	assert.Equal(t, "1", runScriptsIn(t, r, `(function f(x) { if (x < `+k+`) return 1; return 0; })(0)`))
 	f.Code[at] = bytecode.EncodeAsBx(bytecode.DecodeOp(f.Code[at]), bytecode.DecodeA(f.Code[at]), 0) // onto its own X word
 	_, err = NewRealm().RunScript(code)
 	verifierError(t, err, "which starts no instruction")
@@ -229,7 +229,7 @@ func TestVerifierKindOperands(t *testing.T) {
 		{"ArrayPush on a plain object", "ArrayPush reads register 0 as an array", []uint32{obj, abc(bytecode.ArrayPush, 0, 1, 0), ret}},
 		{"ForInNext without ForInInit", "ForInNext reads register 1 as a for-in index", []uint32{obj, bytecode.EncodeAsBx(bytecode.LoadInt, 1, 0), bytecode.EncodeAsBx(bytecode.ForInNext, 0, 0), ret}},
 	} {
-		_, err := NewRealm().metaFor(&bytecode.Function{Name: "f", NumRegs: 8, Strict: true, Code: c.code})
+		_, err := NewRealm().metaFor(&bytecode.Function{Name: "f", NumRegs: 8, Strict: true, ICCount: 1, Consts: []bytecode.Const{{Kind: bytecode.ConstString, Str: "x", IsASCII: true, Key: true}}, Code: c.code})
 		verifierError(t, err, c.want)
 	}
 

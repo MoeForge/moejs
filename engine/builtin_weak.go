@@ -68,13 +68,10 @@ func sideOf(key Value, create bool) (side *weakSide, carried bool) {
 		if o.IsShared() {
 			return nil, false
 		}
-		if o.dict == nil {
-			if !create {
-				return nil, true
-			}
-			o.dict = &dictProps{}
+		if o.dictTable() == nil && !create {
+			return nil, true
 		}
-		slot = &o.dict.weak
+		slot = &o.ensureDict().weak
 	}
 	if *slot == nil && create {
 		*slot = &weakSide{}
@@ -166,11 +163,10 @@ func (r *Realm) newWeakCollection(proto *Object, class Class) (*Object, *weakCol
 	r.chargeObject(unsafe.Sizeof(weakCollObject{}))
 	o := &co.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = class
 	o.flags = flagExtensible
 	co.data.self = weak.Make(&co.data)
-	o.internal = &co.data
+	setData(o, kindWeakColl, &co.data)
 	return o, &co.data
 }
 
@@ -179,7 +175,7 @@ func (r *Realm) newWeakCollection(proto *Object, class Class) (*Object, *weakCol
 func thisWeakColl(r *Realm, this Value, class Class, method string) (*weakColl, error) {
 	if this.IsObject() {
 		if o := this.AsObject(); o.class == class {
-			if c, ok := o.internal.(*weakColl); ok {
+			if c, ok := dataOk(o, kindWeakColl); ok {
 				return c, nil
 			}
 		}
@@ -435,10 +431,9 @@ func weakRefConstruct(r *Realm, args []Value, newTarget *Object) (Value, error) 
 	r.chargeObject(unsafe.Sizeof(weakRefObject{}))
 	o := &wo.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassWeakRef
 	o.flags = flagExtensible
-	o.internal = &wo.data
+	setData(o, kindWeakRef, &wo.data)
 	d := &wo.data
 	switch {
 	case t.IsSymbol() && t.AsSymbol().wellKnown, t.IsObject() && t.AsObject().IsShared():
@@ -455,7 +450,7 @@ func weakRefConstruct(r *Realm, args []Value, newTarget *Object) (Value, error) 
 // weakRefProtoDeref implements WeakRef.prototype.deref.
 func weakRefProtoDeref(r *Realm, this Value, args []Value) (Value, error) {
 	if this.IsObject() && this.AsObject().class == ClassWeakRef {
-		if d, ok := this.AsObject().internal.(*weakRefData); ok {
+		if d, ok := dataOk(this.AsObject(), kindWeakRef); ok {
 			v := d.target()
 			if !v.IsUndefined() {
 				r.keepDuringJob(d, v)

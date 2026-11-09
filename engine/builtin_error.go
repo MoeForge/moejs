@@ -157,7 +157,7 @@ func errorCaptureStackTrace(r *Realm, this Value, args []Value) (Value, error) {
 		}
 	}
 	if n := r.interp.nframes; skip == nil && n > 0 {
-		if callee, _, _, ok := r.callSite(n - 1); ok && callee.internal.(*FunctionData).isNative() {
+		if callee, _, _, ok := r.callSite(n - 1); ok && callee.funcData().isNative() {
 			skip = callee
 		}
 	}

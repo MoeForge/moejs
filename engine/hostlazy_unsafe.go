@@ -2,12 +2,21 @@ package engine
 
 import "unsafe"
 
-// The host sentinel is the first field of hostHeap, so a placeholder's shape
-// pointer is its heap.
-var _ [0]struct{} = [unsafe.Offsetof(hostHeap{}.sentinel)]struct{}{}
+// The object sentinel is the first field of hostHeap (its slot is 0) and the
+// array sentinel the first of hostArraySentinel (slot 1), so a placeholder's
+// shape pointer leads to its heap.
+var (
+	_ [0]struct{} = [unsafe.Offsetof(hostHeap{}.sentinel)]struct{}{}
+	_ [0]struct{} = [unsafe.Offsetof(hostArraySentinel{}.shape)]struct{}{}
+)
 
 // hostHeapOf returns the heap whose sentinel s is; s must be a host sentinel.
-func hostHeapOf(s *Shape) *hostHeap { return (*hostHeap)(unsafe.Pointer(s)) }
+func hostHeapOf(s *Shape) *hostHeap {
+	if s.slot == 0 {
+		return (*hostHeap)(unsafe.Pointer(s))
+	}
+	return (*hostArraySentinel)(unsafe.Pointer(s)).h
+}
 
 // boxedSlice is the data word of a Go slice held in an interface: the
 // address of its boxed header. With the slice's type (a hostSlice* kind) it

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/binary"
+	"math/bits"
 	"sync/atomic"
 	"unsafe"
 )
@@ -40,6 +41,34 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
+}
+
+// caseLetters returns the top bit of each byte of the eight ASCII bytes x
+// that is from to from+25, 'A' to 'Z' or 'a' to 'z'. No byte is >= 0x80,
+// so that adding to one never carries into the next: its top bit is set
+// after adding 0x80-from when it is >= from, and after adding 0x80-from-26
+// when it is >= from+26, and the bits that differ are those of the letters.
+func caseLetters(x uint64, from byte) uint64 {
+	return ((x + swarLSB*uint64(0x80-from)) ^ (x + swarLSB*uint64(0x80-from-26))) & swarMSB
+}
+
+// asciiCaseIndex returns the index of the first byte of the ASCII s that
+// is from to from+25 (caseLetters), len(s) if there is none, eight bytes at
+// a time; the view of s is as isASCII's.
+func asciiCaseIndex(s string, from byte) int {
+	b := unsafe.Slice(unsafe.StringData(s), len(s))
+	i := 0
+	for ; i+8 <= len(b); i += 8 {
+		if m := caseLetters(binary.LittleEndian.Uint64(b[i:]), from); m != 0 {
+			return i + bits.TrailingZeros64(m)/8
+		}
+	}
+	for ; i < len(b); i++ {
+		if b[i]-from < 26 {
+			return i
+		}
+	}
+	return len(b)
 }
 
 // bytesToString converts a byte slice to a string without copying. The
@@ -127,6 +156,78 @@ func newASCIIBuf(n int) (*String, []byte) {
 	return s, b
 }
 
+// ownsUnits reports whether the flat ASCII string s keeps nothing alive but
+// its own header and units: an atom, whose units the table cloned (or a
+// static one), or a string whose bytes share its allocation
+// (newASCIIBuf), as a short concatenation's or a number's. A substring,
+// a slice of a JSON text, a host's string or one in an append buffer keeps
+// the string, text or buffer it shares.
+//
+// GC safety: only addresses are compared, as integers; no pointer is made
+// from the sum, which past a header alone would point at the next object.
+func ownsUnits(s *String) bool {
+	return s.atom != 0 || uintptr(unsafe.Pointer(unsafe.StringData(s.s))) == uintptr(unsafe.Pointer(s))+unsafe.Sizeof(String{})
+}
+
+// unitsAddr returns the address of the units of the flat ASCII string s,
+// as an integer that keeps nothing alive (concatRecent).
+func unitsAddr(s *String) uintptr {
+	return uintptr(unsafe.Pointer(unsafe.StringData(s.s)))
+}
+
+// utf16Buf is a UTF-16 String and its code units in one allocation, up to
+// as many as the array A holds (newUTF16Buf).
+type utf16Buf[A any] struct {
+	s String
+	u A
+}
+
+// newUTF16In allocates a utf16Buf and returns its String and its first n
+// code units, n <= the units A holds.
+//
+// GC safety: the units are an interior part of the allocation the String
+// heads, as newASCIIBuf's bytes are; the slice covers memory within it.
+func newUTF16In[A any](n int) (*String, []uint16) {
+	x := new(utf16Buf[A])
+	return &x.s, unsafe.Slice((*uint16)(unsafe.Pointer(&x.u)), n)
+}
+
+// newUTF16Buf returns a UTF-16 String of n code units together with the
+// units that back it, under newASCIIBuf's rules: the caller writes every
+// unit, one at least >= 0x80, before the string is published and none
+// after. Up to ropeThreshold units the header and the units share one
+// allocation, in steps of eight units, one size class each, so that the
+// one takes no more than the two did but where n is 1 to 4 or 9 to 12 (8
+// bytes more).
+func newUTF16Buf(n int) (*String, []uint16) {
+	var (
+		s *String
+		u []uint16
+	)
+	switch (n + 7) / 8 {
+	case 1:
+		s, u = newUTF16In[[8]uint16](n)
+	case 2:
+		s, u = newUTF16In[[16]uint16](n)
+	case 3:
+		s, u = newUTF16In[[24]uint16](n)
+	case 4:
+		s, u = newUTF16In[[32]uint16](n)
+	case 5:
+		s, u = newUTF16In[[40]uint16](n)
+	case 6:
+		s, u = newUTF16In[[48]uint16](n)
+	case 7:
+		s, u = newUTF16In[[56]uint16](n)
+	case 8:
+		s, u = newUTF16In[[64]uint16](n)
+	default:
+		s, u = &String{}, make([]uint16, n)
+	}
+	*s = String{p: unitsPtr(u), n: int32(n), kind: strUTF16}
+	return s, u
+}
+
 // asciiStringCopy returns an ASCII String holding a copy of b (which the
 // caller keeps ownership of); short contents are co-allocated with the
 // header.
@@ -201,6 +302,10 @@ func unitsPtr(u []uint16) unsafe.Pointer { return unsafe.Pointer(unsafe.SliceDat
 func utf16String(u []uint16) *String {
 	return &String{p: unitsPtr(u), n: int32(len(u)), kind: strUTF16}
 }
+
+// utf16BufMax is the most code units newUTF16Buf allocates with their
+// String header.
+const utf16BufMax = ropeThreshold
 
 // appendBuf heads an append buffer (string_append.go); its code units, ASCII
 // bytes or UTF-16 units, follow it directly.

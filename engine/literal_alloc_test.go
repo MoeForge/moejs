@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MoeForge/moejs/compiler"
@@ -124,4 +125,45 @@ func TestLiteralShapesStayTableFree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, IntValue(12), x)
 	assert.NotNil(t, o.Shape().table, "the final shape builds its table on lookup")
+}
+
+// TestResultAllocations guards the built-in results made at their length:
+// a slice, split, concat, splice, Array.of, Array.from, rest parameter, filter
+// and exec result of a few elements is one allocation with its storage, and
+// the values are right. The counts include what the body itself allocates.
+func TestResultAllocations(t *testing.T) {
+	skipInRegcheck(t)
+	const setup = `const a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], one = [5], big = [1, 2, 3, 4, 5, 6, 7, 8, 9], odd = a.concat(1, 2, 3); `
+	for _, c := range []struct {
+		body   string
+		allocs float64
+		want   string
+	}{
+		{`return a.slice(1, 4)`, 1, `[2,3,4]`},
+		{`return a.slice(1, 8)`, 1, `[2,3,4,5,6,7,8]`},
+		{`return big.slice()`, 1, `[1,2,3,4,5,6,7,8,9]`},
+		{`return odd.slice()`, 2, `[1,2,3,4,5,6,7,8,9,10,1,2,3]`}, // 13 keeps its slice (coArray)
+		{`return "a,b,c".split(",")`, 2, `["a","b","c"]`},         // the array and the pieces
+		{`return "abc".split("")`, 1, `["a","b","c"]`},
+		{`return one.concat(one, 6)`, 1, `[5,5,6]`},
+		{`const b = a.slice(0, 5); return [b.splice(1, 2), b]`, 3, `[[2,3],[1,4,5]]`},
+		{`return Array.of(1, 2)`, 2, `[1,2]`}, // and the arguments of the call
+		{`return Array(1, 2, 3)`, 1, `[1,2,3]`},
+		{`return Array.from(one)`, 1, `[5]`},
+		{`return ((p, ...r) => r)(1, 2, 3)`, 2, `[2,3]`}, // and the arrow
+		{`return ((p, ...r) => r)(1)`, 2, `[]`},
+		{`return one.filter(x => x > 1)`, 2, `[5]`},
+		{`return [].filter(x => x)`, 3, `[]`},           // and the literal
+		{`return /a(b)?/.exec("xab")`, 5, `["ab","b"]`}, // and the regexp's two and both captures
+	} {
+		allocs, r, fn := callAllocs(t, setup+`export function f() { `+c.body+` }`)
+		// Under the race detector sync.Pool drops some of its puts, so exec
+		// makes a backtracking machine now and then (regexp_bt.go).
+		if !raceEnabled || !strings.Contains(c.body, "exec") {
+			assert.Equal(t, c.allocs, allocs, c.body)
+		}
+		v, err := r.Call(fn, Undefined(), nil)
+		require.NoError(t, err)
+		assert.Equal(t, c.want, jsonOf(t, r, v), c.body)
+	}
 }

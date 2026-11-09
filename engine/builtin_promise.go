@@ -63,7 +63,7 @@ func installPromise(r *Realm) {
 	proto := r.newIntrinsic(ClassObject, r.ObjectPrototype, len(promiseProtoMethods)+2)
 	ctor := r.newConstructor(AtomPromise, 1, requireNew("Promise"), promiseConstruct, proto)
 	// The executor's resolving functions keep the promise it runs for.
-	ctor.internal.(*FunctionData).measurable = true
+	ctor.funcData().measurable = true
 	r.promise = &promiseIntrinsics{proto: proto, ctor: ctor, root: r.rootShapeFor(proto)}
 	r.installBuiltins(proto, promiseProtoMethods)
 	r.installToStringTag(proto, AtomPromise)
@@ -96,7 +96,7 @@ const (
 // [[PromiseFulfillReactions]] and [[PromiseRejectReactions]] are one list:
 // every then adds one reaction to both, so each record holds both handlers.
 // The list is a ring through last, whose next is the first reaction, so one
-// pointer appends in order and promiseObject fits the 128-byte size class.
+// pointer appends in order and promiseObject fits the 80-byte size class.
 type promiseData struct {
 	result  Value
 	last    *promiseReaction
@@ -156,7 +156,7 @@ var thenKey = StringKey(AtomThen)
 // %Promise.prototype%.then without a lookup: one of %Promise.prototype%
 // with no own property, while the guard sees the original then.
 func (r *Realm) nativeThen(o *Object, pi *promiseIntrinsics) bool {
-	return o.class == ClassPromise && o.proto == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.thenGuard)
+	return o.class == ClassPromise && o.Proto() == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.thenGuard)
 }
 
 // notThenable reports whether o has no then without a lookup: o has no
@@ -168,10 +168,10 @@ func (r *Realm) notThenable(o *Object, pi *promiseIntrinsics) bool {
 	if o.flags&(flagDict|flagHasLazy) != 0 {
 		return false
 	}
-	switch o.proto {
+	switch o.Proto() {
 	case r.ObjectPrototype:
 	case r.ArrayPrototype:
-		if !r.sharedIntrinsics && (o.proto.proto != r.ObjectPrototype || !r.absentHolds(&pi.arrayThen)) {
+		if !r.sharedIntrinsics && (o.Proto().Proto() != r.ObjectPrototype || !r.absentHolds(&pi.arrayThen)) {
 			return false
 		}
 	default:
@@ -190,7 +190,7 @@ func (r *Realm) notThenable(o *Object, pi *promiseIntrinsics) bool {
 // property, while %Promise.prototype%.constructor is %Promise%. Such a
 // lookup runs no code, so skipping it is unobservable.
 func (r *Realm) plainPromise(o *Object, pi *promiseIntrinsics) bool {
-	return o.class == ClassPromise && o.proto == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.ctorGuard)
+	return o.class == ClassPromise && o.Proto() == pi.proto && o.shape.count == 0 && o.flags&(flagDict|flagHasLazy) == 0 && r.guardHolds(&pi.ctorGuard)
 }
 
 // promiseSpecies implements SpeciesConstructor(p, %Promise%), with no
@@ -218,10 +218,9 @@ func (r *Realm) initPromise(po *promiseObject, proto *Object, root *Shape) *Obje
 	po.data.result = Undefined()
 	o := &po.obj
 	o.shape = root
-	o.proto = proto
 	o.class = ClassPromise
 	o.flags = flagExtensible
-	o.internal = &po.data
+	setData(o, kindPromise, &po.data)
 	return o
 }
 
@@ -283,7 +282,7 @@ func (r *Realm) rejectPromise(p *Object, reason Value) { r.settlePromise(p, reas
 // settlePromise implements FulfillPromise and RejectPromise, queueing the
 // reactions in the order they were added.
 func (r *Realm) settlePromise(p *Object, v Value, rejected bool) {
-	d := p.internal.(*promiseData)
+	d := dataOf(p, kindPromise)
 	if d.state != PromisePending {
 		return
 	}
@@ -309,7 +308,7 @@ func (r *Realm) settlePromise(p *Object, v Value, rejected bool) {
 
 // performPromiseThen implements PerformPromiseThen with the reaction re.
 func (r *Realm) performPromiseThen(p *Object, re *promiseReaction) {
-	d := p.internal.(*promiseData)
+	d := dataOf(p, kindPromise)
 	switch d.state {
 	case PromisePending:
 		if d.last == nil {
@@ -508,8 +507,8 @@ func (r *Realm) createResolvingFunctions(p *Object) (s *resolvingFns, resolve, r
 // NewNativeDataFunction makes a function.
 func (r *Realm) initResolvingFunction(fo *nativeFuncObject, fn NativeDataFunc, s *resolvingFns) *Object {
 	r.initFunction(&fo.obj, &fo.fd, fo.slots[:], AtomEmpty, 1, FuncNativeData)
-	fo.fd.dataFn = fn
-	fo.fd.data = s
+	fo.nat.dataFn = fn
+	fo.nat.data = s
 	return &fo.obj
 }
 

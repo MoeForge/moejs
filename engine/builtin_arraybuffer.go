@@ -101,10 +101,9 @@ func (r *Realm) newBufferObject(proto *Object, class Class, data []byte, maxLen 
 	r.chargeObject(unsafe.Sizeof(bufferObject{}))
 	o := &bo.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = class
 	o.flags = flagExtensible
-	o.internal = &bo.buf
+	setExtData(o, kindArrayBuffer, &bo.buf)
 	return o
 }
 
@@ -115,7 +114,7 @@ func (r *Realm) shareBuffer(b *arrayBuffer) *Object {
 	proto := r.binaryIntr().SharedArrayBufferPrototype
 	r.markPrototype(proto)
 	o := r.newObject(ClassSharedArrayBuffer, r.rootShapeFor(proto))
-	o.internal = b
+	setExtData(o, kindArrayBuffer, b)
 	return o
 }
 
@@ -176,7 +175,7 @@ func (r *Realm) maxByteLengthOption(options Value) (int64, error) {
 func thisBuffer(r *Realm, this Value, class Class, method string) (*arrayBuffer, error) {
 	if this.IsObject() {
 		if o := this.AsObject(); o.class == class {
-			if b, ok := o.internal.(*arrayBuffer); ok {
+			if b, ok := extDataOk(o, kindArrayBuffer); ok {
 				return b, nil
 			}
 		}
@@ -189,7 +188,7 @@ func thisBuffer(r *Realm, this Value, class Class, method string) (*arrayBuffer,
 // view over it becomes out of bounds.
 func (r *Realm) DetachArrayBuffer(v Value) error {
 	if v.IsObject() && v.AsObject().class == ClassArrayBuffer {
-		if b, ok := v.AsObject().internal.(*arrayBuffer); ok {
+		if b, ok := extDataOk(v.AsObject(), kindArrayBuffer); ok {
 			b.data, b.detached = nil, true
 			return nil
 		}
@@ -219,7 +218,7 @@ func (r *Realm) NewArrayBuffer(data []byte) (*Object, error) {
 // empty for a detached buffer and a view out of its buffer's bounds. It is
 // valid until JavaScript next runs, which may detach or resize the buffer.
 func (o *Object) BufferData() (data []byte, ok bool) {
-	switch x := o.internal.(type) {
+	switch x := o.payload().(type) {
 	case *arrayBuffer:
 		return x.data[:len(x.data):len(x.data)], true
 	case *typedArray:
@@ -232,7 +231,7 @@ func (o *Object) BufferData() (data []byte, ok bool) {
 
 // IsDetachedBuffer reports whether o is a detached ArrayBuffer.
 func (o *Object) IsDetachedBuffer() bool {
-	b, ok := o.internal.(*arrayBuffer)
+	b, ok := extDataOk(o, kindArrayBuffer)
 	return ok && b.detached
 }
 

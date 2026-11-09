@@ -203,15 +203,15 @@ func CompileEval(e *syntax.Eval) (*bytecode.Function, error) {
 
 // compileEvalStop is CompileEval, calling stop as scriptState.stop.
 func compileEvalStop(e *syntax.Eval, stop func() error) (*bytecode.Function, error) {
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileEvalWith(e, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileEvalWith(e, stop, noHoist, spill)
 	})
 }
 
 // compileEvalWith is compileEvalStop without hoisting in the functions of
 // noHoist.
-func compileEvalWith(e *syntax.Eval, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
-	c := newCompiler(e.File, &scriptState{stop: stop}, noHoist)
+func compileEvalWith(e *syntax.Eval, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
+	c := newCompiler(e.File, &scriptState{stop: stop}, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	// The caller: a script or module top level and, when the eval code has
@@ -269,9 +269,7 @@ func compileEvalWith(e *syntax.Eval, stop func() error, noHoist map[*syntax.Func
 	f.emitA(bytecode.LoadUndef, f.completion)
 	varStart := f.nregs
 	f.allocScopeRegs(s)
-	if n := f.nregs - varStart; n > 0 {
-		f.emitAB(bytecode.UndefRange, varStart, n)
-	}
+	f.emitUndefRange(varStart, f.nregs-varStart)
 	f.initTDZ(s)
 	switch {
 	case e.Strict:

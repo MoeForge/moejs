@@ -110,47 +110,79 @@ moejs vs Sobek, 100 iterations per operation:
 
 ![moejs plugin benchmark](assets/plugin-bench.en.png)
 
-Throughput of new-api's plugin workloads on the engines a Go program can embed, with QuickJS called straight from C as a reference, measured on 2026-10-21 with moejs v0.1.0-alpha.9.
+Throughput of new-api's plugin workloads on the engines a Go program can embed, with QuickJS called straight from C as a reference, measured on 2026-11-08 with moejs from the 2026-11-07 source. The chart shows requests per second at 8 workers and memory with one 8 MiB image at 32 workers; the tables below have every cell. `uv run --no-project --with matplotlib==3.11.2 bench/scripts/plugin_chart.py` redraws it from `docs/assets/plugin-bench.jsonl` (`--tables` prints the tables).
 
-- Intel Xeon E5-2667 v4 (Broadwell, 3.2 GHz), a KVM guest with 14 vCPUs and 15 GB of RAM, with the benchmark pinned to 8 of the vCPUs (taskset 0-7, GOMAXPROCS=8), Debian 13, Go 1.26.6, gcc 14.2.
-- One runtime per worker. A call hands JSON bytes to the engine to parse, calls the plugin, and serializes the result into bytes the host owns. Each run warms up for 2 s and measures 6 s (small and agent requests) or 8 s (large requests). Runs go back to back, the engine order changes for every cell, and every cell is the median of 3 rounds.
-- Each run records the CPU time other processes in the guest used while it ran, and none averaged more than a quarter of a core. Load from other guests on the host does not show up there, so every run first waited for a short probe showing the host quiet, and a run more than 5 % slower than both other rounds of its cell was repeated.
+- Intel Xeon E5-2699A v4 (Broadwell, 2.4 GHz), a KVM guest with 24 vCPUs, one thread per core and 16 MiB L3, with the benchmark pinned to 8 of the vCPUs (taskset 0-7, GOMAXPROCS=8), Debian 13, Go 1.26.6, gcc 14.2.
+- One runtime per worker. A call hands JSON bytes to the engine to parse, calls the plugin, and serializes the result into bytes the host owns. Each run warms up for 2 s and measures 6 s (small and agent requests) or 8 s (large requests). Runs are sequential, the engine order changes for every cell, and every cell is the median of 3 runs.
+- Each run records competing CPU time on the benchmark's 8 pinned vCPUs; runs averaging more than a quarter of a core are repeated. A short CPU-bound canary gates every run; image throughput and memory measurements also require a memory-bound canary to pass, screening for load from other guests on the host. A run more than 5% slower than both other runs of its cell is repeated.
 - Small requests are 269 real calls to new-api's 10 task plugins. Agent requests are 8 different coding sessions of 100k tokens each (o200k_base): a system prompt, 12 tool definitions, a user task and the results of 67 to 102 tool calls (Go source, grep hits and test output). The agent plugin was written for this benchmark against the interface of new-api's task plugin buildSubmitRequest: it converts every message, renames the model, prefixes the system prompt, drops parameters and JSON Schema keywords the upstream rejects, and returns url, headers and body. Large requests take 25 MB in and 17 MB out.
-- Memory is the Go heap still live after a GC plus the bytes glibc malloc has in use, read while every worker is stopped right after its last call. It includes the 32 runtimes and leaves out garbage waiting for collection.
+- Memory is the Go heap still live after a GC plus the bytes glibc malloc has in use, read while every worker is stopped right after its last call. It reports the largest of 5 snapshots, includes the 32 runtimes and leaves out garbage waiting for collection.
 - quickjs-go v0.7.7 turns its goroutine check on by default, which reads a goroutine stack on every API call. The charts show both settings. Both serialize with JSON.stringify, because Value.JSONStringify leaks. Sobek is the 2026-07-08 version.
 - modernc.org/quickjs v0.25.0 is QuickJS translated to pure Go by the modernc toolchain, with no cgo. It has no JSON API, so the argument goes in as text that JSON.parse reads inside the engine, and JSON.stringify writes the result. It allocates through its own allocator, which gives no in-use figure, so it has no memory number.
 - The C hosts are built with gcc 14.2: QuickJS 2026-06-04 with -O2, quickjs-ng 0.15.1 (the copy shipped in quickjs-go) with -O3.
 - ParseJSONString reads the caller's string in place, so the caller must not change those bytes while the call's values are in use.
 
-Requests per second, median of 3 rounds:
+Requests per second, median of 3 runs:
 
 | Scenario | Workers | moejs (no copy) | moejs | Sobek | QuickJS pure Go (modernc) | quickjs-go (default) | quickjs-go (check off) | QuickJS (C) | quickjs-ng (C) |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| Small requests | 1 | 30,073 | 29,720 | 4,983 | 10,519 | 6,243 | 14,428 | 32,912 | 15,965 |
-| Small requests | 8 | 176,507 | 167,400 | 24,047 | 46,701 | 5,160 | 99,633 | 262,285 | 127,922 |
-| Small requests | 32 | 180,656 | 173,501 | 24,077 | 44,074 | 5,304 | 98,157 | 262,340 | 127,314 |
-| Agent requests, 100k tokens | 1 | 580 | 562 | 99 | 109 | 154 | 157 | 300 | 219 |
-| Agent requests, 100k tokens | 8 | 3,238 | 2,933 | 564 | 407 | 1,075 | 1,116 | 2,405 | 1,734 |
-| Agent requests, 100k tokens | 32 | 3,559 | 3,294 | 565 | 377 | 1,005 | 1,078 | 2,189 | 1,605 |
-| One 8 MiB image | 1 | 83.6 | 65.3 | 2.5 | 3.0 | 5.7 | 5.6 | 10.0 | 11.0 |
-| One 8 MiB image | 8 | 561 | 269 | 18.1 | 14.9 | 40.9 | 40.7 | 77.7 | 79.1 |
-| One 8 MiB image | 32 | 570 | 284 | 18.4 | 15.7 | 41.3 | 41.0 | 77.0 | 78.5 |
-| Eight 1 MiB images | 1 | 83.6 | 65.2 | 2.6 | 2.9 | 5.7 | 5.7 | 10.0 | 9.6 |
-| Eight 1 MiB images | 8 | 546 | 268 | 19.0 | 14.9 | 40.9 | 41.0 | 77.5 | 72.9 |
-| Eight 1 MiB images | 32 | 565 | 282 | 19.9 | 14.0 | 41.2 | 40.7 | 76.2 | 78.9 |
+| Small requests | 1 | 32,723 | 32,208 | 4,198 | 8,767 | 5,365 | 12,356 | 28,021 | 13,585 |
+| Small requests | 8 | 207,896 | 195,365 | 20,809 | 40,981 | 4,613 | 85,604 | 223,283 | 108,490 |
+| Small requests | 32 | 208,255 | 198,909 | 21,270 | 37,935 | 4,566 | 83,542 | 222,275 | 107,070 |
+| Agent requests, 100k tokens | 1 | 963 | 878 | 83 | 92 | 131 | 133 | 255 | 186 |
+| Agent requests, 100k tokens | 8 | 5,874 | 4,582 | 496 | 361 | 924 | 957 | 2,053 | 1,480 |
+| Agent requests, 100k tokens | 32 | 6,407 | 5,104 | 488 | 341 | 869 | 928 | 1,967 | 1,424 |
+| One 8 MiB image | 1 | 91.5 | 59.6 | 2.1 | 2.5 | 4.7 | 4.9 | 8.6 | 9.4 |
+| One 8 MiB image | 8 | 578 | 204 | 15.7 | 12.4 | 34.9 | 34.6 | 67.2 | 69.1 |
+| One 8 MiB image | 32 | 648 | 211 | 15.8 | 13.5 | 34.1 | 34.9 | 65.7 | 65.2 |
+| Eight 1 MiB images | 1 | 86.1 | 59.3 | 2.2 | 2.5 | 4.9 | 4.7 | 8.6 | 8.5 |
+| Eight 1 MiB images | 8 | 525 | 199 | 16.0 | 12.4 | 34.4 | 34.6 | 66.5 | 62.7 |
+| Eight 1 MiB images | 32 | 625 | 202 | 16.2 | 12.6 | 34.0 | 33.9 | 64.7 | 65.0 |
 
 Memory in use at 32 workers, MiB (modernc has no in-use figure):
 
 | Scenario | moejs (no copy) | moejs | Sobek | QuickJS pure Go (modernc) | quickjs-go (default) | quickjs-go (check off) | QuickJS (C) | quickjs-ng (C) |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
-| One 8 MiB image | 384 | 1,152 | 1,101 | — | 1,110 | 1,110 | 1,138 | 1,140 |
-| Eight 1 MiB images | 366 | 1,134 | 1,104 | — | 1,110 | 1,110 | 1,138 | 1,141 |
+| One 8 MiB image | 380 | 1,148 | 1,101 | — | 1,111 | 1,110 | 1,138 | 1,140 |
+| Eight 1 MiB images | 362 | 1,130 | 1,104 | — | 1,110 | 1,111 | 1,138 | 1,141 |
+
+## General JavaScript: V8 benchmark suite v7
+
+![moejs on the V8 benchmark suite v7](assets/v8-bench.en.png)
+
+The suite's own `run.js` score, higher is better, measured on 2026-11-07 with moejs from the 2026-11-07 source on a Xeon E5-2699A v4 KVM guest (24 vCPUs, one thread per core, 16 MiB L3), using Go 1.27.2 and moejs built with `-tags purego`, `CGO_ENABLED=0`. Each engine ran single-threaded on its own pinned vCPU with `GOMAXPROCS=1`; scores are medians of 3 runs with rotating engine order. Up to 8 runs ran in parallel on separate vCPUs after a check found that parallel execution moved each engine's score by at most 0.8%.
+
+| Engine | Version | Score |
+|---|---|--:|
+| **moejs** | the 2026-11-07 source | **1,429** |
+| QuickJS (C) | `2026-06-04` | 1,058 |
+| go-quickjs | `github.com/go-quickjs/go-quickjs v0.28.0` | 999 |
+| modernc | `modernc.org/quickjs v0.25.0` | 323 |
+| goant | `github.com/robomotionio/goant v0.2.1` | 222 |
+| goja | `github.com/dop251/goja v0.0.0-20261020172427-7b1a02208696` | 163 |
+| Sobek | `github.com/grafana/sobek v0.0.0-20260708062710-267a0e055bb4` | 160 |
+
+Scores of the eight programs, from each engine's run with the median total; every total is the geometric mean of its column:
+
+| Program | moejs | go-quickjs | modernc | goant | goja | Sobek | QuickJS (C) |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| Richards | 1,019 | 581 | 199 | 140 | 142 | 143 | 779 |
+| DeltaBlue | 826 | 588 | 220 | 145 | 161 | 162 | 696 |
+| Crypto | 1,056 | 933 | 199 | 142 | 69.9 | 69.5 | 883 |
+| RayTrace | 1,361 | 1,033 | 403 | 179 | 147 | 142 | 1,248 |
+| EarleyBoyer | 2,003 | 1,221 | 530 | 281 | 237 | 232 | 1,655 |
+| RegExp | 1,097 | 843 | 140 | 178 | 146 | 141 | 319 |
+| Splay | 2,697 | 1,586 | 923 | 821 | 527 | 487 | 2,546 |
+| NavierStokes | 2,422 | 1,844 | 491 | 275 | 118 | 118 | 1,949 |
+| **Total** | **1,429** | **999** | **323** | **222** | **163** | **160** | **1,058** |
+
+moejs scores 1.35× C QuickJS. In a separate fixed run of all eight programs, it takes 14.29 s against v0.1.0-alpha.11's 41.55 s, a 2.9× speed-up. See [the V8 suite harness](../bench/race/README.md) to reproduce the measurements. `docs/assets/v8-bench.json` holds the scores, and `uv run --no-project --with matplotlib==3.11.2 bench/scripts/v8_chart.py` checks the totals against their programs and redraws the chart (`--table` prints the table above).
 
 ## Intl
 
 ![moejs Intl against Node.js](assets/intl-bench.en.png)
 
-Intl against Node.js 24.22 (V8, ICU 78.3), measured on 2026-10-25 with Go 1.26.6 on the machine of the plugin scenarios, pinned to the same 8 vCPUs. Both engines run the same modules of `bench/testdata` with TZ=UTC and the en-US locale: BenchmarkIntlFormat and BenchmarkIntlSegmenter for moejs, `bench/scripts/intl_format_node.mjs` and `intl_node.mjs` for Node.js. Every figure is the median of 7 rounds. A round runs moejs and Node.js in turn, the first engine alternating, between canary runs that catch load from other guests on the host.
+Intl against Node.js 24.22 (V8, ICU 78.3), measured on 2026-10-25 with Go 1.26.6 on an Intel Xeon E5-2667 v4 (KVM guest, 14 vCPUs), pinned to 8 vCPUs. Both engines run the same modules of `bench/testdata` with TZ=UTC and the en-US locale: BenchmarkIntlFormat and BenchmarkIntlSegmenter for moejs, `bench/scripts/intl_format_node.mjs` and `intl_node.mjs` for Node.js. Every figure is the median of 7 runs. Each pair runs moejs and Node.js in turn, the first engine alternating, between canary runs that catch load from other guests on the host.
 
 moejs formats 1.2 to 3.3 times as fast as Node.js and creates a formatter 4 to 15 times as fast. Per segment, Intl.Segmenter runs at 0.85x of Node.js on graphemes, 1.2x on words and 0.96x on sentences.
 
@@ -173,7 +205,13 @@ Time per call, median of 7 rounds. Speed is Node.js's time over moejs's:
 | Segmenter, per sentence | 324 ns | 310 ns | 0.96x |
 | First `toLocaleString` in a fresh process | 224 µs | 17.3 ms | 77x |
 
-The same rounds measured the Web API chart in the README, with `bench/cmd/webapibench`. `bench/scripts/intl_webapi_bench.sh` builds the benchmarks and runs new rounds, and `uv run --with matplotlib bench/scripts/intl_webapi_chart.py` redraws both charts from `docs/assets/intl-webapi-bench.jsonl` (`--table` prints the numbers).
+`bench/scripts/intl_webapi_bench.sh` builds the benchmarks and runs new rounds, and `uv run --with matplotlib bench/scripts/intl_webapi_chart.py` redraws this chart and the Web API chart below from `docs/assets/intl-webapi-bench.jsonl` (`--table` prints the numbers).
+
+## Web APIs
+
+![moejs Web APIs against Node.js](assets/webapi-bench.en.png)
+
+The same fetch script runs in moejs and in Node.js 24 against a local loopback server, measured with `bench/cmd/webapibench` in the same rounds as Intl, on 2026-10-25. moejs is faster on small requests and on a streamed body, and server-sent events are the row where it is slower.
 
 ## node:fs
 

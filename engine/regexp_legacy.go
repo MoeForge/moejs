@@ -83,7 +83,7 @@ func installRegExpCompile(r *Realm) {
 		return
 	}
 	p.mustBeMutable()
-	p.internal = (*pendingCompile)(r)
+	setExtData(p, kindPendingCompile, (*pendingCompile)(r))
 	p.flags |= flagHasLazy
 	if p.flags&flagDict == 0 && !p.shape.shared {
 		p.shape.noFill = noFillAll
@@ -108,7 +108,7 @@ type pendingCompile Realm
 // define defines compile on p, whose internal is pc.
 func (pc *pendingCompile) define(p *Object) {
 	r := (*Realm)(pc)
-	p.internal = nil
+	p.clearPayload()
 	p.flags &^= flagHasLazy
 	p.addNamed(r, compileKey, compileCell(r))
 }
@@ -119,7 +119,7 @@ func (pc *pendingCompile) define(p *Object) {
 // %RegExp% (installRegExpStatics). A lookup of any other key may read its
 // shape.
 func (o *Object) onlyLegacyPending() bool {
-	switch o.internal.(type) {
+	switch o.payload().(type) {
 	case *pendingCompile, *FunctionData:
 		return o.flags&flagDict == 0
 	}

@@ -67,9 +67,9 @@ func (r *Realm) fromRawJSON(raw json.RawMessage, h *hostHeap) (Value, error) {
 				case n == 0:
 					return h.emptyObject(), nil
 				case top:
-					return ObjectValue(h.mapNode(h.rootObject(), rawText(s))), nil
+					return ObjectValue(h.mapNode(h.rootObject(), kindRawText, rawText(s))), nil
 				}
-				return ObjectValue(h.mapNode(h.object(), rawText(s))), nil
+				return ObjectValue(h.mapNode(h.object(), kindRawText, rawText(s))), nil
 			}
 			var a *arrayObject
 			if top {
@@ -98,7 +98,7 @@ func rawTextOf(o *Object) rawText {
 		b, _ := boxedSliceIn(o.slots)
 		return *(*rawText)(b.p)
 	}
-	return o.internal.(rawText)
+	return o.payload().(rawText)
 }
 
 // unreadRawText is the text of v when v is a RawMessage placeholder
@@ -132,20 +132,19 @@ func (h *hostHeap) materializeRaw(o *Object) {
 		panic(rawUnparsable)
 	}
 	if o.class == ClassArray {
-		ad := o.internal.(*ArrayData)
 		o.slots = nil
-		ad.host = 0
-		ad.length = v.AsObject().ArrayLength() // the check counted it already
-		o.elements = v.AsObject().elements
+		o.setHostSliceKind(0)
+		o.setArrayLen(v.AsObject().ArrayLength()) // the check counted it already
+		o.setElems(v.AsObject().elems())
 		return
 	}
-	o.internal = nil
-	root := r.rootShapeFor(o.proto)
+	o.clearPayload()
+	root := r.rootShapeFor(o.Proto())
 	o.shape = root
 	src := v.AsObject()
-	o.elements = src.elements
+	o.setElems(src.elems())
 	if src.flags&flagDict != 0 {
-		o.shape = dictShape
+		o.shape = r.dictShapeFor(root.proto)
 		o.flags |= flagDict
 	} else {
 		o.slots = src.slots
@@ -154,14 +153,11 @@ func (h *hostHeap) materializeRaw(o *Object) {
 			o.shape = src.shape.rebase(r, root)
 		}
 	}
-	if d := src.dict; d != nil {
-		if o.dict == nil {
-			o.dict = d
-		} else {
-			// Keep what o's own dictionary holds besides properties (its
-			// weak entries, the root of the objects inheriting from it).
-			o.dict.index, o.dict.entries, o.dict.dead, o.dict.sparse = d.index, d.entries, d.dead, d.sparse
-		}
+	if d := src.dictTable(); d != nil {
+		// Keep what o's own dictionary holds besides properties (its weak
+		// entries, the root of the objects inheriting from it).
+		od := o.ensureDict()
+		od.index, od.entries, od.sparse = d.index, d.entries, d.sparse
 	}
 }
 

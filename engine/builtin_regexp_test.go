@@ -461,7 +461,9 @@ func TestRegExpCacheKeyKeepsSurrogates(t *testing.T) {
 		assert.Equal(t, s.UTF16(), regexpKey(s, regexpFlags{}).units(), p)
 	}
 	// Every realm that evaluates a regexp allocates a map of these keys.
-	assert.Equal(t, uintptr(24), unsafe.Sizeof(regexpCacheKey{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(24), unsafe.Sizeof(regexpCacheKey{}))
+	}
 }
 
 // The RegExp.prototype accessors, lastIndex and EscapeRegExpPattern. The

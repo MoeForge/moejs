@@ -23,8 +23,8 @@ func (r *Realm) templateObject(k *bytecode.Const, e *ICEntry) *Object {
 	}
 	var slot *Value
 	if st := &r.interp; st.nframes > 0 {
-		fd := st.frames[st.nframes-1].fn.internal.(*FunctionData)
-		if fd.meta.dyn != 0 {
+		fd := st.frames[st.nframes-1].fn.funcData()
+		if fd.meta.dyn&dynFlag != 0 {
 			slot = &fd.meta.consts[constIndex(fd.code.Consts, k)]
 			if slot.IsObject() {
 				return slot.AsObject()

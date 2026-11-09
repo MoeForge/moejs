@@ -232,8 +232,8 @@ func TestPromiseInternalContract(t *testing.T) {
 			r := NewRealmWith(RealmOptions{SharedIntrinsics: shared})
 			p := r.newPromise()
 			require.Equal(t, ClassPromise, p.class)
-			require.Same(t, r.promise.proto, p.proto)
-			d := p.internal.(*promiseData)
+			require.Same(t, r.promise.proto, p.Proto())
+			d := dataOf(p, kindPromise)
 			x := &reactionLog{}
 			r.promiseReact(p, x)
 			r.promiseReact(p, x)
@@ -267,8 +267,8 @@ func TestPromiseInternalContract(t *testing.T) {
 			assert.Same(t, p, got)
 			got, err = r.promiseResolve(IntValue(5))
 			require.NoError(t, err)
-			assert.Equal(t, PromiseFulfilled, got.internal.(*promiseData).state)
-			assert.Equal(t, 5, int(got.internal.(*promiseData).result.AsNumber()))
+			assert.Equal(t, PromiseFulfilled, dataOf(got, kindPromise).state)
+			assert.Equal(t, 5, int(dataOf(got, kindPromise).result.AsNumber()))
 		})
 	}
 }
@@ -366,7 +366,7 @@ func TestPromiseLateInstall(t *testing.T) {
 	v, err := r.Global.GetProp(r, StringKey(AtomPromise))
 	require.NoError(t, err)
 	assert.Same(t, r.promise.ctor, v.AsObject())
-	assert.Same(t, r.promise.proto, p.proto)
+	assert.Same(t, r.promise.proto, p.Proto())
 }
 
 // TestPromiseRootShape: the promises a realm makes take the root shape

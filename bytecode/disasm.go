@@ -65,18 +65,26 @@ func disassemble(sb *strings.Builder, fn *Function, indent string) {
 				sb.WriteString(strconv.Itoa(int(DecodeB(w))))
 				break
 			}
-			if op == UndefRange || op == Call || op == New {
+			if op == UndefRange || op == Call || op == New || op == MapArguments {
 				sb.WriteString(" ")
 				sb.WriteString(strconv.Itoa(int(DecodeB(w))))
-				if op == Call && DecodeC(w) == CallUndefThis {
+				if op == Call && DecodeC(w)&CallUndefThis != 0 {
 					sb.WriteString(" this=undefined")
 				}
+				if (op == Call || op == New) && DecodeC(w)&CallOverlap != 0 {
+					sb.WriteString(" overlap")
+				}
+				break
+			}
+			if op == SetProp && DecodeC(w) == SetPropSloppyFlag {
+				writeReg(sb, DecodeB(w))
+				sb.WriteString(" sloppy")
 				break
 			}
 			writeReg(sb, DecodeB(w))
 		case FmtABC:
 			writeReg(sb, DecodeA(w))
-			if op == GetEnv || op == SetEnv || op == GetEnvChk || op == GetImport {
+			if op == GetEnv || op == GetEnv0 || op == GetEnv1 || op == GetEnv2 || op == SetEnv || op == GetEnvChk || op == GetImport {
 				sb.WriteString(" env")
 				sb.WriteString(strconv.Itoa(int(DecodeB(w))))
 				sb.WriteString("[")
@@ -92,6 +100,13 @@ func disassemble(sb *strings.Builder, fn *Function, indent string) {
 				sb.WriteString(" \"")
 				sb.WriteString(TypeNames[DecodeC(w)])
 				sb.WriteString("\"")
+			} else if op == ApplyArguments {
+				if DecodeC(w) != 0 {
+					sb.WriteString(" mapped")
+				}
+			} else if op == NewObjectLit {
+				sb.WriteString(" ")
+				sb.WriteString(strconv.Itoa(int(DecodeC(w))))
 			} else {
 				writeReg(sb, DecodeC(w))
 			}
@@ -164,13 +179,27 @@ func disassemble(sb *strings.Builder, fn *Function, indent string) {
 // writeExtra renders ExtraArg word i of op.
 func writeExtra(sb *strings.Builder, op Op, i int, x uint32) {
 	switch op {
-	case GetGlobal, GetGlobalOrUndef, SetGlobal, GetProp, SetProp, DefineField, GetTemplate, SetGlobalSloppy, ResolveGlobal, SetGlobalRef, SetPropSloppy:
+	case GetGlobal, GetGlobalOrUndef, SetGlobal, GetProp, SetProp, DefineField, GetTemplate, SetGlobalSloppy, ResolveGlobal, SetGlobalRef, SetPropSloppy, NewObjectLit:
 		sb.WriteString("K")
 		sb.WriteString(strconv.Itoa(int(ExtraLo(x))))
 		sb.WriteString(" ic")
 		sb.WriteString(strconv.Itoa(int(ExtraHi(x))))
+	case RegExpTest:
+		sb.WriteString("K")
+		sb.WriteString(strconv.Itoa(int(ExtraLo(x))))
+		sb.WriteString(" r")
+		sb.WriteString(strconv.Itoa(int(ExtraHi(x))))
 	case GetLen:
 		sb.WriteString("ic")
+		sb.WriteString(strconv.Itoa(int(ExtraHi(x))))
+	case ArgsGet:
+		if x != 0 {
+			sb.WriteString("mapped")
+		}
+	case ArrayPushK, NewArrayK:
+		sb.WriteString("K")
+		sb.WriteString(strconv.Itoa(int(ExtraLo(x))))
+		sb.WriteString(" n")
 		sb.WriteString(strconv.Itoa(int(ExtraHi(x))))
 	case InitGlobal, WithGet, WithSet:
 		sb.WriteString("K")
@@ -181,11 +210,29 @@ func writeExtra(sb *strings.Builder, op Op, i int, x uint32) {
 		}
 	case GetEnvW, SetEnvW, DefineAccessor, SetPrivateMethod:
 		sb.WriteString(strconv.Itoa(int(x)))
-	case GetElemRef, JmpLt, JmpLe, JmpGt, JmpGe, JmpNLt, JmpNLe, JmpNGt, JmpNGe, JmpStrictEq, JmpStrictNe:
+	case JmpLt, JmpLe, JmpGt, JmpGe, JmpNLt, JmpNLe, JmpNGt, JmpNGe:
+		if x >= EnvOperand {
+			sb.WriteString("env0[")
+			sb.WriteString(strconv.Itoa(int(uint8(x >> 8))))
+			sb.WriteString("]")
+			break
+		}
+		sb.WriteString("r")
+		sb.WriteString(strconv.Itoa(int(x)))
+	case GetElemRef, JmpStrictEq, JmpStrictNe:
 		sb.WriteString("r")
 		sb.WriteString(strconv.Itoa(int(x)))
 	case JmpLtI, JmpLeI, JmpGtI, JmpGeI, JmpNLtI, JmpNLeI, JmpNGtI, JmpNGeI, JmpStrictEqI, JmpStrictNeI:
 		sb.WriteString(strconv.Itoa(int(int32(x))))
+	case JmpStrictEqK, JmpStrictNeK, JmpCaseK:
+		sb.WriteString("K")
+		sb.WriteString(strconv.Itoa(int(x)))
+	case JmpTypeofIs, JmpTypeofNot:
+		if int(x) < len(TypeNames) {
+			sb.WriteString(strconv.Quote(TypeNames[x]))
+		} else {
+			sb.WriteString(strconv.Itoa(int(x)))
+		}
 	case CallEval:
 		sb.WriteString("E")
 		sb.WriteString(strconv.Itoa(int(x)))
@@ -233,6 +280,10 @@ func constString(k Const) string {
 		return "template(" + strconv.Itoa(len(k.Cooked)) + ")"
 	case ConstFunction:
 		return "F" + strconv.Itoa(k.Index)
+	case ConstNull:
+		return "null"
+	case ConstUndefined:
+		return "undefined"
 	}
 	return "?"
 }

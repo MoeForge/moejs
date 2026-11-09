@@ -8,8 +8,8 @@ import (
 
 // TestInterpLoopFastPaths covers the edges of the operators run finishes
 // inline (int32 bitwise operands, the integer remainder, strict equality by
-// identity, boolean tests) next to the operands that leave those paths, and
-// environment scopes left by a throw.
+// identity, boolean tests of booleans, numbers and objects) next to the
+// operands that leave those paths, and environment scopes left by a throw.
 func TestInterpLoopFastPaths(t *testing.T) {
 	f := evalModule(t, `
 const show = (v) => Object.is(v, -0) ? "-0" : String(v);
@@ -42,7 +42,8 @@ export function strict() {
   return pairs.map(([x, y]) => (x === y ? "T" : "F") + (x !== y ? "t" : "f")).join(",");
 }
 export function truthy() {
-  const vs = [true, false, 0, -0, NaN, 1, "", "0", null, undefined, {}, 0n, 1n, Symbol()];
+  const vs = [true, false, 0, -0, NaN, 1, "", "0", null, undefined, {}, 0n, 1n, Symbol(),
+    -1, 0.5, Infinity, -Infinity, [], () => 0, 0 / 0, -(0 / 0), [, 1][0]];
   return vs.map((v) => { let s = (!v ? "n" : "y"); if (v) s += "T"; else s += "F"; while (v) { s += "w"; break; } return s; }).join(",");
 }
 export function scopes(n) {
@@ -66,7 +67,7 @@ export function genRun() { return [...gen()].map((g) => g()).join(","); }
 	assert.Equal(t, "0,0,0,0,NaN,NaN,0,0,0,0,NaN,0,-0,-0,-0,-0,NaN,NaN,-0,-0,-0,-0,NaN,-0,0,1,1,1,NaN,NaN,1,1,0,1,NaN,1,0,1,0,1,NaN,NaN,7,7,0,1,NaN,7,-0,-1,-0,-1,NaN,NaN,-7,-7,-0,-1,NaN,-7,0,2,4,2,NaN,NaN,0,9007199254740992,0,0.5,NaN,9007199254740992,0,1,6,1,NaN,NaN,2,0,0,1,NaN,9007199254740994,-0,-2,-4,-2,NaN,NaN,-0,-9007199254740992,-0,-0.5,NaN,-9007199254740992,0,1,3,1,NaN,NaN,9007199254740991,9007199254740991,0,1,NaN,9007199254740991,0.5,1.5,1.5,1.5,NaN,NaN,1.5,1.5,0,0,NaN,1.5,0.5,0.5,0.5,0.5,NaN,NaN,0.5,0.5,0,0.5,NaN,0.5,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN", f.call("remainder"))
 	assert.Equal(t, "-1,2,0.5,1;0,-0,NaN,1;-0,-0,NaN,1;1,0,Infinity,1;-1,-0,-Infinity,1;0,0,NaN,1;NaN,Infinity,NaN,Infinity;1e+308,Infinity,1e+307,Infinity;4;12;0;7;3", f.call("arith"))
 	assert.Equal(t, "Ft,Tf,Tf,Tf,Ft,Tf,Ft,Tf,Ft,Ft,Tf,Tf,Tf,Ft,Ft,Ft,Tf", f.call("strict"))
-	assert.Equal(t, "yTw,nF,nF,nF,nF,yTw,nF,yTw,nF,nF,yTw,nF,yTw,yTw", f.call("truthy"))
+	assert.Equal(t, "yTw,nF,nF,nF,nF,yTw,nF,yTw,nF,nF,yTw,nF,yTw,yTw,yTw,yTw,yTw,yTw,yTw,yTw,nF,nF,nF", f.call("truthy"))
 	assert.Equal(t, "0,0,3,6,9,3,12,15,18,6,21,24,27,9:8", f.call("scopes", 10))
 	assert.Equal(t, "-1,0,1", f.call("genRun"))
 }
@@ -113,4 +114,57 @@ func TestInterpTypedArrayElements(t *testing.T) {
 }
 `)
 	assert.Equal(t, "true,true,1.5,true,2.5,1.5,-0,undefined,undefined,undefined,undefined,undefined,NaN,undefined,undefined,7,4,0,1,2,3,4,2,3,5,4,undefined,1,undefined,0,-2147483648,255,255,1", f.call("f64"))
+}
+
+// TestInterpElementBounds covers the dense element bounds in GetElem,
+// GetElemInc and SetElem, and keys that must take the property path.
+func TestInterpElementBounds(t *testing.T) {
+	f := evalModule(t, `
+export function bounds() {
+  const keys = [-1, -2147483648, -4294967296, -(2 ** 63), 2147483648,
+                4294967295, 4294967296, 2 ** 63, 1.5, NaN, Infinity, -Infinity];
+  const a = [10, 20], out = [];
+  for (let j = 0; j < keys.length; j++) {
+    const k = keys[j];
+    out.push(a[k] === undefined);
+    a[k] = j + 30;
+    out.push(a[k] === j + 30);
+  }
+  out.push(a[0] === 10, a[1] === 20, a.length === 2147483649);
+  return out.every(x => x);
+}
+export function increment() {
+  const a = [10, 20], out = [];
+  a[-1] = 7;
+  for (let k of [-2, -1, 0, 1, -2147483649, 4294967295, 1.5, NaN, Infinity])
+    out.push(String(a[++k]));
+  return out.join();
+}
+export function rounding() {
+  const a = [10, 20, 30];
+  for (let k of [-2, -1, -0, 0, 1, 1.5, 2 ** 52 - 0.5, 2 ** 53 - 1,
+                2 ** 53, 2 ** 63, -(2 ** 63), NaN, Infinity, -Infinity,
+                "1", true, null, undefined]) {
+    const want = Number(k) + 1;
+    const v = a[++k];
+    if (!Object.is(k, want) || v !== a[want]) return false;
+  }
+  return true;
+}
+export function edges() {
+  const a = [10, , 30];
+  const p = Object.create(Array.prototype, {1: {value: 20, writable: true}});
+  Object.setPrototypeOf(a, p);
+  function get(k) { return a[k]; }
+  function set(k, v) { a[k] = v; }
+  const out = [get(-0), get(1), get(3)];
+  set(-0, 11); set(1, 21); set(3, 40);
+  out.push(get(0), get(1), get(3), a.length);
+  return out.map(String).join();
+}
+`)
+	assert.Equal(t, true, f.call("bounds"))
+	assert.Equal(t, "7,10,20,undefined,undefined,undefined,undefined,undefined,undefined", f.call("increment"))
+	assert.Equal(t, true, f.call("rounding"))
+	assert.Equal(t, "10,20,undefined,11,21,40,4", f.call("edges"))
 }

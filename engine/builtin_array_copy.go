@@ -20,7 +20,7 @@ func arrayCreateCheck(r *Realm, n int64) error {
 // co-allocated when small) unless n far exceeds what o stores, in which
 // case it grows as the reads succeed.
 func (r *Realm) copyStorage(o *Object, n int64) (*arrayObject, []Value) {
-	return r.newArrayStorage(0, int(min(n, int64(len(o.elements))+interruptStride)))
+	return r.newArrayStorage(0, int(min(n, int64(o.elemLen())+interruptStride)))
 }
 
 // appendDense appends src with holes read as undefined; only valid when o
@@ -75,8 +75,8 @@ func arrayProtoCopyWithin(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	// The coercions above ran user code that may have resized the array.
 	// A hole copies as a hole, which is the spec's DeletePropertyOrThrow.
-	if mutableArray(o) && int64(len(o.elements)) == n {
-		copy(o.elements[to:to+count], o.elements[from:from+count])
+	if mutableArray(o) && int64(o.elemLen()) == n {
+		copy(o.elems()[to:to+count], o.elems()[from:from+count])
 		r.bumpEpoch(o)
 		return ObjectValue(o), nil
 	}
@@ -119,7 +119,7 @@ func arrayProtoToReversed(r *Realm, this Value, args []Value) (Value, error) {
 	ao, items := r.copyStorage(o, n)
 	if plainArray(o) {
 		for k := n - 1; k >= 0; k-- {
-			v := o.elements[k]
+			v := o.elemsReadOnly()[k]
 			if v.IsHole() {
 				v = Undefined()
 			}
@@ -156,7 +156,7 @@ func arrayProtoToSorted(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	ao, items := r.copyStorage(o, n)
 	if plainArray(o) {
-		items = appendDense(items, o.elements)
+		items = appendDense(items, o.elemsReadOnly())
 	} else if items, err = appendRead(r, items, o, 0, n); err != nil {
 		return Undefined(), err
 	}
@@ -201,10 +201,10 @@ func arrayProtoToSpliced(r *Realm, this Value, args []Value) (Value, error) {
 	ao, items := r.copyStorage(o, newLen)
 	// The coercions above may have resized the array; n must still
 	// describe the storage.
-	if plainArray(o) && int64(len(o.elements)) == n {
-		items = appendDense(items, o.elements[:start])
+	if plainArray(o) && int64(o.elemLen()) == n {
+		items = appendDense(items, o.elemsReadOnly()[:start])
 		items = append(items, inserted...)
-		items = appendDense(items, o.elements[start+skip:])
+		items = appendDense(items, o.elemsReadOnly()[start+skip:])
 	} else {
 		if items, err = appendRead(r, items, o, 0, start); err != nil {
 			return Undefined(), err
@@ -239,8 +239,8 @@ func arrayProtoWith(r *Realm, this Value, args []Value) (Value, error) {
 	idx := int64(rel)
 	value := Arg(args, 1)
 	ao, items := r.copyStorage(o, n)
-	if plainArray(o) && int64(len(o.elements)) == n {
-		items = appendDense(items, o.elements)
+	if plainArray(o) && int64(o.elemLen()) == n {
+		items = appendDense(items, o.elemsReadOnly())
 		items[idx] = value
 		return ObjectValue(r.initArray(ao, items, uint32(n))), nil
 	}

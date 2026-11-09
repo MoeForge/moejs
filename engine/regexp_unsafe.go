@@ -18,3 +18,17 @@ func asciiBytes(s string) []byte {
 	}
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
+
+// unitBytes returns a read-only view of the bytes of UTF-16 code units, in
+// the machine's byte order, for the required-literal scan (indexUnits),
+// which looks for one byte of a unit with bytes.IndexByte.
+//
+// GC safety: the view aliases u's backing array, which stays reachable
+// through it, and covers exactly its 2*len(u) bytes; it is only read and
+// never outlives the scan.
+func unitBytes(u []uint16) []byte {
+	if len(u) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(u))), 2*len(u))
+}

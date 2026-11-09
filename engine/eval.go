@@ -177,7 +177,7 @@ func (r *Realm) sourceText(strs []*String, sep int, out []string) ([]string, err
 	}
 	n := sep
 	for _, s := range strs {
-		src := s.wtf8()
+		src, _ := s.wtf8()
 		n += len(src)
 		out = append(out, src)
 	}
@@ -227,7 +227,7 @@ func (r *Realm) activeSource() (string, *funcMeta) {
 	st := &r.interp
 	for i := st.nframes - 1; i >= 0; i-- {
 		if fn := st.frames[i].fn; fn != nil {
-			if fd, ok := fn.internal.(*FunctionData); ok && fd.code != nil {
+			if fd, ok := dataOk(fn, kindFunction); ok && fd.code != nil {
 				return sourceName(fd.code), fd.meta.root
 			}
 		}

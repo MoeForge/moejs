@@ -112,7 +112,7 @@ func TestWrongKindOperands(t *testing.T) {
 		_, err := r.CallObject(f, Undefined(), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "internal: ArrayHole expects an array literal")
-		assert.Empty(t, r.ArrayPrototype.elements)
+		assert.Empty(t, r.ArrayPrototype.elems())
 	})
 
 	// The async-from-sync iterator's methods on another this.
@@ -124,20 +124,25 @@ func TestWrongKindOperands(t *testing.T) {
 	}
 }
 
-// TestGenFuncKeepsIntrinsics runs FuzzBytecode's input that made GenFunc of
-// Function.prototype in a realm with shared intrinsics: makeGeneratorFunction
+// TestGenFuncKeepsIntrinsics runs GenFunc of Function.prototype in a realm
+// with shared intrinsics, which FuzzBytecode found: makeGeneratorFunction
 // set its [[Prototype]] to %GeneratorFunction.prototype%, whose own is
 // Function.prototype, and every lookup through the shared intrinsics of the
 // process looped from then on. GenFunc takes only a generator function's
-// closure now.
+// closure now. The function is made by hand: the fuzzer's input names ops
+// by their numbers, which change.
 func TestGenFuncKeepsIntrinsics(t *testing.T) {
-	code := fuzzCompile(t, "function f(a){for(A of a+0)A.A=0}f([0,0])", true)
-	fuzzEdit(fuzzTree(code, nil), []byte("02[0\x7f\x00pp0p"))
+	abc := bytecode.EncodeABC
+	fn := &bytecode.Function{Name: "f", NumRegs: 2, Strict: true, Code: []uint32{
+		bytecode.EncodeABx(bytecode.Closure, 0, 0), abc(bytecode.GetProtoOf, 1, 0, 0), abc(bytecode.GenFunc, 1, 0, 0), abc(bytecode.RetUndef, 0, 0, 0)},
+		Children: []*bytecode.Function{{Name: "c", Strict: true, Code: []uint32{abc(bytecode.RetUndef, 0, 0, 0)}}}}
+	require.NoError(t, bytecode.VerifyRegisters(fn))
 	r := newShared()
-	_, err := r.EvaluateModule(code)
+	f, _ := testClosure(r, fn)
+	_, err := r.CallObject(f, Undefined(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "internal: GenFunc expects a closure")
-	assert.Same(t, r.ObjectPrototype, r.FunctionPrototype.proto, "Function.prototype's prototype")
+	assert.Same(t, r.ObjectPrototype, r.FunctionPrototype.Proto(), "Function.prototype's prototype")
 	assert.Equal(t, "function", runScriptsIn(t, newShared(), `typeof Function.prototype.call`), "a fresh shared realm")
 }
 
@@ -228,7 +233,7 @@ func TestModulePrologueKinds(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, fmt.Sprint(err), "TypeError")
 			assert.Contains(t, fmt.Sprint(err), "internal: "+c.want)
-			assert.Same(t, r.ObjectPrototype, r.FunctionPrototype.proto, "Function.prototype's prototype")
+			assert.Same(t, r.ObjectPrototype, r.FunctionPrototype.Proto(), "Function.prototype's prototype")
 		})
 	}
 	// The prologue as compiled completes all three.
@@ -242,7 +247,7 @@ func TestModulePrologueKinds(t *testing.T) {
 	for name, want := range map[string]*Object{"g": r.generatorIntrinsics().GeneratorFunctionPrototype, "a": ai.AsyncFunctionPrototype, "ag": ai.AsyncGeneratorFunctionPrototype} {
 		v, ok := menv.GetBindingValue(name)
 		require.True(t, ok, name)
-		assert.Same(t, want, v.AsObject().proto, name)
+		assert.Same(t, want, v.AsObject().Proto(), name)
 	}
 }
 

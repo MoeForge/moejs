@@ -30,7 +30,7 @@ func TestGenerated(t *testing.T) {
 		t.Fatal("engine/interp_run_regcheck.go is not the checked copy of engine/interp_run.go: run go generate ./engine")
 	}
 	cp := string(got)
-	for _, s := range []string{"st.window(", "regs := st.", "//go:generate"} {
+	for _, s := range []string{"st.window(", "regs := st.", "//go:generate", "nonNilWindow("} {
 		if strings.Contains(cp, s) {
 			t.Errorf("the copy still has %q", s)
 		}
@@ -56,11 +56,12 @@ func TestGenerateRejects(t *testing.T) {
 		t.Fatalf("the minimal source: %v", err)
 	}
 	for name, src := range map[string]string{
-		"a refresh":           strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\tregs, fr = st.window(base), &st.frames[fi]\n", 1),
+		"a refresh":           strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\tregs = st.window(base)\n", 1),
 		"a field named regs":  strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\tg.regs = nil\n", 1),
 		"regs in a comment":   strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\t// regs, the window\n", 1),
 		"regs in a string":    strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\t_ = \"regs\"\n", 1),
 		"an address of regs[": strings.Replace(ok, "\t\tipc := pc\n", "\t\tipc := pc\n\t\tp := &regs[a]\n", 1),
+		"the non-nil window":  strings.Replace(ok, "\t\tipc := pc\n", "\t\t"+nonNil+"\n\t\tipc := pc\n", 1),
 	} {
 		if _, err := generate([]byte(src)); err != nil {
 			t.Errorf("%s: %v", name, err)
@@ -83,7 +84,11 @@ func TestGenerateRejects(t *testing.T) {
 		"regs as an any":         strings.Replace(ok, "regs[a] =", "var x any = regs\n\t\tregs[a] =", 1),
 		"a copy of the window":   strings.Replace(ok, "regs[a] =", "w := regs\n\t\tregs[a] =", 1),
 		"regs assigned another":  strings.Replace(ok, "regs[a] =", "regs = other\n\t\tregs[a] =", 1),
-		"regs with another pair": strings.Replace(ok, "regs[a] =", "regs, fr = st.window(base+1), nil\n\t\tregs[a] =", 1),
+		"regs with another pair": strings.Replace(ok, "regs[a] =", "regs, fr = st.window(base), nil\n\t\tregs[a] =", 1),
+		"another base":           strings.Replace(ok, "regs[a] =", "regs = st.window(base+1)\n\t\tregs[a] =", 1),
+		"non-nil of another":     strings.Replace(ok, "regs[a] =", "regs = nonNilWindow(other)\n\t\tregs[a] =", 1),
+		"non-nil as a value":     strings.Replace(ok, "regs[a] =", "x := nonNilWindow(regs)\n\t\tregs[a] =", 1),
+		"non-nil in a line":      strings.Replace(ok, "regs[a] =", "regs = nonNilWindow(regs); use(regs)\n\t\tregs[a] =", 1),
 	} {
 		if _, err := generate([]byte(src)); err == nil {
 			t.Errorf("%s: generated", name)

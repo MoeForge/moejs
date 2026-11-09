@@ -82,7 +82,7 @@ func TestWeakNewTarget(t *testing.T) {
 	}{{weakMapConstruct, ClassWeakMap}, {weakSetConstruct, ClassWeakSet}, {weakRefConstruct, ClassWeakRef}} {
 		v, err := tc.ctor(r, []Value{ObjectValue(r.NewObject())}[:boolInt(tc.class == ClassWeakRef)], nt)
 		require.NoError(t, err)
-		assert.Equal(t, proto, v.AsObject().proto)
+		assert.Equal(t, proto, v.AsObject().Proto())
 		assert.Equal(t, tc.class, v.AsObject().class)
 	}
 }
@@ -114,8 +114,8 @@ func TestWeakMapDoesNotRetain(t *testing.T) {
 	require.NoError(t, err)
 	wsv, err := weakSetConstruct(r, nil, nil)
 	require.NoError(t, err)
-	wm := wmv.AsObject().internal.(*weakColl)
-	ws := wsv.AsObject().internal.(*weakColl)
+	wm := dataOf(wmv.AsObject(), kindWeakColl)
+	ws := dataOf(wsv.AsObject(), kindWeakColl)
 
 	wk, wv, ws2 := func() (weak.Pointer[Object], weak.Pointer[Object], weak.Pointer[Symbol]) {
 		key := r.NewObject()
@@ -147,16 +147,16 @@ func TestWeakMapDeadCollection(t *testing.T) {
 		wmv, err := weakMapConstruct(r, nil, nil)
 		require.NoError(t, err)
 		val := r.NewObject()
-		wmv.AsObject().internal.(*weakColl).set(ObjectValue(key), ObjectValue(val))
+		dataOf(wmv.AsObject(), kindWeakColl).set(ObjectValue(key), ObjectValue(val))
 		return weak.Make(val)
 	}()
 	require.True(t, gcUntil(func() bool {
-		return key.dict.weak.entries[0].owner.Value() == nil
+		return key.dictTable().weak.entries[0].owner.Value() == nil
 	}), "the collection is collected")
 	wm2v, err := weakMapConstruct(r, nil, nil)
 	require.NoError(t, err)
-	wm2v.AsObject().internal.(*weakColl).set(ObjectValue(key), IntValue(1))
-	assert.Len(t, key.dict.weak.entries, 1)
+	dataOf(wm2v.AsObject(), kindWeakColl).set(ObjectValue(key), IntValue(1))
+	assert.Len(t, key.dictTable().weak.entries, 1)
 	assert.True(t, gcUntil(func() bool { return wv.Value() == nil }), "the dead collection's value is released")
 	runtime.KeepAlive(wm2v)
 }

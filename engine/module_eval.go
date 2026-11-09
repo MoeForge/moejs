@@ -144,7 +144,7 @@ func (r *Realm) GraphBinding(g *ModuleGraph, b ModuleBinding) (Value, bool) {
 	if b.Slot < 0 {
 		return r.namespaceOf(g, b.Module), true
 	}
-	v := m.env.slots[b.Slot]
+	v := m.env.slots()[b.Slot]
 	if v.IsHole() {
 		return Undefined(), false
 	}
@@ -214,7 +214,7 @@ func (r *Realm) instantiateGraph(g *ModuleGraph) (*moduleInstance, error) {
 			mm.instances[rec.key] = m
 			fresh = append(fresh, i)
 			if rec.code.ScriptOrModule {
-				mm.setScriptOrModule(fn.internal.(*FunctionData).meta, rec.host)
+				mm.setScriptOrModule(fn.funcData().meta, rec.host)
 			}
 		case m.code != rec.code && m.code == rec.key && m.status == moduleLinked:
 			// An earlier graph instantiated the template, which this graph
@@ -224,14 +224,14 @@ func (r *Realm) instantiateGraph(g *ModuleGraph) (*moduleInstance, error) {
 			// if it had been instantiated first. No code read its
 			// functions: the earlier graph could not call them early.
 			if rec.key.ScriptOrModule {
-				delete(mm.refs, m.fn.internal.(*FunctionData).meta)
+				delete(mm.refs, m.fn.funcData().meta)
 				mm.setScriptOrModule(metas[i], rec.host)
 			}
 			m.code = rec.code
 			m.fn, _ = r.newClosure(rec.code, metas[i], m.env, Undefined())
 			u := Undefined()
-			for j := range m.env.slots {
-				m.env.slots[j] = u
+			for j := range m.env.slots() {
+				m.env.slots()[j] = u
 			}
 			fresh = append(fresh, i)
 		}
@@ -255,12 +255,12 @@ func (r *Realm) instantiateGraph(g *ModuleGraph) (*moduleInstance, error) {
 			t := insts[b.Module]
 			switch {
 			case im.Namespace:
-				m.env.slots[im.Slot] = r.namespaceOf(g, b.Module)
+				m.env.slots()[im.Slot] = r.namespaceOf(g, b.Module)
 			case b.Slot < 0:
 				r.namespaceOf(g, b.Module)
-				m.env.slots[im.Slot] = importRef(&t.ns)
+				m.env.slots()[im.Slot] = importRef(&t.ns)
 			default:
-				m.env.slots[im.Slot] = importRef(&t.env.slots[b.Slot])
+				m.env.slots()[im.Slot] = importRef(&t.env.slots()[b.Slot])
 			}
 		}
 	}
@@ -304,7 +304,7 @@ func (r *Realm) namespaceOf(g *ModuleGraph, i int32) Value {
 			ns.cells[j] = &t.ns
 			continue
 		}
-		ns.cells[j] = &t.env.slots[b.Slot]
+		ns.cells[j] = &t.env.slots()[b.Slot]
 	}
 	return m.ns
 }
@@ -315,7 +315,7 @@ func (r *Realm) namespaceOf(g *ModuleGraph, i int32) Value {
 // registers reserved above the live frames.
 func (r *Realm) runModulePrologue(m *moduleInstance) error {
 	code := m.code
-	fd := m.fn.internal.(*FunctionData)
+	fd := m.fn.funcData()
 	if code.Module.BodyPC >= 1<<genDepthShift {
 		return errors.New("engine: module prologue too large")
 	}
@@ -336,13 +336,13 @@ func (r *Realm) runModulePrologue(m *moduleInstance) error {
 				err = errPrologue
 				break
 			}
-			env.slots[uint8(w>>24)] = regs[a]
+			env.slots()[uint8(w>>24)] = regs[a]
 		case bytecode.SetEnvW:
 			if uint8(w>>16) != 0 {
 				err = errPrologue
 				break
 			}
-			env.slots[insns[pc]] = regs[a]
+			env.slots()[insns[pc]] = regs[a]
 			pc++
 		case bytecode.Closure:
 			o, _ := r.newClosure(code.Children[w>>16], fd.meta.children[w>>16], env, Undefined())
@@ -407,7 +407,7 @@ func (r *Realm) enterModuleFrame(fn *Object) (Value, error) {
 			return Undefined(), err
 		}
 	}
-	fd := fn.internal.(*FunctionData)
+	fd := fn.funcData()
 	code := fd.code
 	if fd.icBase == icUnbound {
 		fd.icBase = r.icBaseFor(fd.meta, code.ICCount)
@@ -420,9 +420,7 @@ func (r *Realm) enterModuleFrame(fn *Object) (Value, error) {
 	}
 	fi := st.nframes
 	if fi == len(st.frames) {
-		nf := make([]frameInfo, max(initialFrames, 2*len(st.frames)))
-		copy(nf, st.frames)
-		st.frames = nf
+		r.growFrames()
 	}
 	st.frames[fi] = frameInfo{fn: fn, pc: uint32(code.Module.BodyPC), base: uint32(base)}
 	st.nframes = fi + 1

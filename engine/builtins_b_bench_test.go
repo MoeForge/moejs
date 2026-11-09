@@ -195,6 +195,6 @@ func BenchmarkEncodeURIComponent150(b *testing.B) {
 
 func BenchmarkDateNowAndISO(b *testing.B) {
 	r := NewRealm()
-	d, _ := r.Construct(ObjectValue(r.DateCtor), []Value{IntValue(1758630000000)}, nil)
+	d, _ := r.Construct(ObjectValue(r.DateCtor), []Value{Int64Value(1758630000000)}, nil)
 	benchMethodB(b, r, d, "toISOString")
 }

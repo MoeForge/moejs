@@ -104,9 +104,7 @@ func arrayConstruct(r *Realm, args []Value, newTarget *Object) (Value, error) {
 		}
 		arr = r.NewArrayLen(u)
 	default:
-		items := make([]Value, len(args))
-		copy(items, args)
-		arr = r.NewArrayFromSlice(items)
+		arr = r.newArrayCopy(args)
 	}
 	if proto != r.ArrayPrototype {
 		arr.SetPrototypeOf(r, proto)
@@ -139,8 +137,10 @@ func indexKey(r *Realm, i int64) PropertyKey {
 // denseElement returns o's own dense element i when that read is exact
 // (present, not a String wrapper index).
 func denseElement(o *Object, i int64) (Value, bool) {
-	if i < int64(len(o.elements)) && o.class != ClassString {
-		if v := o.elements[i]; !v.IsHole() {
+	// Only arrays and arguments objects have dense elements here; any other
+	// object's take getIndex's path.
+	if e := o.denseElems(); i < int64(len(e)) {
+		if v := e[i]; !v.IsHole() {
 			return v, true
 		}
 	}
@@ -189,7 +189,7 @@ func setLength(r *Realm, o *Object, n int64) error {
 	// OrdinarySet rejects any write to a non-writable length, the unchanged
 	// value included (pop/shift of a frozen empty array, push() with no
 	// items), before ArraySetLength looks at the value.
-	if !o.internal.(*ArrayData).lengthWritable {
+	if !o.lengthWritable() {
 		return r.TypeError("Cannot assign to read only property 'length' of object")
 	}
 	if n > math.MaxUint32 {
@@ -219,7 +219,7 @@ func plainArray(o *Object) bool {
 		return false
 	}
 	o.materializeHost()
-	if int(o.internal.(*ArrayData).length) != len(o.elements) || (o.dict != nil && len(o.dict.sparse) != 0) {
+	if int(o.arrayLen()) != o.elemLen() || (o.dictTable() != nil && len(o.dictTable().sparse) != 0) {
 		return false
 	}
 	return indexFreeProtos(o) || materializeProtos(o) && plainArray(o)
@@ -229,7 +229,7 @@ func plainArray(o *Object) bool {
 // chain and reports whether there were any.
 func materializeProtos(o *Object) bool {
 	found := false
-	for p := o.proto; p != nil && p.class != ClassProxy; p = p.proto {
+	for p := o.Proto(); p != nil && p.class != ClassProxy; p = p.Proto() {
 		if p.materializeHost() {
 			found = true
 		}
@@ -243,9 +243,16 @@ func materializeProtos(o *Object) bool {
 // index through its traps, and the spec's HasProperty, Get and Set of one
 // run them; a typed array's indices are its elements. A host placeholder's
 // indices are not elements until it is materialized (see plainArray).
+// indexedClasses are the classes indexFreeProtos takes as having indexed
+// properties: those whose indices are not elements, and arguments objects,
+// whose inline elements it does not read. Of the other objects with inline
+// elements, arrays, it reads the length, which is past any element.
+const indexedClasses uint64 = 1<<ClassString | 1<<ClassProxy | 1<<ClassTypedArray | 1<<ClassArguments
+
 func indexFreeProtos(o *Object) bool {
-	for p := o.proto; p != nil; p = p.proto {
-		if len(p.elements) != 0 || p.class == ClassString || p.class == ClassProxy || p.class == ClassTypedArray || (p.dict != nil && len(p.dict.sparse) != 0) || p.flags&flagHasLazy != 0 && p.shape.key == hostSentinelKey {
+	// Reads fields directly to stay inlinable.
+	for p := o.shape.proto; p != nil; p = p.shape.proto {
+		if x := (*objectExt)(p.ext); p.bits&bitHasExt != 0 && (x.elements.n != 0 || len(x.sparse) != 0) || p.class == ClassArray && p.aux != 0 || 1<<p.class&indexedClasses != 0 || p.flags&flagHasLazy != 0 && p.shape.key == hostSentinelKey {
 			return false
 		}
 	}
@@ -257,22 +264,34 @@ func indexFreeProtos(o *Object) bool {
 // path, which checks the interrupt as it grows the storage.
 const fillGrowLimit = 1 << 24
 
+// concatExactLimit bounds the elements concat's fast path allocates at
+// once, as fillGrowLimit bounds fill's: the items can name one array any
+// number of times, so a larger result takes the generic path, which grows
+// its storage as it writes and checks the interrupt.
+const concatExactLimit = fillGrowLimit
+
+// maxConcatLength is the longest result concat makes of plain arrays, whose
+// every element it must store: 2 GiB of values, about where V8 throws the
+// same RangeError. A longer one would fail only once its storage had grown
+// past what a process holds (or, past 2^32 - 1, at the end).
+const maxConcatLength = 1 << 27
+
 // fillableArray reports whether Set of the indices below end that the array
 // o lacks adds them to its dense storage (setAbsentIndex): o is extensible,
 // with no sparse elements, end is within its length, and nothing on its
 // prototype chain has indexed properties.
 func fillableArray(o *Object, end int64) bool {
-	if o.class != ClassArray || o.flags&(flagExtensible|flagHasLazy) != flagExtensible || o.dict != nil && o.dict.sparse != nil {
+	if o.class != ClassArray || o.flags&(flagExtensible|flagHasLazy) != flagExtensible || o.dictTable() != nil && o.dictTable().sparse != nil {
 		return false
 	}
-	return end <= int64(o.internal.(*ArrayData).length) && indexFreeProtos(o)
+	return end <= int64(o.arrayLen()) && indexFreeProtos(o)
 }
 
 // mutableArray reports whether o is a plainArray whose storage may be
 // rewritten in place: extensible, not sealed, frozen or shared, writable
 // length.
 func mutableArray(o *Object) bool {
-	return plainArray(o) && o.flags&(flagSealed|flagFrozen|flagShared|flagExtensible) == flagExtensible && o.internal.(*ArrayData).lengthWritable
+	return plainArray(o) && o.flags&(flagSealed|flagFrozen|flagShared|flagExtensible) == flagExtensible && o.lengthWritable()
 }
 
 // relativeIndex clamps ToIntegerOrInfinity(v) into [0, length], counting
@@ -377,9 +396,15 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 		}
 	}
 	if fast || !usingIterator.IsUndefined() {
-		a, usesList, err := arrayCreateFrom(r, this, 0, false)
-		if err != nil {
-			return Undefined(), err
+		// %Array% fills a list (arrayCreateFrom's usesList) and makes the
+		// array from it at the end.
+		var a *Object
+		var err error
+		usesList := !IsConstructor(this) || this.AsObject() == r.ArrayCtor
+		if !usesList {
+			if a, _, err = arrayCreateFrom(r, this, 0, false); err != nil {
+				return Undefined(), err
+			}
 		}
 		ir := iterRecord{items, IntValue(0)}
 		if !fast {
@@ -388,9 +413,11 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 			}
 		}
 		var list []Value
+		var lao *arrayObject // the array the list is co-allocated with
 		if usesList && ir.it.IsObject() && ir.pos.IsNumber() {
 			src := ir.it.AsObject()
-			list = make([]Value, 0, min(int(src.ArrayLength()), len(src.elements)))
+			lao, list = r.newArrayExact(min(int(src.ArrayLength()), src.elemLen()))
+			list = list[:0]
 		}
 		var hold *Object
 		if !usesList {
@@ -409,7 +436,10 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 			}
 			if done {
 				if usesList {
-					return ObjectValue(r.NewArrayFromSlice(list)), nil
+					if lao == nil {
+						lao = &arrayObject{}
+					}
+					return ObjectValue(r.initArray(lao, list, uint32(len(list)))), nil
 				}
 				if err := setLength(r, a, k); err != nil {
 					return Undefined(), err
@@ -420,7 +450,7 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 				if usesList {
 					list = r.appendValue(list, v) // its growth charged
 					if hold != nil {
-						hold.elements = list
+						hold.setElems(list)
 					}
 				} else {
 					err = a.CreateDataPropertyOrThrow(r, indexKey(r, k), v)
@@ -475,9 +505,7 @@ func arrayOf(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), err
 	}
 	if usesList {
-		items := make([]Value, len(args))
-		copy(items, args)
-		return ObjectValue(r.NewArrayFromSlice(items)), nil
+		return ObjectValue(r.newArrayCopy(args)), nil
 	}
 	for k, v := range args {
 		if err := a.CreateDataPropertyOrThrow(r, indexKey(r, int64(k)), v); err != nil {
@@ -499,9 +527,8 @@ func arrayProtoPush(r *Realm, this Value, args []Value) (Value, error) {
 	if this.IsObject() {
 		o := this.AsObject()
 		if o.class == ClassArray && o.flags&flagShared == 0 {
-			ad := o.internal.(*ArrayData)
-			if uint64(ad.length)+uint64(len(args)) <= math.MaxUint32 && indexFreeProtos(o) && o.Push(r, args...) {
-				return Uint32Value(ad.length), nil
+			if uint64(o.aux)+uint64(len(args)) <= math.MaxUint32 && indexFreeProtos(o) && o.Push(r, args...) {
+				return Uint32Value(o.aux), nil
 			}
 		}
 	}
@@ -556,14 +583,14 @@ func arrayProtoShift(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), setLength(r, o, 0)
 	}
 	if mutableArray(o) {
-		first := o.elements[0]
+		first := o.elems()[0]
 		if first.IsHole() {
 			first = Undefined()
 		}
-		copy(o.elements, o.elements[1:])
-		o.elements[n-1] = Value{}
-		o.elements = o.elements[:n-1]
-		o.internal.(*ArrayData).length = uint32(n - 1)
+		copy(o.elems(), o.elems()[1:])
+		o.elems()[n-1] = Value{}
+		o.setElems(o.elems()[:n-1])
+		o.setArrayLen(uint32(n - 1))
 		r.bumpEpoch(o)
 		return first, nil
 	}
@@ -615,11 +642,11 @@ func arrayProtoUnshift(r *Realm, this Value, args []Value) (Value, error) {
 			return Undefined(), r.TypeError("Unshifting %d elements on an array-like of length %d is disallowed, as the total surpasses 2**53-1", argc, n)
 		}
 		if mutableArray(o) && n+argc <= math.MaxUint32 {
-			ne := r.growWithHoles(o.elements, int(n+argc))
+			ne := r.growWithHoles(o.elems(), int(n+argc))
 			copy(ne[argc:], ne[:n])
 			copy(ne, args)
-			o.elements = ne
-			o.internal.(*ArrayData).length = uint32(n + argc)
+			o.setElems(ne)
+			o.setArrayLen(uint32(n + argc))
 			r.bumpEpoch(o)
 			return Int64Value(n + argc), nil
 		}
@@ -681,26 +708,25 @@ func arrayProtoSplice(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	// The coercions above ran user code that may have resized the array;
 	// the in-place rewrite is only valid while n describes the storage.
-	if species == nil && mutableArray(o) && int64(len(o.elements)) == n && newLen <= math.MaxUint32 {
-		removed := make([]Value, delCount)
-		copy(removed, o.elements[start:start+delCount])
+	if species == nil && mutableArray(o) && int64(o.elemLen()) == n && newLen <= math.MaxUint32 {
+		removed := r.newArrayCopy(o.elems()[start : start+delCount])
 		switch {
 		case insertCount == delCount:
-			copy(o.elements[start:], items)
+			copy(o.elems()[start:], items)
 		case insertCount < delCount:
-			copy(o.elements[start+insertCount:], o.elements[start+delCount:])
-			clear(o.elements[newLen:])
-			o.elements = o.elements[:newLen]
-			copy(o.elements[start:], items)
+			copy(o.elems()[start+insertCount:], o.elems()[start+delCount:])
+			clear(o.elems()[newLen:])
+			o.setElems(o.elems()[:newLen])
+			copy(o.elems()[start:], items)
 		default:
-			ne := r.growWithHoles(o.elements, int(newLen))
+			ne := r.growWithHoles(o.elems(), int(newLen))
 			copy(ne[start+insertCount:], ne[start+delCount:n])
 			copy(ne[start:], items)
-			o.elements = ne
+			o.setElems(ne)
 		}
-		o.internal.(*ArrayData).length = uint32(newLen)
+		o.setArrayLen(uint32(newLen))
 		r.bumpEpoch(o)
-		return ObjectValue(r.NewArrayFromSlice(removed)), nil
+		return ObjectValue(removed), nil
 	}
 	var a *Object
 	switch {
@@ -780,7 +806,7 @@ func arrayProtoReverse(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), err
 	}
 	if mutableArray(o) {
-		slices.Reverse(o.elements)
+		slices.Reverse(o.elems())
 		r.bumpEpoch(o)
 		return ObjectValue(o), nil
 	}
@@ -853,27 +879,29 @@ func arrayProtoFill(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	// A start/end valueOf may have shrunk the array below final; writes past
 	// the length take the generic path, which grows it again per spec.
-	if mutableArray(o) && final <= int64(len(o.elements)) {
+	if mutableArray(o) && final <= int64(o.elemLen()) {
+		e := o.elems()
 		for i := k; i < final; i++ {
-			o.elements[i] = value
+			e[i] = value
 		}
 		return ObjectValue(o), nil
 	}
-	if k <= int64(len(o.elements)) && final-int64(len(o.elements)) <= fillGrowLimit && fillableArray(o, final) {
+	if k <= int64(o.elemLen()) && final-int64(o.elemLen()) <= fillGrowLimit && fillableArray(o, final) {
 		// The indices from the end of the storage to final are holes (new
 		// Array(n) has no storage past denseGrowLimit): Set adds each of
 		// them, as setAbsentIndex would, in one allocation.
-		if n := int64(len(o.elements)); final > n {
-			if final > int64(cap(o.elements)) {
+		if n := int64(o.elemLen()); final > n {
+			if final > int64(cap(o.elems())) {
 				if err := r.reserve(int(final) * valueSize); err != nil {
 					return Undefined(), err
 				}
 			}
-			o.elements = slices.Grow(o.elements, int(final-n))[:final]
+			o.setElems(slices.Grow(o.elems(), int(final-n))[:final])
 			r.bumpEpoch(o)
 		}
+		e := o.elems()
 		for i := k; i < final; i++ {
-			o.elements[i] = value
+			e[i] = value
 		}
 		return ObjectValue(o), nil
 	}
@@ -916,7 +944,7 @@ func arrayProtoSort(r *Realm, this Value, args []Value) (Value, error) {
 	if hold != nil {
 		pin[0] = ObjectValue(hold)
 	}
-	items := make([]Value, 0, min(n, int64(len(o.elements))+interruptStride))
+	items := make([]Value, 0, min(n, int64(o.elemLen())+interruptStride))
 	for k := int64(0); k < n; k++ {
 		if v, ok := denseElement(o, k); ok {
 			items = append(items, v)
@@ -930,7 +958,7 @@ func arrayProtoSort(r *Realm, this Value, args []Value) (Value, error) {
 			items = append(items, v)
 		}
 		if hold != nil {
-			hold.elements = items
+			hold.setElems(items)
 		}
 		if err := interruptEvery(r, k); err != nil {
 			return Undefined(), err
@@ -939,10 +967,10 @@ func arrayProtoSort(r *Realm, this Value, args []Value) (Value, error) {
 	if err := sortValues(r, items, cmp); err != nil {
 		return Undefined(), err
 	}
-	if mutableArray(o) && int64(len(o.elements)) == n {
-		copy(o.elements, items)
-		for j := len(items); j < len(o.elements); j++ {
-			o.elements[j] = Hole()
+	if mutableArray(o) && int64(o.elemLen()) == n {
+		copy(o.elems(), items)
+		for j := len(items); j < o.elemLen(); j++ {
+			o.elems()[j] = Hole()
 		}
 		o.trimTrailingHoles()
 		r.bumpEpoch(o)
@@ -1139,10 +1167,8 @@ func arrayProtoSlice(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	// A start/end valueOf may have shrunk the array: indices past the storage
 	// are holes now, which only the generic path reproduces.
-	if species == nil && plainArray(o) && k+count <= int64(len(o.elements)) {
-		items := make([]Value, count)
-		copy(items, o.elements[k:k+count])
-		return ObjectValue(r.NewArrayFromSlice(items)), nil
+	if species == nil && plainArray(o) && k+count <= int64(o.elemLen()) {
+		return ObjectValue(r.newArrayCopy(o.elemsReadOnly()[k : k+count])), nil
 	}
 	var a *Object
 	switch {
@@ -1207,25 +1233,34 @@ func arrayProtoConcat(r *Realm, this Value, args []Value) (Value, error) {
 		case !r.lacksSpreadable(e.AsObject(), clean) || IsArray(e) && !plainArray(e.AsObject()):
 			fast = false
 		case IsArray(e):
-			total += int64(len(e.AsObject().elements))
+			total += int64(e.AsObject().elemLen())
 		default:
 			total++
 		}
 	}
-	if fast && total <= math.MaxUint32 {
-		items := make([]Value, 0, total)
+	if fast && total > maxConcatLength {
+		return Undefined(), r.RangeError("Invalid array length")
+	}
+	if fast && total <= concatExactLimit {
+		// The result's storage, allocated at once: past the memory limit
+		// it throws rather than allocate it, as split does.
+		if r.overBudget(int(total) * valueSize) {
+			return Undefined(), r.RangeError("Invalid array length")
+		}
+		ao, items := r.newArrayExact(int(total))
+		items = items[:0]
 		for i := -1; i < len(args); i++ {
 			e := ObjectValue(o)
 			if i >= 0 {
 				e = args[i]
 			}
 			if IsArray(e) {
-				items = append(items, e.AsObject().elements...)
+				items = append(items, e.AsObject().elemsReadOnly()...)
 			} else {
 				items = append(items, e)
 			}
 		}
-		return ObjectValue(r.NewArrayFromSlice(items)), nil
+		return ObjectValue(r.initArray(ao, items, uint32(len(items)))), nil
 	}
 	var a *Object
 	if species != nil {
@@ -1319,8 +1354,8 @@ func arrayProtoJoin(r *Realm, this Value, args []Value) (Value, error) {
 		return StringValue(AtomEmpty), nil
 	}
 	if o.class == ClassArray && !Arg(args, 0).IsObject() {
-		if size, ok := primitiveElements(o); ok {
-			return join(r, o, args, size)
+		if size, wide, ok := primitiveElements(o); ok {
+			return join(r, o, args, size, wide)
 		}
 	}
 	return joinMarked(r, o, args)
@@ -1330,39 +1365,68 @@ func arrayProtoJoin(r *Realm, this Value, args []Value) (Value, error) {
 func joinMarked(r *Realm, o *Object, args []Value) (Value, error) {
 	r.pushJoin(o)
 	defer r.popJoin()
-	return join(r, o, args, -1)
+	return join(r, o, args, -1, false)
 }
 
 // primitiveElements reports whether each element of the array o below its
 // length is a present primitive in the dense storage, so that joining o
 // reads no accessor and converts no object, and returns the joined length
-// of those strings and numbers (24 bytes for a number).
-func primitiveElements(o *Object) (int64, bool) {
-	n := int64(o.internal.(*ArrayData).length)
+// of those strings and numbers (numberJoinLen) and whether one of
+// the strings is flat UTF-16.
+func primitiveElements(o *Object) (size int64, wide, ok bool) {
+	n := int64(o.arrayLen())
 	if n == 0 {
-		return 0, true
+		return 0, false, true
 	}
 	o.materializeHost()
-	if n > int64(len(o.elements)) {
-		return 0, false
+	if n > int64(o.elemLen()) {
+		return 0, false, false
 	}
-	var size int64
-	for _, v := range o.elements[:n] {
+	for _, v := range o.elemsReadOnly()[:n] {
 		switch {
 		case v.IsString():
-			size += int64(v.AsString().Len())
+			s := v.AsString()
+			size += int64(s.Len())
+			wide = wide || s.kind == strUTF16 || s.flags&strLazyWide != 0
 		case v.IsNumber():
-			size += 24
+			size += numberJoinLen(v)
 		case v.IsHole(), v.IsObject():
-			return 0, false
+			return 0, false, false
 		}
 	}
-	return size, true
+	return size, wide, true
+}
+
+// numberJoinLen is the length a join reserves for the number v: its digits
+// and sign for an int32, else 24, the longest a float64 prints. Reserving 24
+// for every integer would make a UTF-16 join of a million small numbers
+// reserve 48 MB, charged to the memory limit, for a result of a few MB.
+func numberJoinLen(v Value) int64 {
+	i, ok := v.IsInt32()
+	if !ok {
+		return 24
+	}
+	n := int64(1)
+	if i < 0 {
+		n++
+	}
+	x := int64(i)
+	if x < 0 {
+		x = -x
+	}
+	for ; x >= 10; x /= 10 {
+		n++
+	}
+	return n
 }
 
 // join is Array.prototype.join after the cycle check; size is the joined
-// length of o's elements from primitiveElements, or -1.
-func join(r *Realm, o *Object, args []Value, size int64) (Value, error) {
+// length of o's elements from primitiveElements, or -1, and wide whether
+// one of them is flat UTF-16. A join with a UTF-16 piece starts in UTF-16
+// storage of the joined length: from bytes, it would upgrade at the first
+// such piece to twice the length written and grow from there, allocating
+// about five times the result in a long join.
+func join(r *Realm, o *Object, args []Value, size int64, wide bool) (Value, error) {
 	n, err := r.LengthOfArrayLike(o)
 	if err != nil {
 		return Undefined(), err
@@ -1379,18 +1443,28 @@ func join(r *Realm, o *Object, args []Value, size int64) (Value, error) {
 	var sb StringBuilder
 	if size < 0 && o.class == ClassArray {
 		size = 0
-		for _, v := range o.elements {
+		for _, v := range o.elemsReadOnly() {
 			switch {
 			case v.IsString():
-				size += int64(v.AsString().Len())
+				s := v.AsString()
+				size += int64(s.Len())
+				wide = wide || s.kind == strUTF16 || s.flags&strLazyWide != 0
 			case v.IsNumber():
-				size += 24
+				size += numberJoinLen(v)
 			}
 		}
 	}
 	if size >= 0 {
+		// A result past the realm's memory budget is not reserved: the
+		// builder grows under checkLength, which stops it at the limit.
 		if size += (n - 1) * int64(sep.Len()); size <= int64(maxStringLength) {
-			sb.Grow(int(size))
+			if wide || sep.kind == strUTF16 && n > 1 {
+				if !r.overBudget(2 * int(size)) {
+					sb.growUnits(int(size))
+				}
+			} else if !r.overBudget(int(size)) {
+				sb.Grow(int(size))
+			}
 		}
 	}
 	for k := int64(0); k < n; k++ {
@@ -1406,6 +1480,10 @@ func join(r *Realm, o *Object, args []Value, size int64) (Value, error) {
 		switch {
 		case v.IsString():
 			sb.WriteString(v.AsString())
+		case v.IsNumber():
+			// Its digits, without the string ToString would allocate.
+			var buf [32]byte
+			writeASCIIBytes(&sb, AppendNumber(buf[:0], v.AsNumber()))
 		case v.IsNullish():
 		default:
 			s, err := r.ToString(v)
@@ -1793,6 +1871,7 @@ func arrayProtoMap(r *Realm, this Value, args []Value) (Value, error) {
 	// array-likes with a huge length go through sparse storage. A species
 	// result is written with CreateDataPropertyOrThrow.
 	var a *Object
+	var out []Value // a's dense storage, when dense
 	dense := false
 	switch {
 	case species != nil:
@@ -1803,9 +1882,11 @@ func arrayProtoMap(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), r.RangeError("Invalid array length")
 	default:
 		a = r.NewArrayLen(uint32(n))
-		dense = n <= int64(len(o.elements))+denseGrowLimit
-		if dense && len(a.elements) != int(n) {
-			a.elements = r.growWithHoles(a.elements, int(n))
+		if dense = n <= int64(o.elemLen())+denseGrowLimit; dense {
+			if a.elemLen() != int(n) {
+				a.setElems(r.growWithHoles(a.elems(), int(n)))
+			}
+			out = a.elems()
 		}
 	}
 	thisArg := Arg(args, 1)
@@ -1832,7 +1913,7 @@ func arrayProtoMap(r *Realm, this Value, args []Value) (Value, error) {
 			return Undefined(), err
 		}
 		if dense {
-			a.elements[k] = res
+			out[k] = res
 		} else if err := a.CreateDataPropertyOrThrow(r, indexKey(r, k), res); err != nil {
 			return Undefined(), err
 		}
@@ -1861,21 +1942,21 @@ func arrayProtoFilter(r *Realm, this Value, args []Value) (Value, error) {
 		}
 	}
 	thisArg := Arg(args, 1)
-	// The result, or under a memory limit an array over what is selected,
-	// is the fourth slot: the measurements made in the callbacks reach it.
+	// The result is the fourth slot: the measurements made in the callbacks
+	// reach it. Without a species it is a fresh array, filled in place.
 	argv := r.pushArgs(4)
 	defer r.popArgs(4)
-	argv[2], argv[3] = ObjectValue(o), Undefined()
-	var selected []Value
-	var hold *Object
-	if a == nil {
-		selected = make([]Value, 0, min(n, 32))
-		if hold = r.sliceHolder(); hold != nil {
-			argv[3] = ObjectValue(hold)
+	argv[2] = ObjectValue(o)
+	fresh := a == nil
+	if fresh {
+		if n > 0 {
+			ao, items := r.newArrayStorage(0, int(min(n, 32)))
+			a = r.initArray(ao, items, 0)
+		} else {
+			a = r.NewArrayFromSlice(nil)
 		}
-	} else {
-		argv[3] = ObjectValue(a)
 	}
+	argv[3] = ObjectValue(a)
 	argv = argv[:3]
 	to := int64(0)
 	for k := int64(0); k < n; k++ {
@@ -1896,22 +1977,18 @@ func arrayProtoFilter(r *Realm, this Value, args []Value) (Value, error) {
 		}
 		switch {
 		case !ToBoolean(res):
-		case a != nil:
+		case fresh:
+			e := r.appendValue(a.elems(), v) // its growth charged
+			a.setElems(e)
+			a.setArrayLen(uint32(len(e)))
+		default:
 			if err := a.CreateDataPropertyOrThrow(r, indexKey(r, to), v); err != nil {
 				return Undefined(), err
 			}
 			to++
-		default:
-			selected = append(selected, v)
-			if hold != nil {
-				hold.elements = selected
-			}
 		}
 	}
-	if a != nil {
-		return ObjectValue(a), nil
-	}
-	return ObjectValue(r.NewArrayFromSlice(selected)), nil
+	return ObjectValue(a), nil
 }
 
 // someEvery implements Array.prototype.some (want == true) and every
@@ -2048,7 +2125,7 @@ func (t *flatTarget) add(r *Realm, v Value) error {
 	} else {
 		t.items = append(t.items, v)
 		if t.hold != nil {
-			t.hold.elements = t.items
+			t.hold.setElems(t.items)
 		}
 	}
 	t.n++
@@ -2158,7 +2235,7 @@ func arrayProtoFlat(r *Realm, this Value, args []Value) (Value, error) {
 // a user-controlled length ({length: 2**53-1}, new Array(2**32-1)) never
 // turns into an allocation.
 func flatCapacity(o *Object, n int64) int {
-	return int(min(n, int64(len(o.elements))))
+	return int(min(n, int64(o.elemLen())))
 }
 
 // arrayProtoFlatMap implements Array.prototype.flatMap(mapper, thisArg).

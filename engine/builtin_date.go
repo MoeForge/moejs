@@ -39,7 +39,7 @@ func (o *Object) dateData() *DateData {
 	if o.class != ClassDate {
 		return nil
 	}
-	d, _ := o.internal.(*DateData)
+	d := dataOf(o, kindDate)
 	return d
 }
 
@@ -50,11 +50,10 @@ func (r *Realm) newDateObject(proto *Object, tv float64) *Object {
 	o := &do.obj
 	r.markPrototype(proto)
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassDate
 	o.flags = flagExtensible
 	do.data.tv = tv
-	o.internal = &do.data
+	setData(o, kindDate, &do.data)
 	return o
 }
 
@@ -156,8 +155,8 @@ var dateAccessorDefs = func() []builtinDef {
 
 func installDate(r *Realm) {
 	fd := r.DateCtor.FunctionData()
-	fd.SetNative(dateCall)
-	fd.SetConstructor(dateConstruct)
+	fd.setNative(dateCall)
+	fd.setConstructor(dateConstruct)
 	r.installBuiltins(r.DateCtor, dateCtorMethods)
 	if r.buildingShared {
 		installDatePrototype(r, r.DatePrototype)

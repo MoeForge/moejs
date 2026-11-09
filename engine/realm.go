@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -34,7 +35,7 @@ import (
 //     (buildLateGroup, sharedAsyncIntrinsics).
 //   - Constructors that the skeleton creates as stubs (RegExp, Date,
 //     Function) are completed by replacing their behaviour with
-//     (*FunctionData).SetNative / SetConstructor rather than by creating new
+//     (*FunctionData).setNative / setConstructor rather than by creating new
 //     objects, so that the global bindings and prototype links stay valid.
 
 // RealmOptions configures NewRealmWith.
@@ -151,7 +152,8 @@ type Realm struct {
 	funcShape     *Shape // FunctionPrototype root + length + name; created on first function
 	rootShapes    map[*Object]*Shape
 	protoEpoch    uint32
-	// jsonSizeHint is the length of the last JSON.stringify output; the next
+	// jsonSizeHint is the length of the last JSON.stringify output of a value
+	// other than a string, whose quoting sizes its own (quoteString); the next
 	// call pre-sizes its buffer to it (builtin_json.go). It shares the word
 	// with protoEpoch: a shared realm must stay within the 576-byte size
 	// class (568 bytes plus the malloc header), or every runtime costs 64 B
@@ -183,9 +185,10 @@ type Realm struct {
 	// buildingShared is true while the process-wide template is built.
 	// internLookups counts interning through the process-wide tables before
 	// the realm's caches exist (intern.go). jobsPending is set when a job is
-	// queued, an object kept alive for the current job, or the memory limit
-	// left the run's end work (endRunSees), and cleared when the end of a
-	// job leaves none (jobs.go). They and callDepth share two
+	// queued, an object kept alive for the current job, the memory limit
+	// left the run's end work (endRunSees) or an array literal site holds
+	// its result (allocsite.go), and cleared when the end of a job leaves
+	// none (jobs.go). They and callDepth share two
 	// words with interruptFlag: the Realm is exactly a 288-byte size class.
 	coldGlobals      uint32
 	sharedIntrinsics bool
@@ -209,7 +212,9 @@ type Realm struct {
 
 	// Inline caches, owned by the interpreter. A function's
 	// entries are appended on its first call (icBaseFor); icTrees holds, per
-	// compiled tree, the base+1 of each function's entries (zero: unbound).
+	// compiled tree, the base+1 of each function's entries (zero: unbound),
+	// the count of the entries of their literal sites and the polymorphic
+	// misses of their sites before the realm has a polyTable (addPolySite).
 	ic      []ICEntry
 	icTrees map[*funcMeta][]uint32
 
@@ -250,31 +255,33 @@ type bootstrapSlabs struct {
 // realm installs the deferred prototypes (Map, Set, Symbol, ...), Math and
 // Reflect on first touch (builtin_defer.go), outside the slabs.
 const (
-	bootstrapObjects     = 33  // 3168 B in the 3200-byte class
+	bootstrapObjects     = 32  // 1536 B, the 1792-byte class with the malloc header
 	bootstrapSlots       = 365 // 5840 B in the 6144-byte class
-	bootstrapFuncs       = 199 // 6 pages of 224-byte objects (5 would leave 17 to allocate)
+	bootstrapFuncs       = 199 // 5 pages of 176-byte objects (4 would leave 13 to allocate)
 	bootstrapShapes      = 273 // the 32768-byte class (the intrinsics make 274)
 	bootstrapTransitions = 255 // 8160 B in the 8192-byte class
 )
 
-// dictShape is the process-wide dictionary-mode sentinel shape; objects in
-// dictionary mode point at it so inline caches never match them.
-var dictShape = &Shape{isDict: true, key: rootKey, shared: true}
-
 // realmLazy is the rarely used per-realm state behind Realm.lazy.
 type realmLazy struct {
-	rng            *rand.Rand     // Math.random
-	jobs           *jobState      // the job queue and WeakRef's [[KeptAlive]] (jobs.go)
-	argumentsShape *Shape         // unmapped arguments objects (arguments.go)
-	mappedShape    *Shape         // mapped arguments objects (arguments.go)
-	lex            *globalLex     // the global declarative environment (sloppy.go)
-	dyn            *dynState      // code compiled from strings (dynamic.go)
-	templates      []*Object      // tagged-template objects by site (template.go)
-	joins          []*Object      // the arrays being joined, innermost last (builtin_array.go)
-	modules        *moduleMap     // the module map (module_eval.go)
-	json           *jsonStack     // JSON.parse's reused stack (builtin_json.go)
-	statics        *regexpStatics // the RegExp statics' match (regexp_legacy.go)
-	mem            *memAccount    // the memory limit's account (memlimit.go)
+	rng       *rand.Rand     // Math.random
+	jobs      *jobState      // the job queue and WeakRef's [[KeptAlive]] (jobs.go)
+	lex       *globalLex     // the global declarative environment (sloppy.go)
+	dyn       *dynState      // code compiled from strings (dynamic.go)
+	templates []*Object      // tagged-template objects by site (template.go)
+	joins     []*Object      // the arrays being joined, innermost last (builtin_array.go)
+	modules   *moduleMap     // the module map (module_eval.go)
+	json      *jsonStack     // JSON.parse's reused stack (builtin_json.go)
+	statics   *regexpStatics // the RegExp statics' match (regexp_legacy.go)
+	mem       *memAccount    // the memory limit's account (memlimit.go)
+	keys      *keyMemo       // keys of strings that are not atoms (propkey.go)
+	memos     *realmMemos    // the case, concat and BigInt memos (memo.go)
+	shapes    *lazyShapes    // arguments objects' shapes and the for-in key cache
+	sites     *siteTable     // the array literal sites (allocsite.go)
+	poly      *polyTable     // the polymorphic property sites (icpoly.go)
+	keyMisses uint16         // keys rememberKey saw before keys exists (propkey.go)
+	memoCount uint16         // operations the memos would take before memos exists (memo.go)
+	descEpoch uint32         // lacksDescFields' answer: protoEpoch+1 when positive (builtin_object.go)
 }
 
 // lazyState returns the realm's rarely used state, creating it on first use.
@@ -283,6 +290,31 @@ func (r *Realm) lazyState() *realmLazy {
 		r.lazy = &realmLazy{}
 	}
 	return r.lazy
+}
+
+// lazyShapes is the state behind realmLazy.shapes, made by the first
+// arguments object, for-in loop, descriptor object or rebuild of the
+// global object, which keeps realmLazy in its 160-byte size class.
+type lazyShapes struct {
+	arguments   *Shape      // unmapped arguments objects (arguments.go)
+	mapped      *Shape      // mapped arguments objects (arguments.go)
+	dataDesc    *Shape      // data descriptor objects (builtin_object.go)
+	accDesc     *Shape      // accessor descriptor objects (builtin_object.go)
+	pendingDesc *Shape      // objects whose descriptors are pending (pendingDescs)
+	forIn       *forInCache // for-in key arrays by shape (interp_ops.go)
+	forInMisses uint32      // loops forInSlot saw before forIn exists (interp_ops.go)
+	// globalRebuilds counts the shape-mode rebuilds of the global object
+	// (removeNamed), kept off its aux (Object.aux).
+	globalRebuilds uint8
+}
+
+// shapeState returns the realm's lazyShapes, creating them on first use.
+func (r *Realm) shapeState() *lazyShapes {
+	l := r.lazyState()
+	if l.shapes == nil {
+		l.shapes = &lazyShapes{}
+	}
+	return l.shapes
 }
 
 // NewRealm creates a realm with mutable, per-realm intrinsics.
@@ -437,7 +469,8 @@ func newSharedRealm() *Realm {
 	r := &Realm{Intrinsics: tpl.Intrinsics, sharedIntrinsics: true}
 	r.stackCapture, r.stackCaptureInto, r.stackFormat = defaultStackCapture, defaultStackCaptureInto, defaultStackFormat
 	r.nullProtoRoot, r.plainRoot, r.arrayRoot, r.funcShape = tpl.nullRoot, tpl.plainRoot, tpl.arrayRoot, tpl.funcShape
-	g := &Object{shape: tpl.globalShape, proto: r.ObjectPrototype, class: ClassObject, flags: flagExtensible | flagHasLazy, internal: r}
+	g := &Object{shape: tpl.globalShape, class: ClassObject, flags: flagExtensible | flagHasLazy}
+	setExtData(g, kindRealm, r)
 	r.coldGlobals = 1<<len(coldGlobalKeys) - 1
 	g.slots = make([]Value, len(tpl.globalSlots), tpl.globalSlotsCap)
 	copy(g.slots, tpl.globalSlots)
@@ -458,7 +491,7 @@ func (r *Realm) freezeIntrinsics() {
 			return
 		}
 		seen[o] = true
-		visit(o.proto)
+		visit(o.Proto())
 		for _, k := range o.OwnPropertyKeys() {
 			c, _ := o.getOwnCell(k)
 			if c.attrs&attrAccessor != 0 {
@@ -517,7 +550,7 @@ func (r *Realm) shareObject(o *Object) {
 			prepareSharedString(fd.name)
 		}
 	}
-	if s, ok := o.internal.(*String); ok {
+	if s, ok := extDataOk(o, kindString); ok {
 		prepareSharedString(s)
 	}
 	o.flags |= flagShared | flagIsPrototype
@@ -536,19 +569,18 @@ func prepareSharedString(s *String) {
 // shared function shape.
 func (r *Realm) initFunctionPrototype() {
 	lengthK, nameK := StringKey(AtomLength), StringKey(AtomName)
-	fo := &funcObject{}
+	fo := &nativeCtorObject{}
 	fp := &fo.obj
 	fp.class = ClassFunction
 	fp.flags = flagExtensible | flagIsPrototype
-	fp.proto = r.ObjectPrototype
 	fp.shape = r.plainRoot.addProperty(r, lengthK, attrConfigurable).addProperty(r, nameK, attrConfigurable)
 	fp.slots = r.allocSlotsCap(4)
 	fp.slots = append(fp.slots, IntValue(0), StringValue(AtomEmpty))
-	fp.internal = &fo.fd
+	setData(fp, kindFunction, &fo.fd)
 	fo.fd.kind = FuncNative
 	fo.fd.realm = r
 	fo.fd.name = AtomEmpty
-	fo.fd.native = func(*Realm, Value, []Value) (Value, error) { return Undefined(), nil }
+	fo.nat.native = func(*Realm, Value, []Value) (Value, error) { return Undefined(), nil }
 	r.FunctionPrototype = fp
 	r.funcShape = r.rootShapeFor(fp).addProperty(r, lengthK, attrConfigurable).addProperty(r, nameK, attrConfigurable)
 }
@@ -584,16 +616,21 @@ func (r *Realm) initPrototypes() {
 	op := r.ObjectPrototype
 	op.slots = r.allocSlotsCap(8)
 
-	r.ArrayPrototype = r.newIntrinsic(ClassArray, op, 4)
-	r.ArrayPrototype.internal = &ArrayData{lengthWritable: true}
+	// Every array carries its elements after its header (arrayObject).
+	r.markPrototype(op)
+	ap := &arrayObject{}
+	r.chargeObject(unsafe.Sizeof(arrayObject{}))
+	r.ArrayPrototype = initObject(ap.initInline(), ClassArray, r.rootShapeFor(op))
+	r.ArrayPrototype.flags |= flagIsPrototype
+	r.ArrayPrototype.slots = r.allocSlotsCap(4)
 	r.arrayRoot = r.rootShapeFor(r.ArrayPrototype)
 
 	r.StringPrototype = r.newIntrinsic(ClassString, op, 4)
-	r.StringPrototype.internal = emptyString
+	setExtData(r.StringPrototype, kindString, emptyString)
 	r.NumberPrototype = r.newIntrinsic(ClassNumber, op, 4)
-	r.NumberPrototype.internal = &primitiveWrapper{value: IntValue(0)}
+	setExtData(r.NumberPrototype, kindPrimitive, &primitiveWrapper{value: IntValue(0)})
 	r.BooleanPrototype = r.newIntrinsic(ClassBoolean, op, 4)
-	r.BooleanPrototype.internal = &primitiveWrapper{value: False()}
+	setExtData(r.BooleanPrototype, kindPrimitive, &primitiveWrapper{value: False()})
 
 	r.ErrorPrototype = r.newIntrinsic(ClassObject, op, 4)
 	r.errorProtos[KindError] = r.ErrorPrototype
@@ -633,16 +670,16 @@ func (r *Realm) initConstructors() {
 		}
 		r.errorCtors[k] = r.newConstructor(kind.Name(), 1, call, ctor, r.errorProtos[k])
 	}
+	r.markPrototype(r.errorCtors[KindError])
 	for k := KindTypeError; k < numErrorKinds; k++ {
-		r.errorCtors[k].proto = r.errorCtors[KindError]
 		r.errorCtors[k].shape = r.errorCtors[k].shape.rebase(r, r.rootShapeFor(r.errorCtors[KindError]))
 	}
 }
 
 // newConstructor creates a builtin constructor linked to its prototype.
 func (r *Realm) newConstructor(name *String, length int, call NativeFunc, ctor NativeCtor, proto *Object) *Object {
-	o, fd := r.newFunctionObjectCap(name, length, FuncNative, 3)
-	fd.native = call
+	o, fd := r.newNativeCtorObject(name, length)
+	fd.nat().native = call
 	fd.setCtor(ctor)
 	o.DefineOwnDataFast(r, StringKey(AtomPrototype), ObjectValue(proto), 0)
 	proto.DefineOwnDataFast(r, StringKey(AtomConstructor), ObjectValue(o), attrHidden)
@@ -701,29 +738,6 @@ func (o *Object) ReserveSlots(r *Realm, n int) {
 	r.charge(cap(ns) * valueSize)
 	ns = append(ns, o.slots...)
 	o.slots = ns
-}
-
-// newFunctionObjectCap is newFunctionObject with extra slot capacity.
-func (r *Realm) newFunctionObjectCap(name *String, length int, kind FuncKind, capacity int) (*Object, *FunctionData) {
-	fo := &funcObject{}
-	r.chargeObject(unsafe.Sizeof(funcObject{}))
-	o := &fo.obj
-	o.shape = r.functionShape()
-	o.proto = r.FunctionPrototype
-	o.class = ClassFunction
-	o.flags = flagExtensible
-	o.internal = &fo.fd
-	fo.fd.kind = kind
-	fo.fd.realm = r
-	fo.fd.name = name
-	if capacity <= len(fo.slots) {
-		o.slots = fo.slots[:0]
-	} else {
-		o.slots = r.allocSlotsCap(capacity)
-		r.charge(capacity * valueSize)
-	}
-	o.slots = append(o.slots, IntValue(length), StringValue(name))
-	return o, &fo.fd
 }
 
 // --- table-driven installer ---------------------------------------------------------
@@ -823,49 +837,75 @@ func (r *Realm) installOrReplace(target *Object, key PropertyKey, cell propCell)
 		target.addNamed(r, key, cell)
 		return
 	}
-	if _, ok := target.dict.lookup(key); ok {
+	if _, ok := target.dictTable().lookup(key); ok {
 		target.replaceNamed(r, key, cell)
 		return
 	}
 	target.addNamed(r, key, cell)
 }
 
-// SetNative replaces the [[Call]] behaviour of a native function (used by
+// setNative replaces the [[Call]] behaviour of a native function (used by
 // the installers to complete stub constructors before the realm is shared).
-func (fd *FunctionData) SetNative(fn NativeFunc) { fd.native = fn }
+// It does nothing to a function of another kind.
+func (fd *FunctionData) setNative(fn NativeFunc) {
+	if fd.kind == FuncNative {
+		fd.nat().native = fn
+	}
+}
 
-// SetConstructor replaces the [[Construct]] behaviour of a native function.
-func (fd *FunctionData) SetConstructor(ctor NativeCtor) { fd.setCtor(ctor) }
+// setConstructor replaces the [[Construct]] behaviour of a native function.
+// It does nothing to a function of another kind.
+func (fd *FunctionData) setConstructor(ctor NativeCtor) {
+	if fd.kind == FuncNative {
+		fd.setCtor(ctor)
+	}
+}
 
 // --- inline cache storage -------------------------------------------------------------
 
 // ICSlots returns the realm's inline-cache table (owned by the interpreter).
 func (r *Realm) ICSlots() []ICEntry { return r.ic }
 
-// AllocIC reserves count IC entries for fn and returns the base index; a
-// second call for the same template returns the same base. A function of
-// fn's tree that fails bytecode.VerifyRegisters is an error.
+// AllocIC reserves the count IC entries of fn and returns the base index;
+// a second call for the same template returns the same base. count must be
+// fn.ICCount, the entries the template's code indexes: fewer would overlap
+// the entries of the next template the realm binds. A count that differs,
+// or a function of fn's tree that fails bytecode.VerifyRegisters, is an
+// error. The engine verifies a template once, on its first use, and then
+// reads its code unchecked: a host must not modify a bytecode.Function it
+// handed the engine.
 func (r *Realm) AllocIC(fn *bytecode.Function, count uint32) (uint32, error) {
 	m, err := r.metaFor(fn)
 	if err != nil {
 		return 0, err
 	}
+	if count != fn.ICCount {
+		return 0, fmt.Errorf("engine: AllocIC of %d entries for a template of %d", count, fn.ICCount)
+	}
 	return r.icBaseFor(m, count), nil
 }
 
 // icBaseFor returns the base of the count IC entries of the template of m,
-// appending them on the template's first use in the realm.
+// appending them on the template's first use in the realm, with the entry
+// past them that holds its array literal sites when it has literals
+// (allocsite.go). The bases of a tree's functions are followed by the
+// count of those entries, which growIC adds to the tree's own, and by the
+// count addPolySite keeps (treeLits, treePolyMisses).
 func (r *Realm) icBaseFor(m *funcMeta, count uint32) uint32 {
 	bases := r.icTrees[m.root]
 	if bases == nil {
 		if r.icTrees == nil {
 			r.icTrees = make(map[*funcMeta][]uint32, 1)
 		}
-		bases = make([]uint32, m.root.nfuncs)
+		bases = make([]uint32, m.root.nfuncs+2)
 		r.icTrees[m.root] = bases
 	}
 	b := bases[m.index] // base+1; zero is unbound
 	if b == 0 {
+		if m.nlit() != 0 {
+			bases[len(bases)-treeLits]++
+			count++
+		}
 		n := len(r.ic)
 		r.growIC(n + int(count))
 		r.ic = r.ic[:n+int(count)]
@@ -875,11 +915,20 @@ func (r *Realm) icBaseFor(m *funcMeta, count uint32) uint32 {
 	return b - 1
 }
 
+// treeLits and treePolyMisses index, from the end, a tree's bases in
+// icTrees: the entries of its literal sites, and its sites' polymorphic
+// misses before the realm has a polyTable.
+const (
+	treeLits       = 2
+	treePolyMisses = 1
+)
+
 // icExactTrees bounds the trees growIC sums the sites of.
 const icExactTrees = 64
 
 // growIC makes room for need entries. The table doubles but stops at the
-// sites of every tree bound so far and the entries dynamic code owns
+// sites of every tree bound so far, with the entries of the literal sites
+// of its functions bound so far, and the entries dynamic code owns
 // (allocDynIC), so a realm that ends up running all of its functions holds
 // one entry per site, as an eager table would. A realm that has bound more
 // than icExactTrees trees only doubles: summing their sites on every growth
@@ -895,8 +944,8 @@ func (r *Realm) growIC(need int) {
 		if r.lazy != nil && r.lazy.dyn != nil {
 			limit = r.lazy.dyn.size
 		}
-		for root := range r.icTrees {
-			limit += int(root.totalICs)
+		for root, bases := range r.icTrees {
+			limit += int(root.totalICs) + int(bases[len(bases)-treeLits])
 		}
 		n = min(n, limit)
 	}

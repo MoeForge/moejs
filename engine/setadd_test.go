@@ -2,6 +2,7 @@ package engine
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -195,7 +196,7 @@ func TestSetAddFills(t *testing.T) {
 	}
 	assert.Equal(t, 3, adds, "add entries")
 	assert.Equal(t, 4, cap(jsGlobal(t, r, "b").AsObject().slots), "the second one has room for three in an object4")
-	assert.Equal(t, uint8(3), jsGlobal(t, r, "P").AsObject().FunctionData().ctorSlots)
+	assert.Equal(t, uint8(3), jsGlobal(t, r, "P").AsObject().FunctionData().ctorSlots&ctorSlotsMask)
 }
 
 // TestSetAbsentIndex covers writes of indices an object lacks
@@ -281,4 +282,39 @@ func TestSetAbsentIndexArrayPrototype(t *testing.T) {
 	  return [log, a[1], b.length, c.hasOwnProperty(1), c[2], d[1]];`
 	assert.Equal(t, `["985",null,1,false,5,7]`, accEval(t, false, body))
 	assert.Equal(t, `["TypeError",9,2,true,5,7]`, accEval(t, true, body))
+}
+
+// TestCtorRoomPastConstruction: the objects of a constructor that most of
+// them outgrow right after it returns, as a tree's nodes take their
+// children, are given the room the ones before took from the ctorProbe-th
+// on, in their own allocation, and keep it as they take those properties.
+// A constructor whose objects stay as constructed, or of which only a few
+// go on, gives no more than their construction takes.
+func TestCtorRoomPastConstruction(t *testing.T) {
+	r := NewRealm()
+	got := runScriptsIn(t, r, `
+		function N(k, v) { this.key = k; this.value = v; }
+		N.prototype.left = null; N.prototype.right = null;
+		var prev = null, late;
+		for (var i = 0; i < 40; i++) {
+			var n = new N(i, i);
+			if (i & 1) { n.left = prev; n.right = null; } else { n.right = prev; n.left = null; }
+			prev = n;
+			if (i == 31) late = n;
+		}
+		function P(x) { this.x = x; this.y = x; }
+		var ps = []; for (var i = 0; i < 40; i++) ps.push(new P(i));
+		function Q(x) { this.x = x; this.y = x; }
+		var qs = []; for (var i = 0; i < 40; i++) { var q = new Q(i); if (i % 4 == 0) q.z = i; qs.push(q); }
+		[Object.keys(late).join(), late.left.key, late.right, qs[8].z, Object.keys(qs[9]).join()].join(";")`)
+	assert.Equal(t, "key,value,left,right;30;;8;x,y", got)
+	room := func(name string) uint8 {
+		return jsGlobal(t, r, name).AsObject().FunctionData().ctorSlots & ctorSlotsMask
+	}
+	assert.Equal(t, uint8(4), room("N"), "nodes take their children")
+	assert.Equal(t, uint8(2), room("P"), "objects that stay as constructed")
+	assert.Equal(t, uint8(2), room("Q"), "a quarter go on")
+	late := jsGlobal(t, r, "late").AsObject()
+	assert.Equal(t, 4, len(late.slots))
+	assert.Equal(t, uintptr(unsafe.Pointer(late))+unsafe.Sizeof(Object{}), uintptr(unsafe.Pointer(&late.slots[0])), "slots in the object's own allocation")
 }

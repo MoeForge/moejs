@@ -90,13 +90,13 @@ moejs 对比 Sobek，每次操作 100 次内循环：
 
 ![moejs 插件场景基准](assets/plugin-bench.zh.png)
 
-在 Go 程序能嵌入的几个引擎上跑 new-api 的插件负载，C 直接调用 QuickJS 的结果作为参考。2026-10-21 测量，moejs 为 v0.1.0-alpha.9。
+在 Go 程序能嵌入的几个引擎上跑 new-api 的插件负载，C 直接调用 QuickJS 的结果作为参考。2026-11-08 测量，moejs 为 2026-11-07 的源码。图里是 8 并发下的每秒请求数，以及单张 8 MiB 图在 32 并发时占用的内存；下面的表格有全部数字。`uv run --no-project --with matplotlib==3.11.2 bench/scripts/plugin_chart.py` 从 `docs/assets/plugin-bench.jsonl` 重画这张图（`--tables` 打印表格）。
 
-- 机器是 Intel Xeon E5-2667 v4（Broadwell，3.2 GHz）上的 KVM 虚拟机，14 个 vCPU、15 GB 内存，测试进程绑定在其中 8 个 vCPU 上（taskset 0-7，GOMAXPROCS=8），Debian 13，Go 1.26.6，gcc 14.2。
-- 每个 worker 一个运行时。一次调用把 JSON 字节交给引擎解析，调用插件，再把结果序列化成宿主自己的字节。每次预热 2 秒，小请求和 agent 请求测 6 秒，大请求测 8 秒，一次接一次连续跑，引擎顺序每格轮换，每格 3 轮取中位数。
-- 每次运行都记录虚拟机里其他进程同时占用的 CPU 时间，没有一次平均超过四分之一个核。宿主机上其他虚拟机的负载在虚拟机里看不到，所以每次运行前先跑一个短探针，等宿主机空闲再测。比同一格另外两轮都慢 5% 以上的运行会重跑。
+- 机器是 Intel Xeon E5-2699A v4（Broadwell，2.4 GHz）上的 KVM 虚拟机，24 个 vCPU，每核单线程，16 MiB L3，测试进程绑定在其中 8 个 vCPU 上（taskset 0-7，GOMAXPROCS=8），Debian 13，Go 1.26.6，gcc 14.2。
+- 每个 worker 一个运行时。一次调用把 JSON 字节交给引擎解析，调用插件，再把结果序列化成宿主自己的字节。每次预热 2 秒，小请求和 agent 请求测 6 秒，大请求测 8 秒，各次运行串行进行，引擎顺序每格轮换，每格 3 轮取中位数。
+- 每次运行都记录绑定的 8 个 vCPU 上其他进程占用的 CPU 时间，平均超过四分之一个核就重跑。每次计时前都要通过 CPU 短探针；图片吞吐和内存测量还必须通过内存短探针，筛查宿主机上其他虚拟机的负载。比同一格另外两轮都慢 5% 以上的运行会重跑。
 - 小请求是 new-api 10 个任务插件的 269 次真实调用。agent 请求是 8 个不同的编码会话，每个 10 万 token（o200k_base）：系统提示词、12 个工具定义、一条用户任务，以及 67 到 102 次工具调用的结果（Go 源码、grep 和测试输出）。agent 插件为本测试编写，接口和 new-api 任务插件的 buildSubmitRequest 一样：逐条转换消息，改模型名，给系统提示词加前缀，删掉上游不支持的参数和 JSON Schema 字段，返回 url、headers 和 body。大请求每次 25 MB 进、17 MB 出。
-- 内存是所有 worker 停在最后一次调用写完输出时，Go 堆 GC 后的存活字节加 glibc malloc 正在用的字节，包括 32 个运行时本身，不含等待回收的部分。
+- 内存是所有 worker 停在最后一次调用写完输出时，Go 堆 GC 后的存活字节加 glibc malloc 正在用的字节，取 5 次快照中的最大值，包括 32 个运行时本身，不含等待回收的部分。
 - quickjs-go v0.7.7 默认开启 goroutine 检查，每次 API 调用都要读一次 goroutine 栈，图里两种配置都测了。两种配置都用 JSON.stringify 输出，因为 Value.JSONStringify 会泄漏。Sobek 为 2026-07-08 版。
 - modernc.org/quickjs v0.25.0 是用 modernc 工具链把 QuickJS 翻译成的纯 Go 代码，不需要 cgo。它没有 JSON 接口，参数以文本传入，在引擎里用 JSON.parse 解析、JSON.stringify 输出。它用自己的分配器，统计不到正在用的字节，所以没有内存数字。
 - C 宿主用 gcc 14.2 编译，QuickJS 2026-06-04 用 -O2，quickjs-ng 0.15.1（quickjs-go 自带的那份）用 -O3。
@@ -106,31 +106,63 @@ moejs 对比 Sobek，每次操作 100 次内循环：
 
 | 场景 | 并发 | moejs（不拷贝） | moejs | Sobek | QuickJS 纯 Go（modernc） | quickjs-go 默认 | quickjs-go 关检查 | QuickJS（C） | quickjs-ng（C） |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
-| 小请求 | 1 | 30,073 | 29,720 | 4,983 | 10,519 | 6,243 | 14,428 | 32,912 | 15,965 |
-| 小请求 | 8 | 176,507 | 167,400 | 24,047 | 46,701 | 5,160 | 99,633 | 262,285 | 127,922 |
-| 小请求 | 32 | 180,656 | 173,501 | 24,077 | 44,074 | 5,304 | 98,157 | 262,340 | 127,314 |
-| 10 万 token agent 请求 | 1 | 580 | 562 | 99 | 109 | 154 | 157 | 300 | 219 |
-| 10 万 token agent 请求 | 8 | 3,238 | 2,933 | 564 | 407 | 1,075 | 1,116 | 2,405 | 1,734 |
-| 10 万 token agent 请求 | 32 | 3,559 | 3,294 | 565 | 377 | 1,005 | 1,078 | 2,189 | 1,605 |
-| 单张 8 MiB 图 | 1 | 83.6 | 65.3 | 2.5 | 3.0 | 5.7 | 5.6 | 10.0 | 11.0 |
-| 单张 8 MiB 图 | 8 | 561 | 269 | 18.1 | 14.9 | 40.9 | 40.7 | 77.7 | 79.1 |
-| 单张 8 MiB 图 | 32 | 570 | 284 | 18.4 | 15.7 | 41.3 | 41.0 | 77.0 | 78.5 |
-| 8 张 1 MiB 图 | 1 | 83.6 | 65.2 | 2.6 | 2.9 | 5.7 | 5.7 | 10.0 | 9.6 |
-| 8 张 1 MiB 图 | 8 | 546 | 268 | 19.0 | 14.9 | 40.9 | 41.0 | 77.5 | 72.9 |
-| 8 张 1 MiB 图 | 32 | 565 | 282 | 19.9 | 14.0 | 41.2 | 40.7 | 76.2 | 78.9 |
+| 小请求 | 1 | 32,723 | 32,208 | 4,198 | 8,767 | 5,365 | 12,356 | 28,021 | 13,585 |
+| 小请求 | 8 | 207,896 | 195,365 | 20,809 | 40,981 | 4,613 | 85,604 | 223,283 | 108,490 |
+| 小请求 | 32 | 208,255 | 198,909 | 21,270 | 37,935 | 4,566 | 83,542 | 222,275 | 107,070 |
+| 10 万 token agent 请求 | 1 | 963 | 878 | 83 | 92 | 131 | 133 | 255 | 186 |
+| 10 万 token agent 请求 | 8 | 5,874 | 4,582 | 496 | 361 | 924 | 957 | 2,053 | 1,480 |
+| 10 万 token agent 请求 | 32 | 6,407 | 5,104 | 488 | 341 | 869 | 928 | 1,967 | 1,424 |
+| 单张 8 MiB 图 | 1 | 91.5 | 59.6 | 2.1 | 2.5 | 4.7 | 4.9 | 8.6 | 9.4 |
+| 单张 8 MiB 图 | 8 | 578 | 204 | 15.7 | 12.4 | 34.9 | 34.6 | 67.2 | 69.1 |
+| 单张 8 MiB 图 | 32 | 648 | 211 | 15.8 | 13.5 | 34.1 | 34.9 | 65.7 | 65.2 |
+| 8 张 1 MiB 图 | 1 | 86.1 | 59.3 | 2.2 | 2.5 | 4.9 | 4.7 | 8.6 | 8.5 |
+| 8 张 1 MiB 图 | 8 | 525 | 199 | 16.0 | 12.4 | 34.4 | 34.6 | 66.5 | 62.7 |
+| 8 张 1 MiB 图 | 32 | 625 | 202 | 16.2 | 12.6 | 34.0 | 33.9 | 64.7 | 65.0 |
 
 32 并发时真正占用的内存，单位 MiB（modernc 统计不到正在用的字节）：
 
 | 场景 | moejs（不拷贝） | moejs | Sobek | QuickJS 纯 Go（modernc） | quickjs-go 默认 | quickjs-go 关检查 | QuickJS（C） | quickjs-ng（C） |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
-| 单张 8 MiB 图 | 384 | 1,152 | 1,101 | — | 1,110 | 1,110 | 1,138 | 1,140 |
-| 8 张 1 MiB 图 | 366 | 1,134 | 1,104 | — | 1,110 | 1,110 | 1,138 | 1,141 |
+| 单张 8 MiB 图 | 380 | 1,148 | 1,101 | — | 1,111 | 1,110 | 1,138 | 1,140 |
+| 8 张 1 MiB 图 | 362 | 1,130 | 1,104 | — | 1,110 | 1,111 | 1,138 | 1,141 |
+
+## 通用 JavaScript：V8 benchmark suite v7
+
+![moejs 跑 V8 benchmark suite v7](assets/v8-bench.zh.png)
+
+使用套件自带的 `run.js` 得分，越高越好；2026-11-07 在 Xeon E5-2699A v4 KVM 虚拟机上测量（24 个 vCPU，每核单线程，16 MiB L3），moejs 为 2026-11-07 的源码，Go 1.27.2，moejs 以 `-tags purego`、`CGO_ENABLED=0` 构建。每个引擎单线程运行，各自绑定一个 vCPU，`GOMAXPROCS=1`，引擎顺序轮换，3 轮取中位数。先确认并行运行对每个引擎得分的影响不超过 0.8%，再在独立 vCPU 上同时运行最多 8 个进程。
+
+| 引擎 | 版本 | 得分 |
+|---|---|--:|
+| **moejs** | 2026-11-07 的源码 | **1,429** |
+| QuickJS（C） | `2026-06-04` | 1,058 |
+| go-quickjs | `github.com/go-quickjs/go-quickjs v0.28.0` | 999 |
+| modernc | `modernc.org/quickjs v0.25.0` | 323 |
+| goant | `github.com/robomotionio/goant v0.2.1` | 222 |
+| goja | `github.com/dop251/goja v0.0.0-20261020172427-7b1a02208696` | 163 |
+| Sobek | `github.com/grafana/sobek v0.0.0-20260708062710-267a0e055bb4` | 160 |
+
+8 个程序各自的得分，取每个引擎总分居中的那一轮；每个总分都是它那一列的几何平均：
+
+| 程序 | moejs | go-quickjs | modernc | goant | goja | Sobek | QuickJS（C） |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| Richards | 1,019 | 581 | 199 | 140 | 142 | 143 | 779 |
+| DeltaBlue | 826 | 588 | 220 | 145 | 161 | 162 | 696 |
+| Crypto | 1,056 | 933 | 199 | 142 | 69.9 | 69.5 | 883 |
+| RayTrace | 1,361 | 1,033 | 403 | 179 | 147 | 142 | 1,248 |
+| EarleyBoyer | 2,003 | 1,221 | 530 | 281 | 237 | 232 | 1,655 |
+| RegExp | 1,097 | 843 | 140 | 178 | 146 | 141 | 319 |
+| Splay | 2,697 | 1,586 | 923 | 821 | 527 | 487 | 2,546 |
+| NavierStokes | 2,422 | 1,844 | 491 | 275 | 118 | 118 | 1,949 |
+| **总分** | **1,429** | **999** | **323** | **222** | **163** | **160** | **1,058** |
+
+moejs 得分是 C QuickJS 的 1.35 倍。另一次固定运行全部 8 个程序的测试中，耗时从 v0.1.0-alpha.11 的 41.55 秒降至 14.29 秒，速度为原来的 2.9 倍。复现方法见 [V8 套件测试框架](../bench/race/README.md)。得分存在 `docs/assets/v8-bench.json`，`uv run --no-project --with matplotlib==3.11.2 bench/scripts/v8_chart.py` 先核对每个总分和它的各程序得分，再重画这张图（`--table` 打印上面的表格）。
 
 ## Intl
 
 ![moejs 的 Intl 对比 Node.js](assets/intl-bench.zh.png)
 
-对比 Node.js 24.22（V8，ICU 78.3），2026-10-25 测量，Go 1.26.6，机器和插件场景相同，绑定同样的 8 个 vCPU。两个引擎跑 `bench/testdata` 里的同一批模块，TZ=UTC，en-US 区域：moejs 用 BenchmarkIntlFormat 和 BenchmarkIntlSegmenter，Node.js 用 `bench/scripts/intl_format_node.mjs` 和 `intl_node.mjs`。每个数字是 7 轮的中位数。每轮轮流跑 moejs 和 Node.js，先后顺序每轮交替，前后各跑一次金丝雀基准，排除宿主机上其他虚拟机的负载。
+对比 Node.js 24.22（V8，ICU 78.3），2026-10-25 测量，Go 1.26.6，Intel Xeon E5-2667 v4（KVM 虚拟机，14 个 vCPU），绑定其中 8 个 vCPU。两个引擎跑 `bench/testdata` 里的同一批模块，TZ=UTC，en-US 区域：moejs 用 BenchmarkIntlFormat 和 BenchmarkIntlSegmenter，Node.js 用 `bench/scripts/intl_format_node.mjs` 和 `intl_node.mjs`。每个数字是 7 轮的中位数。每轮轮流跑 moejs 和 Node.js，先后顺序每轮交替，前后各跑一次金丝雀基准，排除宿主机上其他虚拟机的负载。
 
 moejs 格式化的速度是 Node.js 的 1.2 到 3.3 倍，创建格式化器是 4 到 15 倍。Intl.Segmenter 按每段算是 Node.js 的：字素 0.85x，词 1.2x，句 0.96x。
 
@@ -153,7 +185,13 @@ moejs 格式化的速度是 Node.js 的 1.2 到 3.3 倍，创建格式化器是 
 | Segmenter，每个句子 | 324 ns | 310 ns | 0.96x |
 | 新进程里第一次 `toLocaleString` | 224 µs | 17.3 ms | 77x |
 
-README 里的 Web API 图出自同样的几轮，用的是 `bench/cmd/webapibench`。`bench/scripts/intl_webapi_bench.sh` 编译基准并测新的几轮，`uv run --with matplotlib bench/scripts/intl_webapi_chart.py` 从 `docs/assets/intl-webapi-bench.jsonl` 重画两张图（`--table` 打印数字）。
+`bench/scripts/intl_webapi_bench.sh` 编译基准并测新的几轮，`uv run --with matplotlib bench/scripts/intl_webapi_chart.py` 从 `docs/assets/intl-webapi-bench.jsonl` 重画这张图和下面的 Web API 图（`--table` 打印数字）。
+
+## Web API
+
+![moejs 的 Web API 对比 Node.js](assets/webapi-bench.zh.png)
+
+在 moejs 和 Node.js 24 里跑同一个 fetch 脚本，服务端在本机回环地址上，用 `bench/cmd/webapibench` 和 Intl 在同样的几轮里测量，时间是 2026-10-25。小请求和流式读响应体是 moejs 更快，SSE 是 moejs 更慢的一行。
 
 ## node:fs
 

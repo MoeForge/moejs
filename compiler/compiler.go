@@ -43,8 +43,8 @@ const unsupportedSuffix = " is not supported yet"
 // await compiles as an async function body (Function.Async): the call
 // returns the promise of its evaluation.
 func CompileModule(m *syntax.Module) (*bytecode.Function, error) {
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileModuleWith(m, nil, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileModuleWith(m, nil, noHoist, spill)
 	})
 }
 
@@ -57,19 +57,19 @@ func CompileModuleStop(m *syntax.Module, stop func() error) (*bytecode.Function,
 	if stop == nil {
 		return CompileModule(m) // whose closure holds less
 	}
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileModuleWith(m, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileModuleWith(m, stop, noHoist, spill)
 	})
 }
 
 // compileModuleWith is CompileModuleStop without hoisting in the functions
 // of noHoist.
-func compileModuleWith(m *syntax.Module, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
+func compileModuleWith(m *syntax.Module, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
 	var sc *scriptState // a module needs none, but to hold stop
 	if stop != nil {
 		sc = &scriptState{stop: stop}
 	}
-	c := newCompiler(m.File, sc, noHoist)
+	c := newCompiler(m.File, sc, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	f := c.newFuncState(nil, nil, bytecode.KindModule, m.Scope)
@@ -153,15 +153,15 @@ func CompileScript(s *syntax.Script) (*bytecode.Function, error) {
 // CompileScriptStop is CompileScript calling stop as CompileModuleStop
 // does.
 func CompileScriptStop(s *syntax.Script, stop func() error) (*bytecode.Function, error) {
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileScriptWith(s, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileScriptWith(s, stop, noHoist, spill)
 	})
 }
 
 // compileScriptWith is CompileScriptStop without hoisting in the functions
 // of noHoist.
-func compileScriptWith(s *syntax.Script, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
-	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist)
+func compileScriptWith(s *syntax.Script, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
+	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	f := c.newFuncState(nil, nil, bytecode.KindScript, s.Scope)
@@ -251,13 +251,14 @@ type compiler struct {
 }
 
 // newCompiler returns the compiler of one compilation of file, which
-// hoists no constants in the functions of noHoist. The compilation ends
-// with release.
-func newCompiler(file *syntax.File, script *scriptState, noHoist map[*syntax.Function]bool) *compiler {
+// hoists no constants in the functions of noHoist and spills the bindings
+// of spill. The compilation ends with release.
+func newCompiler(file *syntax.File, script *scriptState, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) *compiler {
 	c := &compiler{file: file, script: script}
-	if noHoist != nil {
+	if noHoist != nil || spill != nil {
 		c.hoist = getHoistState()
 		c.hoist.noHoist = noHoist
+		c.hoist.spill = spill
 	}
 	return c
 }
@@ -292,6 +293,8 @@ func (c *compiler) recover(err *error) {
 		case stopped:
 			*err = r.err
 		case *hoistRetry:
+			*err = r
+		case *spillRetry:
 			*err = r
 		default:
 			panic(r)
@@ -411,8 +414,22 @@ type funcState struct {
 	kind   bytecode.Kind
 	// hoisted is set once a loop of the function keeps constants in
 	// registers, scanned while the loop nest that looked for them compiles
-	// (hoist.go).
-	hoisted, scanned bool
+	// (hoist.go). wide is set once an object literal took its values in
+	// registers in a row (objectLitK). Running out of registers with
+	// either set compiles the function again without both (hoistRetry).
+	hoisted, scanned, wide bool
+	// litConsts counts the constants the key runs of the function's object
+	// literals take (keyRun), at most objectLitKeyBudget; running out of
+	// constants with any compiles the function again without them.
+	litConsts int32
+	// litRuns holds the function's key runs, the first four here and the
+	// rest in litMore by their keys' hash, for the next literal of the same
+	// keys (keyRun).
+	litRuns [4]keyRunEntry
+	litMore map[uint64]keyRunEntry
+	// nullishK holds the indexes plus one of the function's ConstNull and
+	// ConstUndefined, 0 until strictConst adds them.
+	nullishK [2]uint16
 
 	code     []uint32
 	consts   []bytecode.Const
@@ -453,6 +470,13 @@ type funcState struct {
 
 	genReg int // generator body: the generator (genStart); async body: its state (asyncStart)
 
+	thisReg int // the function's this, loaded once at entry (ownThis), or -1
+
+	// argsAlias is the local a function with ForwardArguments keeps its
+	// arguments in, var a = arguments, whose reads are the arguments'
+	// (forwardsArguments), or nil.
+	argsAlias *syntax.Binding
+
 	asyncTry int // async function body: the start of its catch-all handler (asyncStart)
 }
 
@@ -469,6 +493,7 @@ func (c *compiler) newFuncState(parent *funcState, fn *syntax.Function, kind byt
 		lastPos:    -1,
 		lastLine:   -1,
 		completion: -1,
+		thisReg:    -1,
 	}
 	if c.locs == nil {
 		c.locs = make(map[*syntax.Binding]location)
@@ -491,6 +516,7 @@ func (f *funcState) finish() *bytecode.Function {
 	out.LineTable = f.lines
 	out.ICCount = f.icCount
 	out.NumRegs = uint16(f.maxRegs)
+	bytecode.MarkOverlapCalls(out)
 	if f.ownEnv != nil && out.CaptureLayout == nil {
 		out.CaptureLayout = make(bytecode.CaptureLayout, f.ownEnv.size)
 		for i := range out.CaptureLayout {
@@ -509,8 +535,11 @@ func (f *funcState) alloc() int {
 		f.maxRegs = f.nregs
 	}
 	if r > bytecode.MaxRegister {
-		if f.hoisted {
+		if f.hoisted || f.wide {
 			panic(&hoistRetry{fn: f.fn})
+		}
+		if _, done := f.c.spilled(f.fn); !done && spillable(f.fn) {
+			panic(&spillRetry{fn: f.fn})
 		}
 		f.c.fail(f.curPos, "SyntaxError: function needs more than 256 registers"+unsupportedSuffix)
 	}
@@ -533,6 +562,12 @@ func (f *funcState) free(mark int) { f.nregs = mark }
 
 func (f *funcState) addConst(k bytecode.Const) uint16 {
 	if len(f.consts) > bytecode.MaxBx {
+		if f.litConsts > 0 {
+			// The key runs took the room: compiled again, its literals
+			// name their keys through nameConst, one constant a name, as
+			// they did before the runs (hoistRetry).
+			panic(&hoistRetry{fn: f.fn})
+		}
 		f.c.fail(f.curPos, "SyntaxError: function needs more than 65536 constants"+unsupportedSuffix)
 	}
 	f.consts = append(f.consts, k)
@@ -547,6 +582,30 @@ func (f *funcState) numberConst(v float64) uint16 {
 	i := f.addConst(bytecode.Const{Kind: bytecode.ConstNumber, Num: v})
 	f.numConst[bits] = i
 	return i
+}
+
+// strictConst returns the constant pool index of e for the X word of
+// JmpStrictEqK or JmpStrictNeK, when e is a string, null or undefined that
+// no loop holds in a register (hoistedReg).
+func (f *funcState) strictConst(e syntax.Expr) (uint16, bool) {
+	k, ok := f.fold(e)
+	if !ok || f.hoistedReg(e) >= 0 {
+		return 0, false
+	}
+	switch k.kind {
+	case kString:
+		return f.stringConst(k.str), true
+	case kNull, kUndefined:
+		i := 0
+		if k.kind == kUndefined {
+			i = 1
+		}
+		if f.nullishK[i] == 0 {
+			f.nullishK[i] = f.addConst(bytecode.Const{Kind: bytecode.ConstNull + bytecode.ConstKind(i)}) + 1
+		}
+		return f.nullishK[i] - 1, true
+	}
+	return 0, false
 }
 
 // stringConst interns a string literal (WTF-8) in the pool.
@@ -703,6 +762,55 @@ func (f *funcState) pushEnvScope(s *syntax.Scope) *envScope {
 	return es
 }
 
+// envOrder returns the captured bindings of s, the scope of fn, in the
+// order of their slots in fn's own environment: their order in s, but for
+// more of them than GetEnv and SetEnv reach (MaxRegister+1 slots, as a
+// bundle's module function has), where the parameters keep the first
+// slots (paramsUnassigned) and the others follow by the number of
+// references to them, the most first, so that the most referenced take
+// the slots those reach and the rest GetEnvW and SetEnvW.
+func envOrder(fn *syntax.Function, s *syntax.Scope) []*syntax.Binding {
+	var out []*syntax.Binding
+	for _, b := range s.Bindings {
+		if b.Captured {
+			out = append(out, b)
+		}
+	}
+	if len(out) <= bytecode.MaxRegister+1 {
+		return out
+	}
+	refs := make(map[*syntax.Binding]int, len(out))
+	syntax.Inspect(fn, func(n syntax.Node) bool {
+		if id, ok := n.(*syntax.Ident); ok && id.Binding != nil && id.Binding.Scope == s {
+			refs[id.Binding]++
+		}
+		return true
+	})
+	params := make(map[*syntax.Binding]bool, len(fn.Params)+1)
+	for _, p := range fn.Params {
+		params[paramBinding(p)] = true
+	}
+	params[paramBinding(fn.Rest)] = true
+	slices.SortStableFunc(out, func(a, b *syntax.Binding) int {
+		if params[a] || params[b] {
+			return cmpBool(params[b], params[a])
+		}
+		return refs[b] - refs[a]
+	})
+	return out
+}
+
+// cmpBool orders false before true.
+func cmpBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
+}
+
 func (f *funcState) popEnvScope(es *envScope) {
 	if es == nil {
 		return
@@ -730,6 +838,115 @@ func (f *funcState) allocScopeRegs(s *syntax.Scope) int {
 		f.c.locs[b] = location{env: nil, reg: f.alloc()}
 	}
 	return mark
+}
+
+// allocVarRegs gives the un-captured bindings of s, the scope of a
+// function whose body's statements are body (nil: none of them declares a
+// var of s), their registers, and emits the UndefRange that starts them
+// undefined. The UndefRange clears only the registers the function may
+// read before it writes them, and leaves out
+//
+//   - the lexical bindings: initTDZ writes the hole into those that need
+//     it, and every reference of another in the function comes after its
+//     declaration (syntax's checkTDZ), a statement of the body's top level
+//     that writes it (an uninitialized let undefined);
+//   - with funcs, the function declarations of s, which instantiateFuncs
+//     writes before the body runs;
+//   - the vars that every path through the body writes before it reads
+//     them (varFlow), such as those a declarator `var x = init` writes
+//     before any other reference in a branch, a case or a loop body (not
+//     those an Annex B function declaration in a block assigns).
+//
+// A nested function referencing a binding makes it captured, so only the
+// function's own code reads the registers. The registers left out come
+// after the cleared run.
+//
+// A generator or async function clears them all: its frame, saved at a
+// suspension, would keep what earlier frames left in them for as long as
+// the generator or the promise lives.
+func (f *funcState) allocVarRegs(s *syntax.Scope, body []syntax.Stmt, funcs bool) {
+	var buf [64]uint8
+	var first []uint8
+	if f.c.bodies[f.fn] == nil && !f.out.Generator && !f.out.Async && !f.fn.HasDirectEval {
+		first = writtenFirst(s, body, funcs, buf[:])
+	}
+	start := f.nregs
+	for i, b := range s.Bindings {
+		if b.Captured || i < len(first) && first[i] == varWritten {
+			continue
+		}
+		if _, ok := f.c.locs[b]; ok {
+			continue
+		}
+		f.c.locs[b] = location{env: nil, reg: f.alloc()}
+	}
+	f.emitUndefRange(start, f.nregs-start)
+	f.allocScopeRegs(s)
+}
+
+// emitUndefRange emits the UndefRange ops that clear the n registers from
+// start. B is 8 bits, so a run of all 256 registers takes two ops; one
+// would encode its length as 0 and clear nothing.
+func (f *funcState) emitUndefRange(start, n int) {
+	for n > 0 {
+		k := min(n, bytecode.MaxRegister)
+		f.emitAB(bytecode.UndefRange, start, k)
+		start, n = start+k, n-k
+	}
+}
+
+// What writtenFirst finds of a binding.
+const (
+	varClear   = iota // the UndefRange clears it
+	varUnseen         // a candidate var the walk has not seen written
+	varWritten        // written before anything reads it
+)
+
+// writtenFirst returns, by slot, the bindings of s allocVarRegs leaves
+// out (varWritten), in buf when it is long enough.
+func writtenFirst(s *syntax.Scope, body []syntax.Stmt, funcs bool, buf []uint8) []uint8 {
+	st := buf[:0]
+	if len(s.Bindings) <= len(buf) {
+		st = buf[:len(s.Bindings)]
+		clear(st)
+	} else {
+		st = make([]uint8, len(s.Bindings))
+	}
+	unseen := 0
+	for i, b := range s.Bindings {
+		switch {
+		case b.Captured:
+		case b.Kind.IsLexical():
+			st[i] = varWritten
+		case b.Kind == syntax.BindVar && !b.AnnexB && body != nil:
+			st[i] = varUnseen
+			unseen++
+		}
+	}
+	if funcs {
+		for _, fd := range s.Funcs {
+			if fd.Func.Name == nil {
+				continue
+			}
+			if b := fd.Func.Name.Binding; b != nil && b.Scope == s && !b.Captured {
+				if st[b.Slot] == varUnseen {
+					unseen--
+				}
+				st[b.Slot] = varWritten
+			}
+		}
+	}
+	if unseen == 0 {
+		return st
+	}
+	v := newVarFlow(s, st)
+	v.stmts(body, v.set())
+	for i := range st {
+		if st[i] == varUnseen {
+			st[i] = varClear
+		}
+	}
+	return st
 }
 
 // enterScope materializes a block-like scope: environment, registers, TDZ
@@ -869,7 +1086,7 @@ func (f *funcState) loadLoc(b *syntax.Binding, dst int) {
 			f.emitExtra(uint32(f.stringConst(b.Name)))
 			return
 		}
-		f.emitABC(bytecode.GetEnv, dst, depth, loc.slot)
+		f.emitABC(getEnvOp(depth), dst, depth, loc.slot)
 		return
 	}
 	if b.NeedsTDZ {
@@ -880,6 +1097,22 @@ func (f *funcState) loadLoc(b *syntax.Binding, dst int) {
 	}
 	f.emitAB(bytecode.GetEnvW, dst, depth)
 	f.emitExtra(uint32(loc.slot))
+}
+
+// getEnvOp returns the op that reads a slot of env^depth: GetEnv1 and
+// GetEnv2 are GetEnv of the enclosing environment and of the one around
+// it, which the interpreter reads without walking the chain, and GetEnv0
+// of the innermost, which it reads without testing the depth.
+func getEnvOp(depth int) bytecode.Op {
+	switch depth {
+	case 0:
+		return bytecode.GetEnv0
+	case 1:
+		return bytecode.GetEnv1
+	case 2:
+		return bytecode.GetEnv2
+	}
+	return bytecode.GetEnv
 }
 
 // loadImport emits the read of an import binding in slot of env^depth: the
@@ -953,13 +1186,10 @@ func (f *funcState) getGlobal(name string, dst int) {
 
 // setGlobal emits PutValue of src to global name: an unresolvable name
 // throws in strict code and becomes a global object property in sloppy
-// code.
+// code. Both are SetGlobal, whose slow path reads the function's
+// strictness (no SetGlobalSloppy, the dispatch of a sloppy op).
 func (f *funcState) setGlobal(name string, src int) {
-	op := bytecode.SetGlobal
-	if !f.out.Strict {
-		op = bytecode.SetGlobalSloppy
-	}
-	f.emitA(op, src)
+	f.emitA(bytecode.SetGlobal, src)
 	f.emitExtra(bytecode.ExtraArg(f.nameConst(name), f.newIC()))
 }
 
@@ -1084,11 +1314,17 @@ func (f *funcState) compileBody() {
 		f.c.locs[b] = location{reg: nparams}
 	}
 
-	// Own environment for captured bindings, with parameters boxed by layout.
-	if scopeNeedsEnv(s) {
+	// Own environment for captured bindings, with parameters boxed by layout,
+	// and the spilled ones after them (spill.go).
+	spilled, _ := f.c.spilled(fn)
+	if scopeNeedsEnv(s) || len(spilled) > 0 {
 		es := &envScope{scope: s}
+		for _, b := range envOrder(fn, s) {
+			f.c.locs[b] = location{env: es, slot: es.size, reg: -1}
+			es.size++
+		}
 		for _, b := range s.Bindings {
-			if b.Captured {
+			if spilled[b] {
 				f.c.locs[b] = location{env: es, slot: es.size, reg: -1}
 				es.size++
 			}
@@ -1113,23 +1349,41 @@ func (f *funcState) compileBody() {
 		f.out.CaptureLayout = layout
 	}
 
+	f.out.ForwardArguments = args != nil && f.regOf(args) == argsReg && f.forwardsArguments(args)
+
 	// Registers for the remaining un-captured bindings; vars start undefined.
-	varStart := f.nregs
-	f.allocScopeRegs(s)
-	if n := f.nregs - varStart; n > 0 {
-		f.emitAB(bytecode.UndefRange, varStart, n)
+	split := fn.Body != nil && fn.Body.Scope != nil
+	var body []syntax.Stmt
+	if fn.Body != nil && !split {
+		body = fn.Body.Body
 	}
+	f.allocVarRegs(s, body, !split)
 	f.initTDZ(s)
 	f.prologue()
-	if !fn.IsStrict {
-		// OrdinaryCallBindThis and CreateMappedArgumentsObject, before
-		// anything reads this or the arguments object.
-		if fn.UsesThis && !fn.IsArrow {
-			f.emitNone(bytecode.CoerceThis)
+	if !fn.IsStrict && fn.HasSimpleParams && args != nil && !f.out.ForwardArguments {
+		// CreateMappedArgumentsObject, before anything reads the arguments
+		// object.
+		lazy := 0
+		if f.paramsUnassigned() {
+			lazy = 1
 		}
-		if fn.HasSimpleParams && args != nil {
-			f.emitA(bytecode.MapArguments, argsReg)
+		f.emitAB(bytecode.MapArguments, argsReg, lazy)
+	}
+	coerce := !fn.IsStrict && fn.UsesThis && !fn.IsArrow
+	if own := f.ownThis(); own || coerce {
+		// OrdinaryCallBindThis binds this once per call, before anything
+		// reads it, and sloppy code coerces it (CoerceThis, which loads it
+		// as LoadThis does, for this in an arrow too): the function's code
+		// reads it from a register.
+		t := f.alloc()
+		if own {
+			f.thisReg = t
 		}
+		op := bytecode.LoadThis
+		if coerce {
+			op = bytecode.CoerceThis
+		}
+		f.emitA(op, t)
 	}
 	f.asyncStart()
 	if fn.HasDirectEval && !fn.IsStrict {
@@ -1165,7 +1419,7 @@ func (f *funcState) compileBody() {
 		}
 	}
 
-	if fn.Body != nil && fn.Body.Scope != nil {
+	if split {
 		f.enterBodyScope(fn.Body.Scope)
 	} else {
 		f.instantiateFuncs(s)
@@ -1199,11 +1453,7 @@ func (f *funcState) compileBody() {
 // parameter starts with the parameter's value.
 func (f *funcState) enterBodyScope(vs *syntax.Scope) {
 	f.pushEnvScope(vs)
-	varStart := f.nregs
-	f.allocScopeRegs(vs)
-	if n := f.nregs - varStart; n > 0 {
-		f.emitAB(bytecode.UndefRange, varStart, n)
-	}
+	f.allocVarRegs(vs, f.fn.Body.Body, true)
 	for _, b := range vs.Bindings {
 		if b.Kind != syntax.BindVar {
 			continue
@@ -1221,6 +1471,196 @@ func (f *funcState) enterBodyScope(vs *syntax.Scope) {
 		f.evalVars(vs)
 	}
 	f.instantiateFuncs(vs)
+}
+
+// ownThis reports whether the function's own code, outside nested
+// functions, reads its this: a this expression or a super property
+// reference. A derived constructor's this is a binding that super()
+// initializes (syntax.Function.ThisBinding), and so is the this of an
+// arrow nested in one.
+func (f *funcState) ownThis() bool {
+	fn := f.fn
+	if g := f.thisFunc().fn; g != nil && g.Kind == syntax.FuncClassConstructor && g.Derived {
+		return false
+	}
+	found := false
+	syntax.Inspect(fn, func(n syntax.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *syntax.Function:
+			return n == fn
+		case *syntax.ThisExpr:
+			found = n.Binding == nil
+		case *syntax.SuperExpr:
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// forwardsArguments reports whether the function's arguments object, of
+// binding args in its register, can wait for an ApplyArguments or an
+// ArgsGet to need it (bytecode.Function.ForwardArguments): every use of it
+// is the second argument of a call f.apply(x, arguments), a read
+// arguments.length or arguments[k] (argumentsRead), or the initializer of
+// a local all of whose uses are such reads (argumentsAlias), and nothing
+// else reaches it, as code a direct eval compiles, a with statement's
+// object or a closure could. A generator's or async function's frame
+// keeps no arguments across a suspension. A mapped object must be one
+// MapArguments B = 1 makes, whose elements stay the arguments while no
+// code writes a parameter.
+//
+// A member is a read unless it is a reference: the callee of a call or a
+// tagged template, whose this it would be, or inside the target of an
+// assignment, an update, a delete or a for-in/of head, which are
+// references wherever they hold one.
+func (f *funcState) forwardsArguments(args *syntax.Binding) bool {
+	fn := f.fn
+	if args.Captured || fn.HasDirectEval || fn.IsGenerator || fn.IsAsync || fn.IsArrow {
+		return false
+	}
+	if !fn.IsStrict && fn.HasSimpleParams && !f.paramsUnassigned() {
+		return false
+	}
+	alias, decl := argumentsAlias(fn, args)
+	ok := true
+	allowed := make(map[*syntax.Ident]bool)
+	if decl != nil {
+		allowed[decl.Target.(*syntax.Ident)] = true
+		allowed[decl.Init.(*syntax.Ident)] = true
+	}
+	refs := make(map[*syntax.MemberExpr]bool)
+	reference := func(n syntax.Node) {
+		syntax.Inspect(n, func(n syntax.Node) bool {
+			if m, ok := n.(*syntax.MemberExpr); ok {
+				refs[m] = true
+			}
+			return true
+		})
+	}
+	of := func(id *syntax.Ident) bool { return id.Binding == args || alias != nil && id.Binding == alias }
+	syntax.Inspect(fn, func(n syntax.Node) bool {
+		if !ok {
+			return false
+		}
+		switch n := n.(type) {
+		case *syntax.WithStmt:
+			ok = false
+		case *syntax.CallExpr:
+			if id := appliedArguments(n, args); id != nil {
+				allowed[id] = true
+			}
+			if m, isMember := n.Callee.(*syntax.MemberExpr); isMember {
+				refs[m] = true
+			}
+		case *syntax.TaggedTemplate:
+			if m, isMember := n.Tag.(*syntax.MemberExpr); isMember {
+				refs[m] = true
+			}
+		case *syntax.AssignExpr:
+			reference(n.Target)
+		case *syntax.UpdateExpr:
+			reference(n.X)
+		case *syntax.UnaryExpr:
+			if n.Op == syntax.KwDelete {
+				reference(n.X)
+			}
+		case *syntax.ForInOfStmt:
+			reference(n.Left)
+		case *syntax.MemberExpr:
+			if id, isIdent := n.Object.(*syntax.Ident); isIdent && of(id) && !refs[n] && argumentsRead(n) {
+				// The alias holds the arguments from its declaration
+				// on, a statement of the body's top level.
+				allowed[id] = id.Binding == args || id.Pos >= decl.End
+			}
+		case *syntax.Ident:
+			if of(n) && !allowed[n] {
+				ok = false
+			}
+		}
+		return ok
+	})
+	if ok {
+		f.argsAlias = alias
+	}
+	return ok
+}
+
+// argumentsRead reports whether m, a member read of the arguments, is
+// arguments.length or arguments[k], which ArgsLen and ArgsGet read.
+func argumentsRead(m *syntax.MemberExpr) bool {
+	if m.Optional {
+		return false
+	}
+	if m.Computed {
+		return true
+	}
+	p, ok := m.Prop.(*syntax.Ident)
+	return ok && p.Name == "length"
+}
+
+// argumentsAlias returns the local and the declarator of a var declaration
+// at the top level of fn's body, var a = arguments, when a is no closure's.
+// forwardsArguments takes it when every other use of a reads it after the
+// declaration as it reads the arguments.
+func argumentsAlias(fn *syntax.Function, args *syntax.Binding) (*syntax.Binding, *syntax.Declarator) {
+	if fn.Body == nil {
+		return nil, nil
+	}
+	for _, s := range fn.Body.Body {
+		d, ok := s.(*syntax.VarDecl)
+		if !ok || d.Kind != syntax.DeclVar {
+			continue
+		}
+		for _, dc := range d.Decls {
+			t, ok := dc.Target.(*syntax.Ident)
+			init, isIdent := dc.Init.(*syntax.Ident)
+			if ok && isIdent && init.Binding == args && t.Binding != nil && t.Binding != args && !t.Binding.Captured {
+				return t.Binding, dc
+			}
+		}
+	}
+	return nil, nil
+}
+
+// appliedArguments returns the arguments of a call f.apply(x, arguments)
+// when it is the identifier of binding args, else nil.
+func appliedArguments(e *syntax.CallExpr, args *syntax.Binding) *syntax.Ident {
+	m, ok := e.Callee.(*syntax.MemberExpr)
+	if !ok || e.Optional || m.Optional || m.Computed || isSuper(m) || len(e.Args) != 2 {
+		return nil
+	}
+	if p, ok := m.Prop.(*syntax.Ident); !ok || p.Name != "apply" {
+		return nil
+	}
+	if _, ok := e.Args[0].(*syntax.SpreadElem); ok {
+		return nil
+	}
+	if id, ok := e.Args[1].(*syntax.Ident); ok && id.Binding == args {
+		return id
+	}
+	return nil
+}
+
+// paramsUnassigned reports whether the arguments object of the sloppy
+// function with simple parameters may alias them lazily (MapArguments B):
+// nothing writes a parameter, so the object's elements stay equal to them
+// until a write, define or delete of an index builds the alias, and
+// parameter i is Env slot i, which the engine maps without the layout.
+func (f *funcState) paramsUnassigned() bool {
+	if f.fn.HasDirectEval {
+		return false
+	}
+	for i, p := range f.fn.Params {
+		b := p.(*syntax.Ident).Binding
+		if b == nil || b.Assigned || i >= len(f.out.CaptureLayout) || f.out.CaptureLayout[i] != uint16(i) {
+			return false
+		}
+	}
+	return true
 }
 
 // paramBinding returns the binding of a parameter that is a plain name or a

@@ -33,8 +33,8 @@ func loadRuntime(t *testing.T, src string) (*moejs.Runtime, *moejs.Module) {
 // TestForeignFunctions checks the realm-affinity contract at the root
 // boundary: a function or generator of another runtime passed to Call,
 // SetGlobal, FromGo or a settler of NewPromise is ErrForeign, not a Go panic or a wrong result from
-// inline caches indexed in the wrong table. Dynamic functions and shared
-// intrinsics run anywhere.
+// inline caches indexed in the wrong table, and so is a dynamic function
+// another runtime compiled. Shared intrinsics run anywhere.
 func TestForeignFunctions(t *testing.T) {
 	rtB, mB := loadRuntime(t, foreignSource)
 	o, err := rtB.Call(mustHook(t, mB, "mk"))
@@ -101,13 +101,14 @@ export function own() { return h; }`)
 	require.NoError(t, err)
 	assert.Equal(t, "6", res.String())
 
-	// Dynamic code binds its caches in the calling realm; a shared
-	// intrinsic belongs to no realm; a function of the runtime itself is
-	// not foreign.
+	// Dynamic code is its runtime's like any other; a shared intrinsic
+	// belongs to no realm; a function of the runtime itself is not
+	// foreign.
 	dyn, _ := rtB.Export("dyn")
-	res, err = rtA.Call(callIt, dyn, o)
-	require.NoError(t, err)
-	assert.Equal(t, "6", res.String())
+	_, err = rtA.Call(callIt, dyn, o)
+	assert.ErrorIs(t, err, moejs.ErrForeign)
+	_, err = rtA.CallFunction(dyn, moejs.Undefined(), o)
+	assert.ErrorIs(t, err, moejs.ErrForeign)
 	parse, _ := rtB.Export("parse")
 	res, err = rtA.Call(callIt, parse, moejs.String("7"))
 	require.NoError(t, err)
@@ -289,5 +290,60 @@ export function ownFn() { return own; }`)
 		res, err := rtA.Call(mustHook(t, mA, "viaMap"), arg)
 		require.NoError(t, err)
 		assert.Equal(t, "ran 2", res.String())
+	}
+}
+
+// TestForeignDynamicFunction: a function another runtime compiled with the
+// Function constructor, which ran there and bound its caches in its own
+// table, is ErrForeign to CallFunction, Call, SetGlobal and FromGo. It
+// once ran on the calling runtime's table at its own offsets: f returned
+// o.q, g wrote o.q, and from a fresh runtime the call was an
+// *InternalError (errICOutside). Its own runtime runs it as before.
+func TestForeignDynamicFunction(t *testing.T) {
+	for _, mutable := range []bool{false, true} {
+		opts := moejs.Options{MutableIntrinsics: mutable}
+		run := func(rt *moejs.Runtime, src string) moejs.Value {
+			t.Helper()
+			s, err := moejs.CompileScript("s.js", src)
+			require.NoError(t, err)
+			v, err := rt.RunScript(s)
+			require.NoError(t, err)
+			return v
+		}
+		rtB := moejs.NewRuntime(opts)
+		run(rtB, `var f = new Function("o", "return o.p"); var g = new Function("o", "o.p = 99");
+f({p: 1, q: 2}); g({p: 1, q: 2});`)
+		f, g := run(rtB, "f"), run(rtB, "g")
+
+		rtA, mA := loadRuntime(t, `export const o = {p: 1, q: 2}; o.q; o.q;
+export function callIt(f, o) { return f(o); }
+export function both() { return o.p + "," + o.q; }`)
+		o, _ := rtA.Export("o")
+		fresh := moejs.NewRuntime(opts)
+		fo := run(fresh, "({p: 1, q: 2})")
+		for _, fn := range []moejs.Value{f, g} {
+			res, err := rtA.CallFunction(fn, moejs.Undefined(), o)
+			assert.ErrorIs(t, err, moejs.ErrForeign, "result %v", res)
+			_, err = rtA.Call(mustHook(t, mA, "callIt"), fn, o)
+			assert.ErrorIs(t, err, moejs.ErrForeign)
+			assert.ErrorIs(t, rtA.SetGlobal("f", fn), moejs.ErrForeign)
+			_, err = rtA.FromGo(fn)
+			assert.ErrorIs(t, err, moejs.ErrForeign)
+			_, err = fresh.CallFunction(fn, moejs.Undefined(), fo)
+			assert.ErrorIs(t, err, moejs.ErrForeign)
+		}
+		res, err := rtA.Call(mustHook(t, mA, "both"))
+		require.NoError(t, err)
+		assert.Equal(t, "1,2", res.String(), "mutable=%v", mutable)
+
+		bo := run(rtB, "({p: 1, q: 2})")
+		res, err = rtB.CallFunction(f, moejs.Undefined(), bo)
+		require.NoError(t, err)
+		assert.Equal(t, "1", res.String())
+		_, err = rtB.CallFunction(g, moejs.Undefined(), bo)
+		require.NoError(t, err)
+		res, err = rtB.Get(bo, "p")
+		require.NoError(t, err)
+		assert.Equal(t, "99", res.String())
 	}
 }

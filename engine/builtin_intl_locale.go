@@ -67,7 +67,7 @@ func intlLocaleConstruct(r *Realm, args []Value, newTarget *Object) (Value, erro
 	var s string
 	switch {
 	case tv.IsObject() && tv.AsObject().class == ClassIntlLocale:
-		s = tv.AsObject().internal.(*intlLocale).str.GoString()
+		s = extDataOf(tv.AsObject(), kindIntlLocale).str.GoString()
 	case tv.IsString() || tv.IsObject():
 		str, err := r.ToString(tv)
 		if err != nil {
@@ -151,7 +151,7 @@ func intlLocaleConstruct(r *Realm, args []Value, newTarget *Object) (Value, erro
 	l := r.newLocaleRecord(t, &kw, &has)
 	r.markPrototype(proto)
 	o := r.newObject(ClassIntlLocale, r.rootShapeFor(proto))
-	o.internal = l
+	setExtData(o, kindIntlLocale, l)
 	return ObjectValue(o), nil
 }
 
@@ -227,7 +227,7 @@ func (r *Realm) newIntlLocale(t *langTag) Value {
 	}
 	l := r.newLocaleRecord(t, &kw, &has)
 	o := r.newObject(ClassIntlLocale, r.rootShapeFor(r.intlIntr().LocalePrototype))
-	o.internal = l
+	setExtData(o, kindIntlLocale, l)
 	return ObjectValue(o)
 }
 

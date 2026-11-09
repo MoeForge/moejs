@@ -169,6 +169,7 @@ func fromGoBase(t reflect.Type) reflect.Type {
 func (r *Realm) parseQuiet(text string) (Value, error) {
 	p := jsonParser{r: r, quiet: true}
 	if isASCII(text) || utf8.ValidString(text) {
+		p.knownUTF8 = true
 		return p.parseText(text, nil)
 	}
 	return p.parse(FromGoString(text))

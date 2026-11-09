@@ -47,10 +47,12 @@ type proxyObject struct {
 }
 
 // callableProxyObject co-allocates a callable proxy with its function
-// payload and state (216 bytes, the 224-byte size class).
+// payload, its nativeState and its state (168 bytes, the 176-byte size
+// class).
 type callableProxyObject struct {
 	obj Object
 	fd  FunctionData
+	nat nativeState
 	pd  proxyData
 }
 
@@ -65,15 +67,16 @@ func (r *Realm) newProxy(target, handler *Object) *Object {
 	if target.IsCallable() {
 		p := &callableProxyObject{}
 		r.chargeObject(unsafe.Sizeof(callableProxyObject{}))
-		p.pd = proxyData{target: target, handler: handler, ctor: target.internal.(*FunctionData).IsConstructor()}
-		p.fd = FunctionData{kind: FuncProxy, realm: r, data: &p.pd, dataFn: proxyCall}
+		p.pd = proxyData{target: target, handler: handler, ctor: target.funcData().IsConstructor()}
+		p.fd = FunctionData{kind: FuncProxy, realm: r}
+		p.nat = nativeState{dataFn: proxyCall, data: &p.pd}
 		o = &p.obj
-		o.internal = &p.fd
+		setData(o, kindFunction, &p.fd)
 	} else {
 		p := &proxyObject{pd: proxyData{target: target, handler: handler}}
 		r.chargeObject(unsafe.Sizeof(proxyObject{}))
 		o = &p.obj
-		o.internal = &p.pd
+		setData(o, kindProxy, &p.pd)
 	}
 	o.shape = proxyShape
 	o.class = ClassProxy
@@ -82,16 +85,15 @@ func (r *Realm) newProxy(target, handler *Object) *Object {
 
 // proxyOf returns the state of the proxy o.
 func proxyOf(o *Object) *proxyData {
-	if fd, ok := o.internal.(*FunctionData); ok {
-		return fd.data.(*proxyData)
+	if fd, ok := dataOk(o, kindFunction); ok {
+		return fd.nat().data.(*proxyData)
 	}
-	return o.internal.(*proxyData)
+	return dataOf(o, kindProxy)
 }
 
 // isCallableProxy reports whether the proxy o has [[Call]].
 func (o *Object) isCallableProxy() bool {
-	_, ok := o.internal.(*FunctionData)
-	return ok
+	return o.pkind == payloadKind(kindFunction)
 }
 
 // IsRevokedProxy reports whether o is a proxy that has been revoked.
@@ -736,7 +738,7 @@ func hasDuplicateKey(r *Realm, keys []PropertyKey) (bool, error) {
 // of a callable proxy's FunctionData, reached through callOther with the
 // call depth already counted.
 func proxyCall(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
-	target, handler, trap, err := r.proxyTrap(fd.data.(*proxyData), AtomApply)
+	target, handler, trap, err := r.proxyTrap(fd.nat().data.(*proxyData), AtomApply)
 	if err != nil {
 		return Undefined(), err
 	}
@@ -863,7 +865,7 @@ func (r *Realm) getPrototypeOf(o *Object) (*Object, error) {
 	if o.class == ClassProxy {
 		return r.proxyGetPrototypeOf(o)
 	}
-	return o.proto, nil
+	return o.shape.proto, nil
 }
 
 // setPrototypeOf is o.[[SetPrototypeOf]](proto).
@@ -888,7 +890,7 @@ func (r *Realm) preventExtensions(o *Object) (bool, error) {
 	case ClassProxy:
 		return r.proxyPreventExtensions(o)
 	case ClassTypedArray:
-		if !o.internal.(*typedArray).fixedLength() {
+		if !dataOf(o, kindTypedArray).fixedLength() {
 			return false, nil
 		}
 	}
@@ -928,7 +930,7 @@ func (r *Realm) isOwnEnumerable(o *Object, key PropertyKey) (bool, error) {
 // starting at o without running user code: an object on it has it as an
 // own property, or is a proxy.
 func chainMayHave(o *Object, key PropertyKey) bool {
-	for ; o != nil; o = o.proto {
+	for ; o != nil; o = o.Proto() {
 		if o.class == ClassProxy || o.HasOwnProperty(key) {
 			return true
 		}
@@ -938,7 +940,7 @@ func chainMayHave(o *Object, key PropertyKey) bool {
 
 // hasProperty is o.[[HasProperty]](key).
 func (r *Realm) hasProperty(o *Object, key PropertyKey) (bool, error) {
-	for obj := o; obj != nil; obj = obj.proto {
+	for obj := o; obj != nil; obj = obj.Proto() {
 		if obj.class == ClassProxy {
 			return r.proxyHas(obj, key)
 		}
@@ -998,12 +1000,12 @@ func (r *Realm) countedEnumerableOwnKeys(o *Object, work *int) ([]PropertyKey, e
 		if work == nil {
 			return keys, nil
 		}
-		n := len(o.elements)
-		if o.dict != nil {
-			n += len(o.dict.sparse)
+		n := o.elemLen()
+		if o.dictTable() != nil {
+			n += len(o.dictTable().sparse)
 		}
 		if o.flags&flagDict != 0 {
-			n += len(o.dict.entries)
+			n += len(o.dictTable().entries)
 		} else {
 			n += int(o.shape.count)
 		}

@@ -31,9 +31,17 @@ func TestMeasureLiveStructures(t *testing.T) {
 		{"substrings", `[big, big.slice(0, 1000), big.slice(0, 2000)]`, mib},
 		{"rope", `"y" + big`, mib},
 		{"flattened rope", `(() => { const s = "y" + big; s.charCodeAt(5); return s; })()`, mib},
+		{"text and its JSON quoting", `(() => { const s = big + 1; return [s, JSON.stringify(s)]; })()`, mib},
+		{"text out of its JSON quoting", `JSON.stringify(big + 1).slice(1, -1)`, mib},
+		// The text of the quoting of a slice is the slice, which keeps what
+		// it shares; a part of it is copied, keeping none of that.
+		{"slice out of its JSON quoting", `JSON.stringify(big.slice(0, 1000)).slice(1, -1)`, mib},
+		{"part of a quoted slice", `[JSON.stringify(big.slice(0, 1000)).slice(2, 500), "x".repeat(1 << 20) + 1]`, mib},
 		{"append buffer", `(() => { let s = big; for (let i = 0; i < 100; i++) s += "z"; return [s, s.slice(0, 10)]; })()`, 2 * mib},
 		{"map", `new Map(Array.from({length: 16}, (_, i) => [i, big64k + i]))`, mib},
 		{"set", `new Set(Array.from({length: 16}, (_, i) => big64k + i))`, mib},
+		{"grown set", `(() => { const s = new Set(); for (let i = 0; i < 16; i++) s.add(big64k + i); return s; })()`, mib},
+		{"grown map", `(() => { const m = new Map(); for (let i = 0; i < 16; i++) m.set(i, big64k + i); return m; })()`, mib},
 		{"map iterator", `(() => { const m = new Map([[1, big + 1]]); return m.values(); })()`, mib},
 		{"dictionary object", `(() => { const o = {}; for (let i = 0; i < 16; i++) o["k" + i] = big64k + i; delete o.k0; return o; })()`, mib * 15 / 16},
 		{"sparse elements", `(() => { const a = []; a[1e6] = big + 1; return a; })()`, mib},
@@ -86,9 +94,12 @@ func TestMeasureLiveWeak(t *testing.T) {
 }
 
 // TestMeasureLiveRoots: a value only the roots hold counts, once, and an
-// empty realm measures little.
+// empty realm measures little. The baseline is taken after a first run,
+// which allocates the register stack and frame table.
 func TestMeasureLiveRoots(t *testing.T) {
 	r := NewRealmWith(RealmOptions{SharedIntrinsics: true})
+	_, err := runScriptValue(t, r, `0`)
+	require.NoError(t, err)
 	empty := r.MeasureLive(nil)
 	assert.Less(t, empty, int64(16<<10), "an empty realm")
 	v, err := runScriptValue(t, r, `"x".repeat(1 << 20) + 1`)
@@ -115,6 +126,27 @@ func TestMeasureLiveMutableRealm(t *testing.T) {
 	_, err = runScriptValue(t, r, `Array.prototype.big = "x".repeat(1 << 20) + 1`)
 	require.NoError(t, err)
 	requireLive(t, r.MeasureLive(nil)-used, 1<<20, "data on an intrinsic")
+}
+
+// TestMeasureLivePendingDescriptors: the values an object of
+// Object.getOwnPropertyDescriptors holds count while its descriptor
+// objects are pending (pendingDescs) and once they are made.
+func TestMeasureLivePendingDescriptors(t *testing.T) {
+	r := NewRealm()
+	_, err := runScriptValue(t, r, `var keep, src = {s: "", t: 1}; keep = Object.getOwnPropertyDescriptors(src);`)
+	require.NoError(t, err)
+	empty := r.MeasureLive(nil)
+	_, err = runScriptValue(t, r, `keep = Object.getOwnPropertyDescriptors({s: "x".repeat(1 << 20) + 1, t: 1});`)
+	require.NoError(t, err)
+	_, ok := extDataOk(jsGlobal(t, r, "keep").AsObject(), kindPendingDescs)
+	require.True(t, ok, "pending")
+	requireLive(t, r.MeasureLive(nil)-empty, 1<<20, "pending")
+	_, err = runScriptValue(t, r, `keep.t`)
+	require.NoError(t, err)
+	requireLive(t, r.MeasureLive(nil)-empty, 1<<20, "made")
+	_, err = runScriptValue(t, r, `keep = undefined`)
+	require.NoError(t, err)
+	assert.Less(t, r.MeasureLive(nil)-empty, int64(64<<10), "dropped")
 }
 
 // TestMeasureLiveHostNodes: the host nodes of FromGo count without their
@@ -237,6 +269,28 @@ func TestRebaseAllocation(t *testing.T) {
 	r.SetMemoryLimit(4 * limit)
 	_, err = runScriptValue(t, r, `[1]`)
 	require.NoError(t, err)
+}
+
+// TestObjectExtCounted: an object that is not an array keeps its elements
+// in an objectExt, which a script can make one per object: the walk counts
+// it and the account charges it, by each way of getting one.
+func TestObjectExtCounted(t *testing.T) {
+	const n = 1000
+	measure := func(body string) (live, charged int64) {
+		r := NewRealmWith(RealmOptions{MemoryLimit: 1 << 40})
+		_, err := runScriptValue(t, r, `function make(f) { const a = new Array(1000); for (let i = 0; i < 1000; i++) a[i] = f({}); return a; }`)
+		require.NoError(t, err)
+		empty, before := r.MeasureLive(nil), r.Stats().AllocatedBytes
+		_, err = runScriptValue(t, r, `var keep = make(o => { `+body+` return o; });`)
+		require.NoError(t, err)
+		return r.MeasureLive(nil) - empty, r.Stats().AllocatedBytes - before
+	}
+	plainLive, plainCharged := measure("")
+	for _, body := range []string{"o[0] = 1;", "o[5000] = 1;", "Object.defineProperty(o, 0, {value: 1});"} {
+		live, charged := measure(body)
+		assert.GreaterOrEqual(t, live-plainLive, n*objectExtSz, body)
+		assert.GreaterOrEqual(t, charged-plainCharged, n*objectExtSz, body)
+	}
 }
 
 // TestMeasureLiveResolvingFunctions: a promise's resolve and reject

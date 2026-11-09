@@ -50,3 +50,27 @@ func TestCompareImmediate(t *testing.T) {
 			c0(-0) + " " + c0(0)`}, "!<<=!>>====<1>-1 !<<=!>>====<1>-1"},
 	})
 }
+
+// TestCompareConstant covers the strict comparisons that branch against a
+// string, null or undefined in their X word (JmpStrictEqK, JmpStrictNeK):
+// both senses and operand orders, strings built at run time and atoms,
+// non-ASCII and empty strings, a String object, numbers (the smallest
+// denormal has the bits of a string's tag), the other primitives, and a
+// switch's cases.
+func TestCompareConstant(t *testing.T) {
+	const k = `function k(x) { var s = "";
+		if (x === "ab") s += "s"; if ("ab" !== x) s += "!s"; if (x === "é") s += "e"; if (x === ` + "``" + `) s += "0";
+		if (x === null) s += "n"; if (null !== x) s += "!n"; if (x === undefined) s += "u"; if (void 0 !== x) s += "!u";
+		return s; } `
+	runScriptCases(t, []scriptCase{
+		{"strings", []string{k + `["ab", "a" + "b".repeat(1), "xab".slice(1), JSON.parse('"ab"'), String.fromCharCode(233), "", "abc"].map(k).join(" ")`},
+			"s!n!u s!n!u s!n!u s!n!u !se!n!u !s0!n!u !s!n!u"},
+		{"not strings", []string{k + `[new String("ab"), 5e-324, 0, NaN, false, true, {}, 1n, Symbol("ab")].map(k).join(" ")`},
+			"!s!n!u !s!n!u !s!n!u !s!n!u !s!n!u !s!n!u !s!n!u !s!n!u !s!n!u"},
+		{"null and undefined", []string{k + `[k(null), k(undefined), k()].join(" ")`}, "!sn!u !s!nu !s!nu"},
+		{"switch", []string{`function sw(x) { switch (x) { case "ab": return "s"; case null: return "n"; case undefined: return "u"; case 1: return "1"; default: return "d"; } }
+			["ab", "a".concat("b"), null, undefined, 1, "1", 5e-324, 0].map(sw).join()`}, "s,s,n,u,1,d,d,d"},
+		{"in a loop", []string{`function lp(a) { var n = 0; for (var i = 0; i < a.length; i++) { if (a[i] === null) n += 10; else if (a[i] !== "x") n++; } return n; }
+			lp(["x", null, "y", "x".repeat(1), undefined])`}, "12"},
+	})
+}

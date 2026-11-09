@@ -23,20 +23,36 @@ server can give every concurrent request its own runtime.
 ## Performance
 
 <p align="center">
-  <img src="docs/assets/plugin-bench.en.png" alt="moejs plugin benchmark: throughput on small task-plugin calls, 100k-token agent requests and 8 MiB image requests, and memory in use at 32 workers">
+  <img src="docs/assets/plugin-bench.en.png" alt="moejs plugin benchmark: requests per second at 8 workers on small task-plugin calls, 100k-token agent requests and one 8 MiB image, and memory in use at 32 workers, for moejs, Sobek, modernc and quickjs-go, with QuickJS and quickjs-ng called from C as references">
 </p>
 
 The chart runs new-api's plugin workloads on the engines a Go program can
 embed: small task-plugin calls, 100k-token coding-agent requests that a plugin
-rewrites for the upstream, and requests that carry an 8 MiB image. QuickJS
-called straight from C is shown in grey for reference. The chart was
-measured on 2026-10-21 with moejs v0.1.0-alpha.9 on 8 vCPUs of an Intel
-Xeon E5-2667 v4, and the setup is in
+rewrites for the upstream, and requests that carry an 8 MiB image. Each engine
+is a row; each workload is a panel of requests per second at 8 workers, and the
+last panel is the memory in use at 32 workers. moejs has two rows: one reads
+the caller's string in place with `ParseJSONString`, the other copies the
+input with `ParseJSON`. QuickJS and quickjs-ng called straight from C are
+drawn hatched for reference; C QuickJS serves small requests about 7% faster
+than moejs. The chart was measured on 2026-11-08 with moejs from the
+2026-11-07 source, using Go 1.26.6 on 8 of 24 vCPUs of an Intel Xeon
+E5-2699A v4 KVM guest. The setup and the tables, which add 1 and 32 workers
+and eight 1 MiB images, are in
 [docs/performance.md](docs/performance.md#plugin-scenarios).
+
+<p align="center">
+  <img src="docs/assets/v8-bench.en.png" alt="V8 benchmark suite v7: total score and the score of each of the eight programs for moejs, go-quickjs, modernc, goant, goja and Sobek, with QuickJS called from C as a reference">
+</p>
+
+On the [V8 benchmark suite v7](docs/performance.md#general-javascript-v8-benchmark-suite-v7),
+eight classic JavaScript programs, moejs scores **1,429**, 1.35× C QuickJS,
+and has the highest score on each of the eight. It was measured on 2026-11-07
+with moejs from the 2026-11-07 source, every engine single-threaded on its own
+vCPU of a Xeon E5-2699A v4 KVM guest.
 
 The table below times single calls on new-api's 10 task plugins and 269
 recorded calls, on the Go caller's side, including converting the arguments
-and the result.
+and the result. These measurements are from 2026-10-01 (modernc: 2026-10-08).
 
 | | moejs | Sobek | QuickJS pure Go (modernc) | QuickJS (quickjs-go, default settings) | V8 (v8go) |
 |---|--:|--:|--:|--:|--:|
@@ -57,8 +73,9 @@ full results and how to reproduce them are in
 
 ### Pure Go
 
-moejs builds with `CGO_ENABLED=0` and cross-compiles without a C toolchain.
-The engine is ordinary Go code, so pprof and the race detector see inside it.
+moejs's own code is pure Go, with no assembly and no cgo. It builds with
+`CGO_ENABLED=0` and cross-compiles without a C toolchain. The engine is
+ordinary Go code, so pprof and the race detector see inside it.
 
 ### Passing values
 
@@ -106,15 +123,6 @@ most one chunk ahead of what JavaScript took, each byte is charged to the
 runtime's memory limit, and cancel and abort reach the Go request. See
 the [guide](docs/guide.md#web-apis).
 
-<p align="center">
-  <img src="docs/assets/webapi-bench.en.png" alt="moejs Web APIs against Node.js 24: fetch of small JSON requests at 1 and 8 concurrent, a 256 MiB streamed body and server-sent events">
-</p>
-
-The chart runs the same fetch script in moejs and in Node.js 24 against a
-local loopback server, measured on 2026-10-25 on 8 vCPUs of an Intel Xeon
-E5-2667 v4. moejs is faster on small requests and on a streamed body, and
-server-sent events are the row where it is slower.
-
 ### Node.js file system
 
 The `node` package gives a runtime `node:fs`, `node:fs/promises` and
@@ -147,8 +155,10 @@ counters.
 go get github.com/MoeForge/moejs
 ```
 
-moejs needs Go 1.25 or later and depends only on the standard library (tests
-use testify). Releases up to v0.1.0-alpha.10 have the module path
+moejs needs Go 1.25 or later. Its one dependency is
+[moego](https://github.com/MoeForge/moego), for Base64: SIMD on amd64 and
+arm64, pure Go on other architectures or with `-tags purego`. Tests use
+testify. Releases up to v0.1.0-alpha.10 have the module path
 `github.com/Calcium-Ion/moejs`, and later ones `github.com/MoeForge/moejs`, so
 upgrading from them changes the import path once.
 
@@ -335,9 +345,9 @@ func main() {
 
 `Call` takes its arguments as JSON text because that is how a request
 usually brings them, and `ParseJSONString` hands the text to the plugin
-without copying it. This is the "moejs (no copy)" path in the chart above. An
-HTTP handler can read the body into a `strings.Builder`, growing it to
-`r.ContentLength` first when that is known, and pass `b.String()`, which
+without copying it. This is the "reads the caller's string" row of the chart
+above. An HTTP handler can read the body into a `strings.Builder`, growing it
+to `r.ContentLength` first when that is known, and pass `b.String()`, which
 shares the builder's buffer. `ParseJSON` takes a `[]byte` and copies it once,
 and `FromGo` takes Go maps, slices and structs.
 

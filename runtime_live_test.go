@@ -275,6 +275,31 @@ func TestMeasureLiveCountsSharedBytes(t *testing.T) {
 	}
 }
 
+// TestMeasureLiveJSONInJSON: JSON text sent as a JSON string's contents
+// (double-encoded) and parsed again in the script: the values of the second
+// parse share the string's decoded text, which counts once. What remains
+// is the first parse's text, which the string keeps, and the decoded text:
+// two copies of the payload, not three.
+func TestMeasureLiveJSONInJSON(t *testing.T) {
+	const size = 4 * mib
+	inner := `{"k":"` + strings.Repeat("x", size) + `"}`
+	outer := `{"payload":` + fmt.Sprintf("%q", inner) + `}`
+	rt := moejs.NewRuntime(moejs.Options{MemoryLimit: 1 << 40})
+	base := rt.Realm().MeasureLive(nil)
+	v, err := rt.ParseJSONString(outer)
+	require.NoError(t, err)
+	require.NoError(t, rt.SetGlobal("o", v))
+	s, err := moejs.CompileScript("t.js", `globalThis.inner = JSON.parse(o.payload); inner.k.length`)
+	require.NoError(t, err)
+	n, err := rt.RunScript(s)
+	require.NoError(t, err)
+	require.Equal(t, float64(size), n.AsNumber())
+	measured := rt.Realm().MeasureLive(nil) - base
+	t.Logf("measured %d KiB", measured>>10)
+	assert.Greater(t, measured, int64(2*size))
+	assert.Less(t, measured, int64(2*size+mib), "the decoded text counts once")
+}
+
 // spreadBall is Go data allocated between a realm's objects (spread), in
 // the size class of a small JavaScript object.
 type spreadBall struct {

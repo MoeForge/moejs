@@ -3,7 +3,9 @@ package engine
 import (
 	"math"
 	"math/rand/v2"
+	"runtime"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,13 +16,12 @@ import (
 type refList struct {
 	keys  []int
 	alive []bool
+	pos   map[int]int // the index of each live key
 }
 
 func (l *refList) find(k int) int {
-	for i, key := range l.keys {
-		if l.alive[i] && key == k {
-			return i
-		}
+	if i, ok := l.pos[k]; ok {
+		return i
 	}
 	return -1
 }
@@ -28,36 +29,47 @@ func (l *refList) find(k int) int {
 // TestCollectionTableAgainstList drives the table and the spec's list with
 // the same random operations, stepping several cursors between them: every
 // cursor must yield exactly what an index walk of the list yields, across
-// rebuilds (growth, shrinking) and clear.
+// growth in place, rebuilds (growth with holes, shrinking) and clear. One
+// round in three deletes often; the others rarely or never, so that lists
+// grow in place by several segments under live cursors.
 func TestCollectionTableAgainstList(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	for round := 0; round < 200; round++ {
 		var c collection
-		var ref refList
+		ref := refList{pos: map[int]int{}}
 		type pair struct {
 			cur  collCursor
 			i    int // index into the reference list
 			done bool
 		}
 		var curs []*pair
-		keyRange := 4 + rng.IntN(200)
-		for op := 0; op < 600; op++ {
+		// The shares of set, delete and clear, out of 100; then cursors.
+		set, del, clr, ops, keyRange := 45, 85, 87, 600, 4+rng.IntN(200)
+		switch round % 3 {
+		case 1:
+			set, del, clr, ops, keyRange = 80, 82, 82, 1500, 4+rng.IntN(2000)
+		case 2:
+			set, del, clr, ops, keyRange = 87, 87, 87, 1500, 4+rng.IntN(2000)
+		}
+		for op := 0; op < ops; op++ {
 			k := rng.IntN(keyRange)
 			switch x := rng.IntN(100); {
-			case x < 45:
+			case x < set:
 				c.set(nil, IntValue(k), IntValue(op))
 				if ref.find(k) < 0 {
+					ref.pos[k] = len(ref.keys)
 					ref.keys = append(ref.keys, k)
 					ref.alive = append(ref.alive, true)
 				}
-			case x < 85:
+			case x < del:
 				got := c.delete(IntValue(k))
 				i := ref.find(k)
 				require.Equal(t, i >= 0, got)
 				if i >= 0 {
 					ref.alive[i] = false
+					delete(ref.pos, k)
 				}
-			case x < 87:
+			case x < clr:
 				c.clear()
 				// clear empties every slot; later additions append, and a
 				// cursor continues from the next slot (the spec's list keeps
@@ -65,7 +77,8 @@ func TestCollectionTableAgainstList(t *testing.T) {
 				for i := range ref.alive {
 					ref.alive[i] = false
 				}
-			case x < 92:
+				clear(ref.pos)
+			case x < clr+5:
 				curs = append(curs, &pair{cur: c.cursor()})
 			default:
 				for _, p := range curs {
@@ -93,9 +106,72 @@ func TestCollectionTableAgainstList(t *testing.T) {
 		}
 		// The table stays proportional to the live entries.
 		if c.t != nil {
-			assert.LessOrEqual(t, cap(c.t.entries), max(32, 8*collCapFor(c.size())))
+			assert.LessOrEqual(t, c.t.capacity(), max(32, 8*collCapFor(c.size())))
+		}
+		// Every live key is found, and only those.
+		for k := range keyRange {
+			_, ok := c.get(IntValue(k))
+			require.Equal(t, ref.find(k) >= 0, ok, "round %d key %d", round, k)
 		}
 	}
+}
+
+// TestCollectionGrowInPlace: a list filled from empty grows in place, each
+// segment as large as the list before it: its entries are allocated once
+// and never move, the table stays, and a cursor that stepped before the
+// growth goes on where it was.
+func TestCollectionGrowInPlace(t *testing.T) {
+	var c collection
+	c.set(nil, IntValue(0), IntValue(0))
+	tbl, first := c.t, c.t.at(0)
+	cur := c.cursor()
+	k, _, ok := cur.next()
+	require.True(t, ok)
+	require.Equal(t, 0.0, k.AsNumber())
+	for i := 1; i < 1000; i++ {
+		c.set(nil, IntValue(i), IntValue(-i))
+	}
+	require.Same(t, tbl, c.t, "the table stays")
+	assert.Same(t, first, c.t.at(0), "no entry moves")
+	assert.Equal(t, 1024, c.t.capacity())
+	assert.Equal(t, 1000, c.t.length())
+	n := cap(c.t.entries)
+	for _, s := range c.t.more.segs {
+		assert.Equal(t, n, cap(s), "a segment as large as the list before it")
+		n += cap(s)
+	}
+	for i := range 1000 {
+		v, ok := c.get(IntValue(i))
+		require.True(t, ok)
+		require.Equal(t, float64(-i), v.AsNumber())
+	}
+	for i := 1; i < 1000; i++ {
+		k, _, ok := cur.next()
+		require.True(t, ok)
+		require.Equal(t, float64(i), k.AsNumber())
+	}
+	_, _, ok = cur.next()
+	assert.False(t, ok)
+	// Filling a table allocates its entries once and the buckets of each
+	// size: well under the copies of growth by rebuilding.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var d collection
+	for i := range 1024 {
+		d.add(nil, IntValue(i))
+	}
+	runtime.ReadMemStats(&after)
+	entries := 1024 * int(unsafe.Sizeof(collEntry{}))
+	if is64 { // a 64-bit layout
+		assert.Less(t, int(after.TotalAlloc-before.TotalAlloc), entries+2*1024*4+4096, "the entries once, the buckets of each size")
+	}
+	// Deleting and adding again compacts as before.
+	for i := range 1000 {
+		d.delete(IntValue(i))
+	}
+	assert.Equal(t, 24, d.size())
+	assert.Nil(t, d.t.more, "a shrink compacts into one segment")
+	assert.Equal(t, collCapFor(24), d.t.capacity())
 }
 
 func TestCollectionKeys(t *testing.T) {
@@ -136,6 +212,8 @@ func TestMapSemantics(t *testing.T) {
 		{"object keys", `const a = {}, b = {}; const m = new Map([[a, 1], [b, 2]]); return [m.get(a), m.get(b), m.get({})].join()`, "1,2,"},
 		{"live iteration", `const m = new Map([[1, 1], [2, 2], [3, 3]]); const out = []; for (const [k] of m) { out.push(k); if (k === 1) { m.delete(2); m.set(4, 4); } } return out.join()`, "1,3,4"},
 		{"forEach live", `const m = new Map([[1, "a"]]); const out = []; m.forEach(function (v, k, map) { out.push(k + v + (map === m) + (this === out)); if (k < 3) m.set(k + 1, "b"); }, out); return out.join()`, "1atruetrue,2btruetrue,3btruetrue"},
+		{"forEach across growth", `const m = new Map([[0, 0]]); let n = 0; m.forEach((v, k) => { n++; if (k < 40) m.set(k + 1, k); }); return n + "," + m.size + "," + m.get(40)`, "41,41,39"},
+		{"delete in a grown map during iteration", `const m = new Map(); for (let i = 0; i < 100; i++) m.set(i, i); const it = m.keys(); it.next(); for (let i = 1; i < 95; i++) m.delete(i); return [...it].join()`, "95,96,97,98,99"},
 		{"clear during iteration", `const m = new Map([[1, 1], [2, 2]]); const it = m.keys(); it.next(); m.clear(); m.set(5, 5); return JSON.stringify([it.next(), it.next()])`, `[{"value":5,"done":false},{"done":true}]`},
 		{"done stays done", `const m = new Map(); const it = m.entries(); it.next(); m.set(1, 1); return it.next().done`, "true"},
 		{"mass delete during iteration", `const m = new Map(); for (let i = 0; i < 1000; i++) m.set(i, i); const it = m.keys(); const out = [it.next().value]; for (let i = 0; i < 995; i++) m.delete(i); out.push(...it); return out.join()`, "0,995,996,997,998,999"},
@@ -178,6 +256,9 @@ func TestSetSemantics(t *testing.T) {
 	runProtoCases(t, []protoCase{
 		{"basic", `const s = new Set([1, 1, "1", NaN, NaN, -0, 0]); return [s.size, s.has(1), s.has(NaN), s.has(-0), s.add(2) === s, s.delete("1"), s.size].join()`, "4,true,true,true,true,true,4"},
 		{"order", `const s = new Set("hello"); return [...s].join("")`, "helo"},
+		{"live iteration across growth", `const s = new Set([0]); const it = s.values(); const out = [it.next().value]; for (let i = 1; i < 100; i++) s.add(i); for (const v of it) out.push(v); return [out.length, out.every((v, i) => v === i), s.has(99), s.has(100)].join()`, "100,true,true,false"},
+		{"live iteration across a compacting rebuild", `const s = new Set(); for (let i = 0; i < 8; i++) s.add(i); const it = s.values(); it.next(); it.next(); s.delete(0); s.delete(5); for (let i = 8; i < 11; i++) s.add(i); return [...it].join()`, "2,3,4,6,7,8,9,10"},
+		{"live iteration across growth and a rebuild", `const s = new Set(); for (let i = 0; i < 8; i++) s.add(i); const it = s.values(); it.next(); for (let i = 8; i < 40; i++) s.add(i); for (let i = 1; i < 36; i++) s.delete(i); s.add(40); return [...it].join() + ";" + [...s].join()`, "36,37,38,39,40;0,36,37,38,39,40"},
 		{"keys is values", `return [Set.prototype.keys === Set.prototype.values, Set.prototype[Symbol.iterator] === Set.prototype.values, Set.prototype.values.name].join()`, "true,true,values"},
 		{"entries", `return JSON.stringify([...new Set(["a"]).entries()])`, `[["a","a"]]`},
 		{"forEach", `const out = []; new Set(["a", "b"]).forEach((v, k, s) => out.push(v + k + s.size)); return out.join()`, "aa2,bb2"},
@@ -231,12 +312,12 @@ func TestCollectionNewTarget(t *testing.T) {
 		require.NoError(t, nt.SetProp(r, StringKey(AtomPrototype), ObjectValue(proto)))
 		v, err := tc.ctor(r, nil, nt)
 		require.NoError(t, err)
-		assert.Equal(t, proto, v.AsObject().proto)
+		assert.Equal(t, proto, v.AsObject().Proto())
 		assert.Equal(t, tc.class, v.AsObject().class)
 		require.NoError(t, nt.SetProp(r, StringKey(AtomPrototype), IntValue(1)))
 		v, err = tc.ctor(r, nil, nt)
 		require.NoError(t, err)
-		assert.NotEqual(t, proto, v.AsObject().proto)
+		assert.NotEqual(t, proto, v.AsObject().Proto())
 	}
 }
 

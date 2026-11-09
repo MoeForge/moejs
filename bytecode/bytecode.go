@@ -84,6 +84,10 @@ const (
 	// ConstFunction is an index into Function.Children (Index). Reserved;
 	// Closure indexes Children directly.
 	ConstFunction
+	// ConstNull and ConstUndefined are null and undefined, as the right
+	// operand of JmpStrictEqK, JmpStrictNeK and JmpCaseK.
+	ConstNull
+	ConstUndefined
 )
 
 // Const is a constant-pool entry. Only the fields relevant to Kind are set.
@@ -173,6 +177,13 @@ type Function struct {
 	// the register after the parameters (and the rest array); the prologue
 	// of a sloppy function with simple parameters maps it (MapArguments).
 	HasArguments bool
+	// ForwardArguments, with HasArguments, marks a function that is no
+	// generator nor async and whose code reads the arguments register only
+	// in ApplyArguments, ArgsLen and ArgsGet: the entry creates no object
+	// but copies the arguments above the register window, where the frame
+	// keeps them, and puts their count in the register. ApplyArguments
+	// and ArgsGet create the object when a call or a key needs it.
+	ForwardArguments bool
 	// NewTarget is set when the function reads new.target (LoadNewTarget):
 	// [[Construct]] then passes it through the realm. Class constructors
 	// always receive it.
@@ -213,6 +224,12 @@ type Function struct {
 	// functions containing a direct eval (nil for everything else, so
 	// ordinary functions pay one pointer word).
 	Extra *Extra
+
+	// overlapSum is overlapSum's of the function when MarkOverlapCalls
+	// last proved its CallOverlap marks, for VerifyRegisters to take them
+	// without proving them again while nothing they rest on has changed;
+	// 0 if it has not.
+	overlapSum uint64
 }
 
 // Extra is the rarely needed part of a Function.

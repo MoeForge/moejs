@@ -2,6 +2,8 @@ package engine
 
 import (
 	"math"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -391,6 +393,92 @@ func TestArrayJoinAndToString(t *testing.T) {
 	require.ErrorAs(t, err, &ie)
 	r.ClearInterrupt()
 	assert.Equal(t, strings.Repeat("x,", 19999)+"x", jsString(t, jsCall(t, r, big, "join")))
+}
+
+// TestArrayJoinWideAlloc checks that a long join with a UTF-16 piece
+// starts in UTF-16 storage of the joined length: from bytes, it upgraded at
+// that piece to twice the length written and grew from there, allocating
+// about five times the result's units.
+func TestArrayJoinWideAlloc(t *testing.T) {
+	for _, at := range []string{"0", "1000", "1999"} {
+		r := NewRealm()
+		evalValue(t, r, "var a = Array(2000).fill('abcdefghijklmnopqrstuvwxyz'); a["+at+"] = '\\u00e9'")
+		join := evalValue(t, r, "() => a.join()")
+		var m0, m1 runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&m0)
+		const n = 20
+		var res Value
+		for range n {
+			v, err := r.Call(join, Undefined(), nil)
+			require.NoError(t, err)
+			res = v
+		}
+		runtime.ReadMemStats(&m1)
+		units := 26*1999 + 1 + 1999
+		require.Equal(t, units, res.AsString().Len())
+		// The result's units, 2 bytes each, rounded up to whole pages, and a
+		// little for the string's header, the call and the runtime.
+		per := (m1.TotalAlloc - m0.TotalAlloc) / n
+		assert.Less(t, per, uint64(2*units)*5/4, "UTF-16 piece at %s", at)
+	}
+}
+
+// TestArrayJoinPastBudget checks that a join whose result is past the
+// realm's memory budget does not reserve it: it allocated the whole result,
+// 2 bytes a unit with a UTF-16 piece, before the limit stopped it.
+func TestArrayJoinPastBudget(t *testing.T) {
+	for _, fill := range []string{"'a'.repeat(400)", "'\\u00e9'.repeat(400)"} {
+		r := NewRealm()
+		r.SetMemoryLimit(8 << 20)
+		evalValue(t, r, "var a = Array(100000).fill("+fill+")")
+		join := evalValue(t, r, "() => a.join()")
+		var m0, m1 runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&m0)
+		_, err := r.Call(join, Undefined(), nil)
+		runtime.ReadMemStats(&m1)
+		require.ErrorIs(t, err, ErrMemoryLimit, fill)
+		t.Logf("%s: %d KiB", fill, (m1.TotalAlloc-m0.TotalAlloc)>>10)
+		assert.Less(t, m1.TotalAlloc-m0.TotalAlloc, uint64(32<<20), fill)
+	}
+}
+
+// TestArrayJoinNumbersReserve checks that a join of integers with a UTF-16
+// separator reserves their digits, not 24 units per number: a million small
+// numbers reserved 48 MB, charged to the memory limit, for a few MB.
+func TestArrayJoinNumbersReserve(t *testing.T) {
+	r := NewRealm()
+	evalValue(t, r, "var a = Array.from({length: 20000}, (_, i) => i % 2 ? i : -i)")
+	join := evalValue(t, r, "() => a.join('\\u3001')")
+	var m0, m1 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m0)
+	const n = 20
+	var res Value
+	for range n {
+		v, err := r.Call(join, Undefined(), nil)
+		require.NoError(t, err)
+		res = v
+	}
+	runtime.ReadMemStats(&m1)
+	want := make([]string, 20000)
+	for i := range want {
+		if i%2 == 0 && i != 0 {
+			want[i] = "-"
+		}
+		want[i] += strconv.Itoa(i)
+	}
+	require.Equal(t, strings.Join(want, "、"), jsString(t, res))
+	units := res.AsString().Len()
+	per := (m1.TotalAlloc - m0.TotalAlloc) / n
+	assert.Less(t, per, uint64(2*units)*5/4)
+	// A number joins as ToString writes it, in byte and in UTF-16 storage.
+	const nums = "[NaN, Infinity, -Infinity, -0, 0, 0.1, 1e21, 1.5e-7, 2**53, 2**31, -(2**31), 123.456, -1e-300]"
+	const digits = "NaN,Infinity,-Infinity,0,0,0.1,1e+21,1.5e-7,9007199254740992,2147483648,-2147483648,123.456,-1e-300"
+	require.Equal(t, digits, jsString(t, evalValue(t, r, nums+".join()")))
+	require.Equal(t, strings.ReplaceAll(digits, ",", "、"), jsString(t, evalValue(t, r, nums+".join('\\u3001')")))
+	require.Equal(t, "é,"+digits, jsString(t, evalValue(t, r, "['é', ..."+nums+"].join()")))
 }
 
 // TestArrayJoinCycles covers the stack of objects being joined: an object
@@ -860,7 +948,8 @@ func TestArrayCallbacksEnterFrames(t *testing.T) {
 		{"filter reduce find", `const a = [5, 1, 4, , 2]; return [a.filter(x => x > 1).join(), a.reduce((s, x) => s + x), a.reduce((s, x) => s + x, 100), a.reduceRight((s, x) => s + "" + x, ""), a.find(x => x < 3), a.findIndex(x => x === 4), a.findLast(x => x > 3), a.findLastIndex(x => x === undefined), a.some(x => x === 2), a.every(x => x > 0)].join("|")`, "5,4,2|12|112|2415|1|2|4|3|true|true"},
 		{"throw", `const a = [1, 2, 3]; let n = 0; let e; try { a.map(x => { n++; if (x === 2) throw new Error("at " + x); return x; }); } catch (x) { e = x.message; } return [e, n, a.map(x => x + 1).join()].join("|")`, "at 2|2|2,3,4"},
 		{"re-entry", `const a = [1, 2]; return a.map(x => a.map(y => a.filter(z => z <= y).length * x).join("+")).join(",")`, "1+2,2+4"},
-		{"deep re-entry", `function f(n) { return n === 0 ? 0 : [n].map(x => f(x - 1) + 1)[0]; } let e; try { f(1000); } catch (x) { e = x.name; } return [f(100), e].join()`, "100,RangeError"},
+		{"re-entry past old limit", `function f(n) { return n === 0 ? 0 : [n].map(x => f(x - 1) + 1)[0]; } let e; try { f(1000); } catch (x) { e = x.name; } return [f(100), e].join()`, "100,"},
+		{"deep re-entry", `function f(n) { return n === 0 ? 0 : [n].map(x => f(x - 1) + 1)[0]; } let e; try { f(5000); } catch (x) { e = x.name; } return [f(100), e].join()`, "100,RangeError"},
 		{"sort", `const a = [3, 1, 2, 10]; return [a.slice().sort((p, q) => p - q), a.slice().sort((p, q) => String(q - p)), a.slice().sort((p, q) => ({valueOf() { return p - q; }})), a.slice().sort(() => NaN), a.slice().sort((p, q) => q > p ? 1 : -0), a.slice().sort((p, q) => (p - q) * Infinity), a.slice().sort(Math.max === 1 ? null : undefined)].join("|")`, "1,2,3,10|10,3,2,1|1,2,3,10|3,1,2,10|10,3,2,1|1,2,3,10|1,10,2,3"},
 		{"sort comparator throws", `const a = [3, 1, 2]; let e; try { a.sort((p, q) => { throw new Error("cmp"); }); } catch (x) { e = x.message; } return [e, a.join()].join("|")`, "cmp|3,1,2"},
 		{"sort comparator symbol", `return [2, 1].sort(() => Symbol())`, "!TypeError"},

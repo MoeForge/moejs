@@ -173,7 +173,8 @@ func TestDictionaryModeAfter64Props(t *testing.T) {
 		mustSet(t, r, o, n, IntValue(i))
 	}
 	assert.True(t, o.IsDictionaryMode())
-	assert.Same(t, dictShape, o.Shape())
+	assert.True(t, o.Shape().IsDictionary())
+	assert.Same(t, o.Proto(), o.Shape().proto, "the sentinel carries the prototype")
 	assert.Equal(t, names, keyNames(o.OwnPropertyKeys()))
 	v, err := o.GetProp(r, key(r, "p69"))
 	require.NoError(t, err)
@@ -565,7 +566,9 @@ func TestICEntryValidity(t *testing.T) {
 	assert.Equal(t, slot, e.Slot())
 	assert.Equal(t, uint8(1), e.HolderDepth())
 	assert.Equal(t, IntValue(1), e.Holder(o).Slot(e.Slot()))
-	assert.Equal(t, uintptr(16), unsafe.Sizeof(e))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(16), unsafe.Sizeof(e))
+	}
 	// Adding a property to the prototype invalidates.
 	mustSet(t, r, proto, "n", IntValue(2))
 	assert.False(t, e.Valid(r, o))

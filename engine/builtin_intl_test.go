@@ -122,7 +122,7 @@ func TestIntlSegmentAllocs(t *testing.T) {
 			fn, _ := env.GetBindingValue("f")
 			it, err := r.Call(fn, Undefined(), []Value{StringValue(FromGoString(c.text)), StringValue(FromGoString(c.gran))})
 			require.NoError(t, err)
-			sg := it.AsObject().internal.(*intlSegments)
+			sg := extDataOf(it.AsObject(), kindIntlSegments)
 			n := testing.AllocsPerRun(100, func() {
 				if _, done := sg.step(r); done {
 					sg.pos = 0

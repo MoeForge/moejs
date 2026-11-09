@@ -54,6 +54,25 @@ func TestRotatedLoops(t *testing.T) {
 	})
 }
 
+// TestCompareEnvOperand covers compare-and-branch ops that read their
+// right operand from the innermost environment (bytecode.EnvOperand): a
+// bound a closure changes between iterations, one that converts (after the
+// left operand), NaN and a string, a block's binding, a generator's, a
+// with statement's binding of the name, and a binding read in its TDZ.
+func TestCompareEnvOperand(t *testing.T) {
+	runScriptCases(t, []scriptCase{
+		{"bound a closure changes", []string{`function f() { var n = 5, dec = () => n--; var i = 0; for (; i < n; i++) dec(); return i + ":" + n; } f()`}, "3:2"},
+		{"bound converts after the left operand", []string{`function f() { var log = [], n = {valueOf() { log.push("n"); return 2; }}, k = () => n;
+			var i = {valueOf() { log.push("i"); return 1; }}; if (i < n) log.push("lt"); if (!(i >= n)) log.push("nge"); return log.join(); } f()`}, "i,n,lt,i,n,nge"},
+		{"NaN bound", []string{`function f() { var n = NaN, k = () => n, c = 0; for (var i = 0; i < n; i++) c++; if (!(i >= n)) c += 10; return c; } f()`}, "10"},
+		{"string bound", []string{`function f() { var n = "3", k = () => n, c = 0; for (var i = 0; i < n; i++) c++; return c; } f()`}, "3"},
+		{"block binding", []string{`function f() { var c = 0; { let n = 2; var k = () => n; for (var i = 0; i < n; i++) c++; } return c; } f()`}, "2"},
+		{"generator", []string{`function* g() { var n = 2, k = () => n; for (var i = 0; i < n; i++) yield i; } [...g()].join()`}, "0,1"},
+		{"with shadows the bound", []string{`function f() { var n = 1, k = () => n, c = 0; with ({n: 3}) for (var i = 0; i < n; i++) c++; return c; } f()`}, "3"},
+		{"TDZ", []string{`function f() { var k = () => n; try { for (var i = 0; i < n; i++); } catch (e) { return e.name; } let n = 1; } f()`}, "ReferenceError"},
+	})
+}
+
 // TestRotatedLoopInterrupts interrupts loops with every kind of condition,
 // at an iteration that goes on and at the last one: rotated loops end in a
 // relational compare-and-branch, which checks the flag whichever way it

@@ -88,10 +88,10 @@ func (r *Realm) fastIterable(v Value) bool {
 		return false
 	}
 	o := v.AsObject()
-	if o.class != ClassArray || o.proto != r.ArrayPrototype {
+	if o.class != ClassArray || o.Proto() != r.ArrayPrototype {
 		return false
 	}
-	if o.flags&(flagDict|flagHasLazy) != 0 && (!o.materializeHost() || o.flags&(flagDict|flagHasLazy) != 0) {
+	if o.lazyOrDict() && (!o.materializeHost() || o.lazyOrDict()) {
 		return false
 	}
 	if o.shape.count != 0 {
@@ -175,7 +175,7 @@ func (r *Realm) iterStep(it, pos *Value) (Value, bool, error) {
 	o := v.AsObject()
 	if pos.IsNumber() {
 		i := int(pos.AsNumber())
-		if i >= int(o.internal.(*ArrayData).length) {
+		if int64(i) >= int64(o.arrayLen()) {
 			*it = Undefined()
 			return Undefined(), true, nil
 		}
@@ -193,7 +193,7 @@ func (r *Realm) iterStep(it, pos *Value) (Value, bool, error) {
 	next := pos.AsObject()
 	// The original next of the engine's iterators steps their payload
 	// directly: the {value, done} object it would return is unobservable.
-	switch d := o.internal.(type) {
+	switch d := o.payload().(type) {
 	case *IteratorData:
 		if next == r.arrayIterNextFn && o.class == ClassArrayIterator || next == r.stringIterNextFn && o.class == ClassStringIterator {
 			e, done, err := d.Next(r)
@@ -218,6 +218,12 @@ func (r *Realm) iterStep(it, pos *Value) (Value, bool, error) {
 			}
 			return e, done, nil
 		}
+	}
+	if !next.IsCallable() {
+		// Only bytecode no compiler emits gets here: iterFromMethod
+		// records a next that is not callable as undefined.
+		*it = Undefined()
+		return Undefined(), false, r.TypeError("iterator.next is not a function")
 	}
 	res, err := r.CallObject(next, v, nil)
 	if err != nil {
@@ -249,7 +255,7 @@ func (r *Realm) iterStep(it, pos *Value) (Value, bool, error) {
 func (r *Realm) iterRest(it, pos *Value) (Value, error) {
 	var items []Value
 	if v := *it; v.IsObject() && pos.IsNumber() {
-		if n := int(v.AsObject().internal.(*ArrayData).length) - int(pos.AsNumber()); n > 0 {
+		if n := int(v.AsObject().arrayLen()) - int(pos.AsNumber()); n > 0 {
 			items = make([]Value, 0, n)
 		}
 	}
@@ -289,14 +295,14 @@ func (r *Realm) closeTarget(it, pos Value) *Object {
 			return nil
 		}
 		o := r.newArrayIterator(it.AsObject(), IterValues)
-		o.internal.(*IteratorData).Index = int(pos.AsNumber())
+		dataOf(o, kindIterator).Index = int(pos.AsNumber())
 		return o
 	case it.IsString():
 		if r.lacksWellKnown(r.StringIteratorPrototype, returnKey) {
 			return nil
 		}
 		o := r.newStringIterator(it.AsString())
-		o.internal.(*IteratorData).Index = int(pos.AsNumber())
+		dataOf(o, kindIterator).Index = int(pos.AsNumber())
 		return o
 	}
 	return nil
@@ -461,9 +467,9 @@ func (d *IteratorData) Next(r *Realm) (Value, bool, error) {
 	var length int
 	switch o.class {
 	case ClassArray:
-		length = int(o.internal.(*ArrayData).length)
+		length = int(o.arrayLen())
 	case ClassTypedArray:
-		if length = o.internal.(*typedArray).length(); length < 0 {
+		if length = dataOf(o, kindTypedArray).length(); length < 0 {
 			d.finish()
 			return Undefined(), false, r.TypeError("Cannot iterate a detached or out-of-bounds TypedArray")
 		}
@@ -503,12 +509,12 @@ func (d *IteratorData) finish() {
 // arrayElementAt reads element i of o: the dense fast path reads holes as
 // undefined, everything else goes through [[Get]].
 func arrayElementAt(r *Realm, o *Object, i int) (Value, error) {
-	if i < len(o.elements) && o.class != ClassString {
-		if v := o.elements[i]; !v.IsHole() {
+	if i < o.elemLen() && o.class != ClassString {
+		if v := o.elemsReadOnly()[i]; !v.IsHole() {
 			return v, nil
 		}
-		if o.dict == nil || o.dict.sparse == nil {
-			if !chainMayHave(o.proto, IndexKey(uint32(i))) {
+		if o.dictTable() == nil || o.dictTable().sparse == nil {
+			if !chainMayHave(o.Proto(), IndexKey(uint32(i))) {
 				return Undefined(), nil
 			}
 		}

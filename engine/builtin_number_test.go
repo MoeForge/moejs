@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -364,4 +365,53 @@ func TestNumberToStringRadixMethod(t *testing.T) {
 	s, err := r.ToString(w)
 	require.NoError(t, err)
 	assert.Equal(t, "10", s.GoString())
+}
+
+// TestToFixedOneAlloc: toFixed builds its digits on the stack and allocates
+// only the result.
+func TestToFixedOneAlloc(t *testing.T) {
+	r := NewRealm()
+	for _, c := range []struct {
+		x    float64
+		d    int
+		want string
+	}{{1.2345, 2, "1.23"}, {12, 2, "12.00"}, {-0.005, 3, "-0.005"}, {0.000123, 2, "0.00"}, {9.995, 1, "10.0"}, {1.006, 2, "1.01"}, {0.7, 0, "1"}} {
+		x, args := NumberValue(c.x), []Value{NumberValue(float64(c.d))}
+		v, err := numberProtoToFixed(r, x, args)
+		require.NoError(t, err)
+		assert.Equal(t, c.want, v.AsString().GoString())
+		assert.Equal(t, 1.0, testing.AllocsPerRun(20, func() { _, _ = numberProtoToFixed(r, x, args) }), "%v.toFixed(%d)", c.x, c.d)
+	}
+}
+
+// TestToFixedExact checks toFixed against the exact reference (fuzzToFixed)
+// where the engine computes the digits from x's bits (appendFixedExact):
+// values with fraction bits at every position, so many ties of the binary
+// value, subnormals, products near 2^64, and values drawn from all
+// magnitudes, for every digit count up to 21.
+func TestToFixedExact(t *testing.T) {
+	r := NewRealm()
+	rng := rand.New(rand.NewPCG(1, 2))
+	var xs []float64
+	for j := 1; j <= 70; j++ {
+		for _, n := range []float64{1, 3, 5, 7, 99, 12345, 1<<52 - 1} {
+			xs = append(xs, math.Ldexp(n, -j)) // n / 2^j, a tie at j-1 binary digits
+		}
+	}
+	xs = append(xs, 5e-324, 2.2250738585072014e-308, 1e-20, 0.5e-19, 1.5e-19, 18446744073.709551615, 1844674407.3709551615,
+		1e15+0.3, 9007199254740991.5/2, 4503599627370495.5, 0.1, 0.7, 1.005, 9.995)
+	for range 3000 {
+		xs = append(xs, math.Float64frombits(rng.Uint64()&^(1<<63)), rng.Float64()*math.Pow10(rng.IntN(25)-8))
+	}
+	for _, x := range xs {
+		for _, s := range []float64{x, -x} {
+			for d := 0; d <= 21; d++ {
+				want, ok := fuzzToFixed(s, d)
+				got, gotOK := fuzzCallNumber(t, r, numberProtoToFixed, s, []Value{IntValue(d)})
+				if got != want || gotOK != ok {
+					t.Fatalf("(%v).toFixed(%d) = %q, want %q", s, d, got, want)
+				}
+			}
+		}
+	}
 }

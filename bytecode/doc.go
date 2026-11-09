@@ -57,6 +57,9 @@
 // Closure environments
 //
 //	GetEnv     A B C       R[A] = env^B[C]
+//	GetEnv0    A B C       GetEnv with B = 0 (the innermost environment)
+//	GetEnv1    A B C       GetEnv with B = 1 (the enclosing environment)
+//	GetEnv2    A B C       GetEnv with B = 2 (the one around it)
 //	GetEnvChk  A B C +X    R[A] = env^B[C]; ReferenceError "K[X] is not defined" if hole
 //	SetEnv     A B C       env^B[C] = R[A]
 //	GetEnvW    A B +X      R[A] = env^B[X]              (slot >= 256)
@@ -87,7 +90,8 @@
 //
 //	GetGlobal        A +X  R[A] = globalThis[name]; ReferenceError if absent
 //	GetGlobalOrUndef A +X  R[A] = globalThis[name] or undefined (typeof operand)
-//	SetGlobal        A +X  globalThis[name] = R[A]; ReferenceError if absent (strict)
+//	SetGlobal        A +X  globalThis[name] = R[A]; ReferenceError if absent in a strict function, else
+//	                       a new global object property and a rejected write ignored (SetGlobalSloppy)
 //
 // A global name resolves first in the realm's global declarative
 // environment (the let, const and class declarations of scripts), then on
@@ -99,13 +103,16 @@
 //
 //	GetProp    A B +X      R[A] = R[B].name (X = name:16 | ic:16; TypeError on null/undefined base)
 //	GetLen     A B +X      R[A] = R[B].length (array and string fast paths; X = ic in the high half)
-//	SetProp    A B +X      R[A].name = R[B] (strict PutValue)
+//	SetProp    A B +X      R[A].name = R[B] (strict PutValue); C = SetPropSloppyFlag: SetPropSloppy's,
+//	                       the form the compiler emits for sloppy code
 //	GetElem    A B C       R[A] = R[B][R[C]] (dense array and string index fast paths)
 //	GetElemRef A B C +X    R[C] = the key R[X], converted by ToPropertyKey when it is an object and
 //	                       the base R[B] is neither undefined nor null; then GetElem A B C: the read of a
 //	                       compound assignment or update, whose key GetValue converts once, after ToObject
 //	                       of the base, and PutValue reuses (X is a register, C or another)
-//	SetElem    A B C       R[A][R[B]] = R[C]
+//	GetElemInc A B C       R[C] = ToNumeric(R[C]) + 1, then R[A] = R[B][R[C]]: Inc C C; GetElem A B C, the
+//	                       read x[++k] of a register local k
+//	SetElem    A B C       R[A][R[B]] = R[C]: PutValue, strict or not as the function is
 //	DelProp    A B +X      R[A] = delete R[B].name (strict: TypeError when not configurable)
 //	DelElem    A B C       R[A] = delete R[B][R[C]]
 //	In         A B C       R[A] = R[B] in R[C]
@@ -125,10 +132,22 @@
 //	CopyDataProps   A B    copy own enumerable properties of R[B] into R[A] (object spread)
 //	CopyDataPropsEx A B C  same, skipping the keys listed in array R[C] (object rest pattern)
 //	ArrayPush       A B    append R[B] to array R[A]
+//	ArrayPushK      A +X   append the constants K[X.lo] .. K[X.lo+X.hi-1] (numbers, strings, null or
+//	                       undefined, X.hi >= 1) to array R[A]: a run of an array literal's elements
+//	NewArrayK       A +X   R[A] = a new array of the constants K[X.lo] .. K[X.lo+X.hi-1] (as ArrayPushK's),
+//	                       an array literal whose elements are all constants
+//	NewObjectLit    A B C +X  R[A] = a new ordinary object with the data properties K[X.lo] .. K[X.lo+C-1]
+//	                       (property names, C >= 1) of the values R[B] .. R[B+C-1], in that order, as NewObject
+//	                       and a DefineField of each would make it; X.hi is the inline cache that keeps the
+//	                       object's shape, which no other instruction of the function names
 //	ArrayHole       A      append a hole to array R[A] (length += 1)
 //	AppendSpread    A B    append every value produced by iterating R[B] to array R[A]
 //	Closure         A Bx   R[A] = new function object over F[Bx] closing over env (and this for arrows)
 //	NewRegExp       A Bx   R[A] = new RegExp(K[Bx].pattern, K[Bx].flags)
+//	RegExpTest      A sBx +X R[A] = /K[X lo]/.test(R[X hi]) and pc += sBx: the call /lit/.test(x) of a literal
+//	                       neither global nor sticky with x a local, when x is a string and the test and exec of
+//	                       %RegExp.prototype% are the originals, so that no code could see the literal's object and
+//	                       the match needs none. Else it falls through to the call, which it jumps over
 //	GetTemplate     A +X   R[A] = the template object of K[X lo] (GetTemplateObject: frozen cooked strings with a frozen raw array), created on the site's first evaluation in the realm and cached in IC slot X hi
 //
 // Arithmetic (number fast paths; BigInt operands take the slow path)
@@ -148,6 +167,9 @@
 //	Not       A B          R[A] = !ToBoolean(R[B])
 //	BitNot    A B          R[A] = ~R[B]
 //	ToNumeric A B          R[A] = ToNumeric(R[B]) (postfix update result)
+//	PostInc   A B          R[A] = ToNumeric(R[B]), then R[B] = R[A] + 1: ToNumeric A B; Inc B A, a postfix ++
+//	                       whose value is used
+//	PostDec   A B          R[A] = ToNumeric(R[B]), then R[B] = R[A] - 1: ToNumeric A B; Dec B A
 //	RequireObjectCoercible A  throw TypeError when R[A] is null or undefined (empty or rest-only destructuring pattern)
 //	ToStr     A B          R[A] = ToString(R[B]) (template substitutions)
 //	Concat    A B C        R[A] = R[B] + R[C], both already strings (rope above the threshold)
@@ -185,18 +207,45 @@
 //	JmpLt         A sBx +X if R[A] < R[X] pc += sBx (offset relative to the X word); JmpLe, JmpGt, JmpGe
 //	                       likewise with <=, >, >=. The compiler emits them for a comparison whose value
 //	                       only decides a conditional jump; they convert and throw as Lt .. Ge do
-//	JmpNLt        A sBx +X if !(R[A] < R[X]) pc += sBx; JmpNLe, JmpNGt, JmpNGe likewise (NaN jumps)
+//	JmpNLt        A sBx +X if !(R[A] < R[X]) pc += sBx; JmpNLe, JmpNGt, JmpNGe likewise (NaN jumps).
+//	                       An X of EnvOperand or more makes the right operand of JmpLt .. JmpNGe
+//	                       env^0.slots[X>>8 & 0xff] instead (X's low byte is then A): the compiler emits it for
+//	                       a binding closures share, initialized before any read (i < width)
 //	JmpStrictEq   A sBx +X if R[A] === R[X] pc += sBx; JmpStrictNe with !==
 //	JmpLtI .. JmpStrictNeI A sBx +X  JmpLt .. JmpStrictNe (same order) with the right operand the integer
 //	                       int32(X) instead of R[X]: the compiler emits them for a comparison with an integer
 //	                       literal that no register holds (n < 2)
+//	JmpStrictEqK  A sBx +X JmpStrictEq with the right operand K[X], a string, null or undefined: the
+//	                       compiler emits it (and JmpStrictNeK) for a strict comparison with such a literal
+//	                       that no register holds and for a switch's case of one
+//	JmpTypeofIs   A sBx +X if typeof R[A] === TypeNames[X] pc += sBx; JmpTypeofNot with !==: TypeofIs and the
+//	                       jump on its result, for a typeof test that decides a jump
+//	JmpCaseK      A sBx +X JmpStrictEqK, then each JmpStrictEqK after it that tests R[A], with no dispatch
+//	                       of its own: the compiler emits it for the first of a switch's cases on constants
+//	                       that test the discriminant in a row (caseRunMin of them or more)
 //
 // Calls
 //
 //	Call       A B C       R[A] = R[A](this = R[A+1], args R[A+2 .. A+1+B]); TypeError if not callable;
-//	                       C = CallUndefThis: this is undefined and R[A+1] is not read (a plain call)
+//	                       C&CallUndefThis: this is undefined and R[A+1] is not read (a plain call);
+//	                       C&CallOverlap: the callee's registers start at R[A+2], its parameters the arguments
+//	                       in place, and it writes over the caller's registers from there (the compiler marks
+//	                       a call so only when they are dead after it, MarkOverlapCalls)
 //	CallSpread A           R[A] = R[A](this = R[A+1], ...array R[A+2])
+//	ApplyArguments A B C   R[A] = R[A](this = R[A+1], args R[A+2], R[B]): f.apply(x, arguments) in a function
+//	                       with ForwardArguments, whose arguments register R[B] holds the count of the arguments
+//	                       the frame keeps above its registers until the object exists. While it does not and
+//	                       R[A] is the realm's %Function.prototype.apply%, R[A+1] is called with this R[A+2] and
+//	                       those arguments (TypeError if not callable, as apply's). Else the object is created
+//	                       into R[B] if it is not yet (C = 1: a mapped one, as with MapArguments B = 1), and
+//	                       the call is Call A 2 with R[A+3] = R[B]
+//	ArgsLen    A B         R[A] = R[B].length, arguments.length in a function with ForwardArguments: the count R[B]
+//	                       holds until the arguments object exists, then its length property
+//	ArgsGet    A B C +X    R[A] = R[B][R[C]], arguments[k] in a function with ForwardArguments: while the object
+//	                       does not exist, the kept argument R[C] when R[C] is an int32 below the count; else the
+//	                       object is created into R[B] first (X = 1: a mapped one, as with ApplyArguments C = 1)
 //	New        A B         R[A] = new R[A](R[A+2 .. A+1+B]); TypeError if not a constructor
+//	                       C&CallOverlap: the constructor's registers start at R[A+2], as a Call's
 //	NewSpread  A           R[A] = new R[A](...array R[A+2])
 //	Ret        A           return R[A]
 //	RetUndef               return undefined
@@ -259,7 +308,8 @@
 //
 //	SetGlobalSloppy A +X   PutValue of an identifier resolved against the global environment in sloppy code:
 //	                       an unresolvable name becomes a global object property; a rejected write is
-//	                       ignored (X = name:16 | ic:16, the SetGlobal cache)
+//	                       ignored (X = name:16 | ic:16, the SetGlobal cache; not emitted by the compiler:
+//	                       SetGlobal ignores it in a function that is not strict)
 //	ResolveGlobal A +X     R[A] = HasBinding(K[X.lo]) of the global environment: ResolveBinding of an
 //	                       undeclared name in strict code, before the value assigned to it (X = name:16 | ic:16)
 //	SetGlobalRef  A B +X   PutValue of R[A] to the reference ResolveGlobal resolved: ReferenceError unless
@@ -271,7 +321,8 @@
 //	DelGlobal     A +X     R[A] = delete K[X] for a name resolved against the global environment:
 //	                       false for a global lexical binding, else globalThis.[[Delete]](K[X])
 //	SetPropSloppy A B +X   R[A].name = R[B], ignoring a rejected assignment (X = name:16 | ic:16)
-//	SetElemSloppy A B C    R[A][R[B]] = R[C], ignoring a rejected assignment
+//	SetElemSloppy A B C    R[A][R[B]] = R[C], ignoring a rejected assignment (not emitted by the
+//	                       compiler: SetElem ignores it in a function that is not strict)
 //	DelPropSloppy A B +X   R[A] = delete R[B].name; false instead of a TypeError when not configurable
 //	DelElemSloppy A B C    R[A] = delete R[B][R[C]]; false instead of a TypeError when not configurable
 //	SetSuperSloppy A B C   set super property R[B] of base R[A] to R[C] with receiver R[A+1], ignoring a
@@ -285,11 +336,13 @@
 //	                       or with X.hi = 1 (strict) a ReferenceError, when the property is gone
 //	WithSet       A B +X   SetMutableBinding(K[X.lo], R[B]) of the object environment of R[A]
 //	                       (X.hi = 1: strict, a ReferenceError when the property is gone and a TypeError when rejected)
-//	CoerceThis             this = the global object when undefined or null, else ToObject(this)
-//	                       (the entry of a sloppy function that uses this)
-//	MapArguments  A        make the fresh arguments object R[A] a mapped one: its indices below both the argument
+//	CoerceThis    A        this = the global object when undefined or null, else ToObject(this); R[A] = this
+//	                       (the entry of a sloppy function that uses this, as LoadThis A)
+//	MapArguments  A B      make the fresh arguments object R[A] a mapped one: its indices below both the argument
 //	                       count and NumParams alias the parameters' slots of the function's own Env (CaptureLayout
-//	                       entries below NumParams) and callee is the running function
+//	                       entries below NumParams) and callee is the running function. B = 1 when no code writes
+//	                       a parameter (nor can: no direct eval) and parameter i is Env slot i: the object then
+//	                       keeps its elements and builds the alias on the first write, define or delete of one
 //	CallEval      A B C +X R[A] = Call as with Call (C = 1: CallSpread) of callee R[A], this R[A+1]; when the
 //	                       callee is the realm's %eval% it is a direct eval (PerformEval) of the first argument
 //	                       in the running Env, compiled against the call site's scope Extra.Evals[X]

@@ -671,7 +671,7 @@ func (e *env) bufferConcat(r *engine.Realm, _ engine.Value, args []engine.Value)
 			total += int64(len(b))
 		}
 	} else {
-		l, err := e.offsetArg(lv, "length", 0, maxSafe)
+		l, err := e.offsetArg64(lv, "length", 0, maxSafe)
 		if err != nil {
 			return undefined, err
 		}
@@ -680,7 +680,7 @@ func (e *env) bufferConcat(r *engine.Realm, _ engine.Value, args []engine.Value)
 				return undefined, err
 			}
 		}
-		total = int64(l)
+		total = l
 	}
 	if total > kMaxLength {
 		return undefined, r.RangeError("Array buffer allocation failed")
@@ -766,6 +766,13 @@ func (e *env) viewBytes(v engine.Value, name string) ([]byte, error) {
 // offsetArg implements Node's validateOffset: an integer number in
 // [min, max].
 func (e *env) offsetArg(v engine.Value, name string, min, max int) (int, error) {
+	n, err := e.offsetArg64(v, name, int64(min), int64(max))
+	return int(n), err
+}
+
+// offsetArg64 is offsetArg for a bound an int may not hold, maxSafe on
+// 32-bit systems, where the offset is compared and kept in int64.
+func (e *env) offsetArg64(v engine.Value, name string, min, max int64) (int64, error) {
 	if !v.IsNumber() {
 		return 0, e.argTypeError(name, "of type number", v)
 	}
@@ -774,9 +781,9 @@ func (e *env) offsetArg(v engine.Value, name string, min, max int) (int, error) 
 		return 0, e.outOfRange(name, "an integer", v)
 	}
 	if f < float64(min) || f > float64(max) {
-		return 0, e.outOfRange(name, ">= "+itoa(int64(min))+" && <= "+itoa(int64(max)), v)
+		return 0, e.outOfRange(name, ">= "+itoa(min)+" && <= "+itoa(max), v)
 	}
-	return int(f), nil
+	return int64(f), nil
 }
 
 // --- methods ------------------------------------------------------------------------
@@ -1009,18 +1016,20 @@ func (e *env) bufferCompare(r *engine.Realm, this engine.Value, args []engine.Va
 	if len(args) == 1 {
 		return engine.IntValue(bytes.Compare(src, target)), nil
 	}
-	arg := func(i int, name string, max, def int) (int, error) {
+	// The starts go up to maxSafe, past an int on 32-bit systems, so the
+	// offsets are int64 until they are clamped to the ends.
+	arg := func(i int, name string, max, def int64) (int64, error) {
 		v := engine.Arg(args, i)
 		if v.IsUndefined() {
 			return def, nil
 		}
-		return e.offsetArg(v, name, 0, max)
+		return e.offsetArg64(v, name, 0, max)
 	}
 	ts, err := arg(1, "targetStart", maxSafe, 0)
 	if err != nil {
 		return undefined, err
 	}
-	te, err := arg(2, "targetEnd", len(target), len(target))
+	te, err := arg(2, "targetEnd", int64(len(target)), int64(len(target)))
 	if err != nil {
 		return undefined, err
 	}
@@ -1028,7 +1037,7 @@ func (e *env) bufferCompare(r *engine.Realm, this engine.Value, args []engine.Va
 	if err != nil {
 		return undefined, err
 	}
-	se, err := arg(4, "sourceEnd", len(src), len(src))
+	se, err := arg(4, "sourceEnd", int64(len(src)), int64(len(src)))
 	if err != nil {
 		return undefined, err
 	}

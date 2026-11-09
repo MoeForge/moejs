@@ -27,7 +27,7 @@ func TestScriptGlobalNames(t *testing.T) {
 	assert.Equal(t, []string{"g", "f"}, g.Function, "in the order of the last declarations")
 	assert.Equal(t, []string{"v"}, g.Var)
 	assert.Equal(t, []string{"b"}, g.AnnexB)
-	assert.Zero(t, count(fn, bytecode.GetEnv)+count(fn, bytecode.SetEnv), "top-level declarations are global, not environment slots")
+	assert.Zero(t, count(fn, bytecode.GetEnv)+count(fn, bytecode.GetEnv0)+count(fn, bytecode.GetEnv1)+count(fn, bytecode.GetEnv2)+count(fn, bytecode.SetEnv), "top-level declarations are global, not environment slots")
 
 	assert.Nil(t, compileScript(t, `1 + 1`).Extra, "a script without declarations has no GlobalNames")
 }
@@ -49,8 +49,8 @@ func TestScriptOps(t *testing.T) {
 		not       []bytecode.Op
 	}{
 		{"sloppy assignment", `x = 1; o.p = 1; o[k] = 1;`,
-			[]bytecode.Op{bytecode.SetGlobalSloppy, bytecode.SetPropSloppy, bytecode.SetElemSloppy},
-			[]bytecode.Op{bytecode.SetGlobal, bytecode.SetProp, bytecode.SetElem}},
+			[]bytecode.Op{bytecode.SetGlobal, bytecode.SetProp, bytecode.SetElem},
+			[]bytecode.Op{bytecode.SetGlobalSloppy, bytecode.SetPropSloppy, bytecode.SetElemSloppy}},
 		{"strict assignment", `"use strict"; x = 1; o.p = 1; o[k] = 1;`,
 			[]bytecode.Op{bytecode.SetGlobal, bytecode.SetProp, bytecode.SetElem},
 			[]bytecode.Op{bytecode.SetGlobalSloppy, bytecode.SetPropSloppy, bytecode.SetElemSloppy}},
@@ -58,7 +58,7 @@ func TestScriptOps(t *testing.T) {
 			[]bytecode.Op{bytecode.DelPropSloppy, bytecode.DelElemSloppy, bytecode.DelGlobal},
 			[]bytecode.Op{bytecode.DelProp, bytecode.DelElem}},
 		{"let initialization", `let a = 1; const b = 2;`,
-			[]bytecode.Op{bytecode.InitGlobal}, []bytecode.Op{bytecode.SetGlobalSloppy}},
+			[]bytecode.Op{bytecode.InitGlobal}, []bytecode.Op{bytecode.SetGlobal, bytecode.SetGlobalSloppy}},
 		{"with", `with (o) a = b;`,
 			[]bytecode.Op{bytecode.ToObject, bytecode.JmpWith, bytecode.WithGet, bytecode.WithSet}, nil},
 		{"sloppy super", `({ m() { super.p = 1; [super.q] = [1]; } });`,
@@ -79,27 +79,87 @@ func TestScriptOps(t *testing.T) {
 			}
 		})
 	}
+	// A named write is SetProp in both, with SetPropSloppyFlag in sloppy
+	// code.
+	for src, want := range map[string]uint8{`o.p = 1;`: bytecode.SetPropSloppyFlag, `"use strict"; o.p = 1;`: 0} {
+		var flags []uint8
+		code := compileScript(t, src).Code
+		for pc := 0; pc < len(code); pc += 1 + bytecode.DecodeOp(code[pc]).ExtraWords() {
+			if w := code[pc]; bytecode.DecodeOp(w) == bytecode.SetProp {
+				flags = append(flags, bytecode.DecodeC(w))
+			}
+		}
+		assert.Equal(t, []uint8{want}, flags, src)
+	}
 }
 
 // TestSloppyFunctionPrologue checks that only sloppy functions that use
-// this or arguments get CoerceThis and MapArguments.
+// this or arguments get CoerceThis and MapArguments, and that CoerceThis
+// loads this into its register, where LoadThis does in strict code.
 func TestSloppyFunctionPrologue(t *testing.T) {
 	tests := []struct {
-		name, src      string
-		coerce, mapped int
+		name, src            string
+		coerce, mapped, load int
 	}{
-		{"plain", `function f(a) { return a; }`, 0, 0},
-		{"this", `function f() { return this; }`, 1, 0},
-		{"arguments", `function f(a) { return arguments; }`, 0, 1},
-		{"strict", `function f(a) { "use strict"; return [this, arguments]; }`, 0, 0},
-		{"non-simple params", `function f(a = 1) { return arguments; }`, 0, 0},
-		{"arrow this", `function f() { return () => this; }`, 1, 0},
+		{"plain", `function f(a) { return a; }`, 0, 0, 0},
+		{"this", `function f() { return this; }`, 1, 0, 0},
+		{"this twice", `function f() { return [this, this.x]; }`, 1, 0, 0},
+		{"arguments", `function f(a) { return arguments; }`, 0, 1, 0},
+		{"this and arguments", `function f(a) { return [this, arguments]; }`, 1, 1, 0},
+		{"strict", `function f(a) { "use strict"; return [this, arguments]; }`, 0, 0, 1},
+		{"non-simple params", `function f(a = 1) { return arguments; }`, 0, 0, 0},
+		{"arrow this", `function f() { return () => this; }`, 1, 0, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			f := child(t, compileScript(t, tc.src), "f")
 			assert.Equal(t, tc.coerce, count(f, bytecode.CoerceThis))
 			assert.Equal(t, tc.mapped, count(f, bytecode.MapArguments))
+			assert.Equal(t, tc.load, count(f, bytecode.LoadThis))
+		})
+	}
+}
+
+// TestLazyMappedArguments checks MapArguments' B operand: 1 (alias lazily)
+// only when no code can write a parameter and parameter i is Env slot i.
+func TestLazyMappedArguments(t *testing.T) {
+	tests := []struct {
+		name, src string
+		lazy      bool
+	}{
+		{"read only", `function f(a, b) { return [arguments, arguments[0] + a + b]; }`, true},
+		{"no params", `function f() { return [arguments, arguments.length]; }`, true},
+		{"captured read", `function f(a) { return () => a + arguments[0]; }`, true},
+		{"assign", `function f(a) { a = 1; return arguments; }`, false},
+		{"compound", `function f(a) { a += 1; return arguments; }`, false},
+		{"update", `function f(a) { a++; return arguments; }`, false},
+		{"closure", `function f(a) { (() => { a = 1; })(); return arguments; }`, false},
+		{"nested function", `function f(a) { function g() { a = 1; } return arguments; }`, false},
+		{"destructuring", `function f(a) { [a] = [1]; return arguments; }`, false},
+		{"object destructuring", `function f(a) { ({a} = {a: 1}); return arguments; }`, false},
+		{"for-in", `function f(a) { for (a in {x: 1}); return arguments; }`, false},
+		{"for-of", `function f(a) { for (a of [1]); return arguments; }`, false},
+		{"for var-in", `function f(a) { for (var a in {x: 1}); return arguments; }`, false},
+		{"var init", `function f(a) { var a = 1; return arguments; }`, false},
+		{"var no init", `function f(a) { var a; return arguments; }`, true},
+		{"function declaration", `function f(a) { function a() {} return arguments; }`, false},
+		{"with", `function f(a) { with ({}) a = 1; return arguments; }`, false},
+		{"direct eval", `function f(a) { eval(""); return arguments; }`, false},
+		{"eval in closure", `function f(a) { return () => eval("a = 1") && arguments; }`, false},
+		{"duplicate params", `function f(a, a) { return arguments; }`, false},
+		{"other binding", `function f(a) { var b = 1; b = 2; return arguments; }`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := child(t, compileScript(t, tc.src), "f")
+			n := 0
+			for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
+				if w := f.Code[pc]; bytecode.DecodeOp(w) == bytecode.MapArguments {
+					n++
+					assert.Equal(t, tc.lazy, bytecode.DecodeB(w) == 1)
+				}
+			}
+			assert.Equal(t, 1, n)
 		})
 	}
 }

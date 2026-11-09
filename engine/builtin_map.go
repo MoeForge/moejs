@@ -91,10 +91,9 @@ func (r *Realm) newCollectionObject(proto *Object, class Class) (*Object, *colle
 	r.chargeObject(unsafe.Sizeof(collObject{}))
 	o := &co.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = class
 	o.flags = flagExtensible
-	o.internal = &co.data
+	setData(o, kindCollection, &co.data)
 	return o, &co.data
 }
 
@@ -103,7 +102,7 @@ func (r *Realm) newCollectionObject(proto *Object, class Class) (*Object, *colle
 func thisCollection(r *Realm, this Value, class Class, method string) (*collection, error) {
 	if this.IsObject() {
 		if o := this.AsObject(); o.class == class {
-			if c, ok := o.internal.(*collection); ok {
+			if c, ok := dataOk(o, kindCollection); ok {
 				return c, nil
 			}
 		}
@@ -338,11 +337,10 @@ func (r *Realm) newCollIterator(proto *Object, class Class, c *collection, kind 
 	r.chargeObject(unsafe.Sizeof(collIterObject{}))
 	o := &it.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = class
 	o.flags = flagExtensible
 	it.data = collIterData{cur: c.cursor(), kind: kind}
-	o.internal = &it.data
+	setData(o, kindCollIter, &it.data)
 	return o
 }
 
@@ -358,7 +356,7 @@ func mapIterator(r *Realm, this Value, kind IterKind, method string) (Value, err
 // collIteratorNext is the shared next of the Map and Set iterators.
 func collIteratorNext(r *Realm, this Value, class Class) (Value, error) {
 	if this.IsObject() && this.AsObject().class == class {
-		if d, ok := this.AsObject().internal.(*collIterData); ok {
+		if d, ok := dataOk(this.AsObject(), kindCollIter); ok {
 			v, done := d.step(r, class == ClassSetIterator)
 			return r.createIterResult(v, done), nil
 		}

@@ -263,7 +263,7 @@ export function f(loc, optsJSON, a, b) {
   df.resolvedOptions();
   let r = "";
   let s, p;
-  try { s = df.format(a); p = df.formatToParts(a) } catch (e) { if (e instanceof RangeError && (a !== a || Math.intlFuzzAbs(a) > 8.64e15)) return "range"; throw e }
+  try { s = df.format(a); p = df.formatToParts(a) } catch (e) { if (e instanceof RangeError && (a !== a || Math.abs(a) > 8.64e15)) return "range"; throw e }
   const j = p.map(q => q.value).join("");
   if (s.replace(/\u202f/g, " ") !== j.replace(/\u202f/g, " ")) throw new Error("parts " + JSON.stringify(s) + " vs " + JSON.stringify(j) + " " + optsJSON + " " + a);
   for (const q of p) if (typeof q.type !== "string" || q.value === "") throw new Error("part " + JSON.stringify(q));

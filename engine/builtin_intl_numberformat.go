@@ -49,7 +49,7 @@ func intlNumberFormatConstruct(r *Realm, args []Value, newTarget *Object) (Value
 	}
 	r.markPrototype(proto)
 	o := r.newObject(ClassIntlNumberFormat, r.rootShapeFor(proto))
-	o.internal = nf
+	setExtData(o, kindIntlNumberFormat, nf)
 	return ObjectValue(o), nil
 }
 
@@ -476,7 +476,7 @@ func intlNumberFormatFormat(r *Realm, this Value, args []Value) (Value, error) {
 }
 
 func intlNumberFormatBound(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
-	s, err := fd.data.(*intlNumberFormat).format(r, intlArg(args, 0))
+	s, err := fd.nat().data.(*intlNumberFormat).format(r, intlArg(args, 0))
 	if err != nil {
 		return Undefined(), err
 	}
@@ -614,7 +614,6 @@ func (r *Realm) intlPartsArray(nf *intlNumberFormat, u []uint16, parts []intlPar
 		o := &d.obj
 		o.slots = d.slots[:2]
 		o.shape = shape
-		o.proto = r.ObjectPrototype
 		o.class = ClassObject
 		o.flags = flagExtensible
 		var value *String

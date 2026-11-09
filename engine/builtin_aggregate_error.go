@@ -13,7 +13,7 @@ func installAggregateError(r *Realm) {
 		return aggregateErrorConstruct(r, args, nil)
 	}
 	ctor := r.newConstructor(AtomAggregateError, 2, call, aggregateErrorConstruct, r.AggregateErrorPrototype)
-	ctor.proto = r.errorCtors[KindError]
+	r.markPrototype(r.errorCtors[KindError])
 	ctor.shape = ctor.shape.rebase(r, r.rootShapeFor(r.errorCtors[KindError]))
 	r.AggregateErrorCtor = ctor
 	r.bindGlobal(AtomAggregateError, ObjectValue(ctor))

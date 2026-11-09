@@ -498,3 +498,31 @@ func TestStringRepeatInterrupt(t *testing.T) {
 	v := callMethod(t, r, str("abcdefghij"), "repeat", IntValue(100000))
 	assert.Equal(t, 1000000, v.AsString().Len())
 }
+
+// TestCaseSingleChar: a one-character ASCII string that changes case
+// converts to the shared one-character string, without allocating.
+func TestCaseSingleChar(t *testing.T) {
+	r := NewRealm()
+	for c := byte(0); c < 0x80; c++ {
+		s := asciiString(string(rune(c)))
+		up, err := stringToUpper(r, s)
+		require.NoError(t, err)
+		lo, err := stringToLower(r, s)
+		require.NoError(t, err)
+		assert.Equal(t, strings.ToUpper(string(rune(c))), up.GoString())
+		assert.Equal(t, strings.ToLower(string(rune(c))), lo.GoString())
+		assert.Equal(t, 0.0, testing.AllocsPerRun(10, func() { _, _ = stringToUpper(r, s); _, _ = stringToLower(r, s) }), "%q", c)
+	}
+}
+
+// TestSplitEmptySeparatorLimit checks split("") with the default limit,
+// 2**32 - 1, which is past an int on 32-bit systems, and with given ones.
+func TestSplitEmptySeparatorLimit(t *testing.T) {
+	runScriptCases(t, []scriptCase{
+		{"no limit", []string{`JSON.stringify("abc".split(""))`}, `["a","b","c"]`},
+		{"limit 2**32 - 1", []string{`"abc".split("", 2**32 - 1).length`}, "3"},
+		{"limit 2", []string{`JSON.stringify("abc".split("", 2))`}, `["a","b"]`},
+		{"limit -1", []string{`"abc".split("", -1).length`}, "3"},
+		{"limit 0", []string{`"abc".split("", 0).length`}, "0"},
+	})
+}

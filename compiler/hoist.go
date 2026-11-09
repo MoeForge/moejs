@@ -74,7 +74,10 @@ type hoistState struct {
 	// noHoist lists the functions that compile without hoisting; nil is
 	// the key of top-level code.
 	noHoist map[*syntax.Function]bool
-	scan    hoistScan
+	// spill lists the bindings each function that ran out of registers
+	// spills (spill.go).
+	spill map[*syntax.Function]map[*syntax.Binding]bool
+	scan  hoistScan
 }
 
 // spareHoist keeps one hoistState, with its slices, from one compilation
@@ -104,32 +107,42 @@ func (c *compiler) release() {
 	clear(h.regs[:cap(h.regs)])
 	h.regs = h.regs[:0]
 	h.noHoist = nil
+	h.spill = nil
 	h.scan.reset()
 	spareHoist.Store(h)
 }
 
 // hoistRetry is the panic of a function that ran out of registers after it
-// hoisted constants: compileUnit compiles the unit again without hoisting
-// in fn.
+// hoisted constants or made an object literal of its values in a row
+// (objectLitK), or out of constants after it gave object literals key runs
+// (keyRun): compileUnit compiles the unit again without either in fn.
 type hoistRetry struct{ fn *syntax.Function }
 
 func (r *hoistRetry) Error() string { return "compiler: out of registers with hoisted constants" }
 
 // compileUnit runs compile, a whole compilation with a fresh compiler, and
 // runs it again without hoisting in each function that ran out of
-// registers with it.
-func compileUnit(compile func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error)) (*bytecode.Function, error) {
+// registers with it, and with bindings spilled in each function that ran
+// out of registers without (spillRetry, spill.go).
+func compileUnit(compile func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error)) (*bytecode.Function, error) {
 	var noHoist map[*syntax.Function]bool
+	var spill map[*syntax.Function]map[*syntax.Binding]bool
 	for {
-		fn, err := compile(noHoist)
-		r, ok := err.(*hoistRetry)
-		if !ok {
+		fn, err := compile(noHoist, spill)
+		switch r := err.(type) {
+		case *hoistRetry:
+			if noHoist == nil {
+				noHoist = make(map[*syntax.Function]bool)
+			}
+			noHoist[r.fn] = true
+		case *spillRetry:
+			if spill == nil {
+				spill = make(map[*syntax.Function]map[*syntax.Binding]bool)
+			}
+			spill[r.fn] = spillVictims(r.fn)
+		default:
 			return fn, err
 		}
-		if noHoist == nil {
-			noHoist = make(map[*syntax.Function]bool)
-		}
-		noHoist[r.fn] = true
 	}
 }
 
@@ -156,14 +169,16 @@ func (f *funcState) hoistedReg(e syntax.Expr) int {
 	return -1
 }
 
-// literalKey returns the key of e when e is a number, string or BigInt
-// literal, or a negated number literal.
+// literalKey returns the key of e when e is a number, string (stringLit) or
+// BigInt literal, or a negated number literal.
 func literalKey(e syntax.Expr) (hoistKey, bool) {
 	switch e := e.(type) {
 	case *syntax.NumberLit:
 		return hoistKey{kind: uint8(kNumber), bits: math.Float64bits(e.Value)}, true
-	case *syntax.StringLit:
-		return hoistKey{kind: uint8(kString), str: e.Value}, true
+	case *syntax.StringLit, *syntax.TemplateLit:
+		if v, ok := stringLit(e); ok {
+			return hoistKey{kind: uint8(kString), str: v}, true
+		}
 	case *syntax.BigIntLit:
 		return hoistKey{kind: hoistBigInt, str: e.Digits}, true
 	case *syntax.UnaryExpr:
@@ -319,7 +334,7 @@ func (s *hoistScan) Visit(n syntax.Node) syntax.Visitor {
 		// the number are different constants to the operators that read
 		// them, though both name the same property here.
 		if n.Computed {
-			if lit, ok := n.Prop.(*syntax.StringLit); !ok || isArrayIndexName(lit.Value) {
+			if lit, ok := stringLit(n.Prop); !ok || isArrayIndexName(lit) {
 				s.add(n.Prop)
 			}
 		}

@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSmallASCIICoallocation checks that strings built through the
@@ -68,7 +69,7 @@ func TestSmallASCIIAllocations(t *testing.T) {
 	mixed := asciiString("X-Request-Id")
 	r := NewRealm()
 	assert.Equal(t, 1.0, testing.AllocsPerRun(50, func() { stringToLower(r, mixed) }))
-	assert.Equal(t, 1.0, testing.AllocsPerRun(50, func() { NumberToString(370) }))
+	assert.Equal(t, 1.0, testing.AllocsPerRun(50, func() { NumberToString(3700) })) // past intStrings
 	assert.Equal(t, 1.0, testing.AllocsPerRun(50, func() {
 		var sb StringBuilder
 		sb.WriteString(a)
@@ -82,11 +83,15 @@ func TestSmallASCIIAllocations(t *testing.T) {
 // co-allocated strings filling theirs: a field added to String moves every
 // string, rope node and split piece up a class.
 func TestStringSize(t *testing.T) {
-	assert.Equal(t, uintptr(48), unsafe.Sizeof(String{}))
-	assert.Equal(t, uintptr(64), unsafe.Sizeof(asciiBuf16{}))
-	assert.Equal(t, uintptr(80), unsafe.Sizeof(asciiBuf32{}))
-	assert.Equal(t, uintptr(96), unsafe.Sizeof(asciiBuf48{}))
-	assert.Equal(t, uintptr(112), unsafe.Sizeof(asciiBuf64{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(48), unsafe.Sizeof(String{}))
+		assert.Equal(t, uintptr(64), unsafe.Sizeof(asciiBuf16{}))
+		assert.Equal(t, uintptr(80), unsafe.Sizeof(asciiBuf32{}))
+		assert.Equal(t, uintptr(96), unsafe.Sizeof(asciiBuf48{}))
+		assert.Equal(t, uintptr(112), unsafe.Sizeof(asciiBuf64{}))
+		assert.Equal(t, uintptr(64), unsafe.Sizeof(utf16Buf[[8]uint16]{}))
+		assert.Equal(t, uintptr(176), unsafe.Sizeof(utf16Buf[[64]uint16]{}))
+	}
 }
 
 var smallASCIISink *String
@@ -106,6 +111,46 @@ func TestSmallASCIISizeClasses(t *testing.T) {
 			runtime.ReadMemStats(&m1)
 			per = min(per, (m1.TotalAlloc-m0.TotalAlloc)/1000)
 		}
-		assert.Equal(t, uint64(64+16*((n-1)/16)), per, "n=%d", n)
+		if is64 { // a 64-bit layout
+			assert.Equal(t, uint64(64+16*((n-1)/16)), per, "n=%d", n)
+		}
 	}
+}
+
+// TestSmallUTF16Concat: a UTF-16 concatenation shorter than ropeThreshold
+// is one allocation, its header and units together, of the size class of
+// its length, 64 to 176 bytes, and holds the units of both sides.
+func TestSmallUTF16Concat(t *testing.T) {
+	r := NewRealm()
+	for n := 2; n < ropeThreshold; n++ {
+		a := asciiString(strings.Repeat("a", n/2))
+		b := FromGoString(strings.Repeat("中", n-n/2))
+		s, err := r.Concat(a, b)
+		require.NoError(t, err)
+		assert.Equal(t, a.GoString()+b.GoString(), s.GoString(), "n=%d", n)
+		assert.Equal(t, n, s.Len())
+		s, err = r.Concat(b, s)
+		require.NoError(t, err)
+		assert.Equal(t, b.GoString()+a.GoString()+b.GoString(), s.GoString(), "n=%d", n)
+		assert.Equal(t, 1.0, testing.AllocsPerRun(20, func() { _, _ = r.Concat(a, b) }), "n=%d", n)
+		per := uint64(math.MaxUint64)
+		for range 3 { // the least of three: the runtime allocates now and then
+			var m0, m1 runtime.MemStats
+			runtime.ReadMemStats(&m0)
+			for range 1000 {
+				smallASCIISink, _ = newUTF16Buf(n)
+			}
+			runtime.ReadMemStats(&m1)
+			per = min(per, (m1.TotalAlloc-m0.TotalAlloc)/1000)
+		}
+		if is64 { // a 64-bit layout
+			assert.Equal(t, uint64(64+16*((n-1)/8)), per, "n=%d", n)
+		}
+	}
+	// The units outlive a collection with only the String held.
+	s, err := r.Concat(asciiString("held "), FromGoString("中文"))
+	require.NoError(t, err)
+	runtime.GC()
+	runtime.GC()
+	assert.Equal(t, "held 中文", s.GoString())
 }

@@ -239,9 +239,11 @@ func TestStringBuilder(t *testing.T) {
 // the code units written. The sizes of the builder and of the structs that
 // embed it are part of their size classes.
 func TestStringBuilderWrites(t *testing.T) {
-	assert.Equal(t, uintptr(120), unsafe.Sizeof(StringBuilder{}))
-	assert.Equal(t, uintptr(224), unsafe.Sizeof(jsonParser{}))
-	assert.Equal(t, uintptr(360), unsafe.Sizeof(jsonStringifier{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(120), unsafe.Sizeof(StringBuilder{}))
+		assert.Equal(t, uintptr(224), unsafe.Sizeof(jsonParser{}))
+		assert.Equal(t, uintptr(360), unsafe.Sizeof(jsonStringifier{}))
+	}
 	filler := strings.Repeat("abcdefghijklmnopqrstuvwxyz0123456789", 8)
 	wide := FromGoString("éü中")
 	pieces := []struct {
@@ -401,6 +403,7 @@ func TestRopeFlattenShapes(t *testing.T) {
 		}
 		for name, s := range map[string]*String{"left-deep": left, "right-deep": right, "balanced": balanced(0, len(pieces)), "zigzag": zig} {
 			assert.Equal(t, want.String(), s.GoString(), "%s mixed=%v", name, mixed)
+			s.flatten() // GoString reads a mixed rope's leaves if it can
 			assert.Equal(t, !mixed, flatKind(t, s) == strASCII, "%s mixed=%v", name, mixed)
 			assert.Nil(t, s.p, "the left child is released")
 			assert.Nil(t, s.right)

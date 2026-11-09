@@ -97,6 +97,12 @@ func generate(src []byte) ([]byte, error) {
 	return out, nil
 }
 
+// nonNil is the statement that takes the fast build's window anew at each
+// instruction so that its accesses need no nil check (engine/interp.go,
+// nonNilWindow). The copy's window is a *checkedRegs, which checks every
+// access anyway: the copy drops the statement.
+const nonNil = "regs = nonNilWindow(regs)"
+
 // checkRun rewrites run's source: its registers are a *checkedRegs taken
 // with newCheckedRegs and refresh instead of window, each regs[i] becomes
 // (*regs.at(int(i))), and the loop tells regs the instruction it runs
@@ -110,6 +116,7 @@ func checkRun(run string) (string, error) {
 		return "", fmt.Errorf("run takes its first window other than with %q", first)
 	}
 	run = strings.Replace(run, first, "regs := newCheckedRegs(st, base, code)", 1)
+	run = dropLines(run, nonNil)
 	run = strings.ReplaceAll(run, "st.window(base)", "regs.refresh()")
 	if strings.Contains(run, "window(") {
 		return "", fmt.Errorf("run takes a window other than with st.window(base)")
@@ -134,9 +141,10 @@ func checkRun(run string) (string, error) {
 
 // onlyIndexes fails unless run uses its window only to index it, which
 // the copy checks: every regs that is not a field (x.regs) is followed by
-// [, or is assigned st.window(base), alone (regs := ...) or with the frame
-// (regs, fr = ...). Anything else (regs passed to a function, converted to
-// a pointer or compared) would reach the window past the checks.
+// [, or is assigned st.window(base) (regs := ... or regs = ...), or is the
+// statement nonNil, which the copy drops. Anything else (regs passed to a
+// function, converted to a pointer or compared) would reach the window
+// past the checks.
 func onlyIndexes(run string) error {
 	type tok struct {
 		t   token.Token
@@ -173,14 +181,18 @@ func onlyIndexes(run string) error {
 		}
 		return true
 	}
-	for i, k := range toks {
+	nonNilStmt := []tok{{token.IDENT, "regs"}, {token.ASSIGN, ""}, {token.IDENT, "nonNilWindow"}, {token.LPAREN, ""}, {token.IDENT, "regs"}, {token.RPAREN, ""}}
+	for i := 0; i < len(toks); i++ {
+		k := toks[i]
 		if k.t != token.IDENT || k.lit != "regs" || i > 0 && toks[i-1].t == token.PERIOD {
 			continue
 		}
 		switch {
+		case at(i, nonNilStmt...):
+			i += len(nonNilStmt) - 1
 		case at(i+1, tok{t: token.LBRACK}):
 		case at(i+1, append([]tok{{t: token.DEFINE}}, window...)...):
-		case at(i+1, append([]tok{{t: token.COMMA}, {token.IDENT, "fr"}, {t: token.ASSIGN}}, window...)...):
+		case at(i+1, append([]tok{{t: token.ASSIGN}}, window...)...):
 		default:
 			var ctx []string
 			for _, c := range toks[i:min(i+4, len(toks))] {
@@ -241,6 +253,17 @@ func rewriteIndexes(src string) (string, int, error) {
 
 func isIdent(c byte) bool {
 	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '.'
+}
+
+// dropLines removes every line of src whose trimmed text is stmt.
+func dropLines(src, stmt string) string {
+	var b strings.Builder
+	for _, l := range strings.SplitAfter(src, "\n") {
+		if strings.TrimSpace(l) != stmt {
+			b.WriteString(l)
+		}
+	}
+	return b.String()
 }
 
 // insertLine inserts code on a line of its own after (or before) the only

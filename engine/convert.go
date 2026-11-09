@@ -196,20 +196,20 @@ func (r *Realm) ToObject(v Value) (*Object, error) {
 		return r.NewStringObject(v.AsString()), nil
 	case TypeNumber:
 		o := r.newObject(ClassNumber, r.rootShapeFor(r.NumberPrototype))
-		o.internal = &primitiveWrapper{value: v}
+		setExtData(o, kindPrimitive, &primitiveWrapper{value: v})
 		return o, nil
 	case TypeBoolean:
 		o := r.newObject(ClassBoolean, r.rootShapeFor(r.BooleanPrototype))
-		o.internal = &primitiveWrapper{value: v}
+		setExtData(o, kindPrimitive, &primitiveWrapper{value: v})
 		return o, nil
 	case TypeSymbol:
 		o := r.newObject(ClassSymbol, r.rootShapeFor(r.SymbolPrototype))
-		o.internal = v.AsSymbol()
+		setExtData(o, kindSymbol, v.AsSymbol())
 		return o, nil
 	case TypeBigInt:
 		r.lateAt(lateBigInt)
 		o := r.newObject(ClassBigInt, r.rootShapeFor(r.BigIntPrototype))
-		o.internal = v.AsBigInt()
+		setExtData(o, kindBigInt, v.AsBigInt())
 		return o, nil
 	}
 	return nil, r.TypeError("Cannot convert undefined or null to object")
@@ -218,7 +218,7 @@ func (r *Realm) ToObject(v Value) (*Object, error) {
 // NewStringObject creates a String exotic wrapper.
 func (r *Realm) NewStringObject(s *String) *Object {
 	o := r.newObject(ClassString, r.rootShapeFor(r.StringPrototype))
-	o.internal = s
+	setExtData(o, kindString, s)
 	return o
 }
 
@@ -342,7 +342,7 @@ func (r *Realm) GetV(v Value, key PropertyKey) (Value, error) {
 	case TypeString:
 		s := v.AsString()
 		if key.IsIndex() {
-			if i := key.Index(); int(i) < s.Len() {
+			if i := key.Index(); int64(i) < int64(s.Len()) {
 				return StringValue(s.Substring(int(i), int(i)+1)), nil
 			}
 		} else if key == lengthKey {
@@ -419,7 +419,7 @@ func (r *Realm) protoForPrimitive(v Value) (*Object, error) {
 // LengthOfArrayLike implements LengthOfArrayLike.
 func (r *Realm) LengthOfArrayLike(o *Object) (int64, error) {
 	if o.class == ClassArray {
-		return int64(o.internal.(*ArrayData).length), nil
+		return int64(o.arrayLen()), nil
 	}
 	v, err := o.GetProp(r, lengthKey)
 	if err != nil {
@@ -435,6 +435,9 @@ func (r *Realm) CreateListFromArrayLike(v Value) ([]Value, error) {
 		return nil, r.TypeError("CreateListFromArrayLike called on non-object")
 	}
 	o := v.AsObject()
+	if list, ok := r.denseList(o); ok {
+		return list, nil
+	}
 	n, err := r.LengthOfArrayLike(o)
 	if err != nil {
 		return nil, err
@@ -453,3 +456,46 @@ func (r *Realm) CreateListFromArrayLike(v Value) ([]Value, error) {
 	}
 	return list, nil
 }
+
+// denseList is CreateListFromArrayLike of an array or an arguments object
+// whose length is at most denseListMax and its first length elements all
+// in the dense storage, where no Get of one runs code: an ordinary array, or
+// an arguments object whose properties are still the ones it was created
+// with (its length an integer, as written to its slot). Else ok is false.
+func (r *Realm) denseList(o *Object) (_ []Value, ok bool) {
+	var n int
+	switch o.class {
+	case ClassArray:
+		if o.flags&(flagDict|flagHasLazy) != 0 {
+			return nil, false
+		}
+		n = int(o.arrayLen())
+	case ClassArguments:
+		l := r.shapeState()
+		if o.shape != l.arguments && o.shape != l.mapped {
+			return nil, false
+		}
+		k, isInt := o.slots[0].IsInt32()
+		if !isInt || k < 0 {
+			return nil, false
+		}
+		n = int(k)
+	default:
+		return nil, false
+	}
+	e := o.elems()
+	if n > len(e) || n > denseListMax {
+		return nil, false
+	}
+	for _, v := range e[:n] {
+		if v.IsHole() {
+			return nil, false
+		}
+	}
+	list := make([]Value, n)
+	copy(list, e)
+	return list, true
+}
+
+// denseListMax bounds the lists denseList copies with no interrupt check.
+const denseListMax = 1 << 16

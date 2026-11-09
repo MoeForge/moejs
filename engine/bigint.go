@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+	"unsafe"
 )
 
 // BigInt is a JavaScript BigInt value: an immutable arbitrary-precision
@@ -105,6 +106,153 @@ func newBigIntCap(n int) *BigInt {
 	}
 	z.v.SetBits(w)
 	return z
+}
+
+// smallBigInts are the BigInts -16n to 16n, shared by all realms: half the
+// results of decimal arithmetic such as an Intl polyfill's are the digits
+// of x % 10n. A BigInt is immutable, so goroutines share one safely, and no
+// operator tells two equal BigInts apart. Each is allocated as a result
+// that does not fit is (newBigIntInt64), so the memory limit charges the
+// two alike.
+const smallBigIntMax = 16
+
+var smallBigInts = func() [2*smallBigIntMax + 1]*BigInt {
+	var a [2*smallBigIntMax + 1]*BigInt
+	for i := range a {
+		a[i] = newBigIntInt64(int64(i - smallBigIntMax))
+	}
+	return a
+}()
+
+// bigintFromInt64 returns z as a BigInt (bigintOf).
+func (r *Realm) bigintFromInt64(z int64) *BigInt {
+	return r.bigintOf(z < 0, 0, magnitude64(z))
+}
+
+// bigintOf returns the BigInt of magnitude hi*2^64+lo, negative when neg:
+// a shared one from smallBigInts, the one the realm's BigInt memo holds,
+// or a new one.
+func (r *Realm) bigintOf(neg bool, hi, lo uint64) *BigInt {
+	if hi == 0 && lo <= smallBigIntMax {
+		if neg {
+			return smallBigInts[smallBigIntMax-lo]
+		}
+		return smallBigInts[smallBigIntMax+lo]
+	}
+	if lz := r.lazy; lz != nil {
+		if m := lz.memos; m == nil {
+			if r.newMemos() != nil {
+				return r.bigintMemoized(neg, hi, lo)
+			}
+		} else if m.bigint.skip == 0 {
+			return r.bigintMemoized(neg, hi, lo)
+		} else {
+			m.bigint.skip--
+		}
+	}
+	return newBigIntWords(neg, hi, lo)
+}
+
+// bigintMemo maps BigInt values of at most 128 bits to a BigInt made for
+// them: the decimal arithmetic of an Intl polyfill computes the same few
+// thousand mantissas, quotients and powers of ten at every render (x / 10n,
+// x % 10n, x * 10n ** k), each into a new BigInt. A result of at most 128
+// bits that is not one of smallBigInts looks in one set of bigintMemoWays,
+// chosen by a hash of its value, for one of its value, and returns it. A
+// new result goes in the way the count of misses picks. A realm whose
+// results seldom repeat, a counter's, skips the memo (memoGate). BigInts
+// are immutable and no operator tells two equal ones apart, so a memo
+// result serves every operation of its value.
+//
+// It holds only results the operators made, each of 48 bytes: at most
+// bigintMemoSets*bigintMemoWays of them, 48 KiB, besides its own 24 KiB
+// (memo.go). On two such workloads 1024 results serve 82 % of the BigInts
+// of at most 128 bits their renders made.
+type bigintMemo [bigintMemoSets]bigintMemoSet
+
+type bigintMemoSet struct {
+	lo, hi [bigintMemoWays]uint64
+	b      [bigintMemoWays]*BigInt
+}
+
+const (
+	bigintMemoBits = 8
+	bigintMemoSets = 1 << bigintMemoBits
+	bigintMemoWays = 4
+)
+
+// bigintMemoized is bigintOf when the realm's BigInt memo is in use.
+func (r *Realm) bigintMemoized(neg bool, hi, lo uint64) *BigInt {
+	ms := r.lazy.memos
+	m := ms.bigints
+	if m == nil {
+		m = new(bigintMemo)
+		ms.bigints = m
+		r.charge(int(unsafe.Sizeof(bigintMemo{})))
+	}
+	h := (lo ^ hi*0x9e3779b97f4a7c15) * 0xbf58476d1ce4e5b9
+	if neg {
+		h = ^h
+	}
+	set := &m[h>>(64-bigintMemoBits)]
+	for i, b := range &set.b {
+		if set.lo[i] == lo && set.hi[i] == hi && b != nil && (b.v.Sign() < 0) == neg {
+			ms.bigint.hits++
+			return b
+		}
+	}
+	b := newBigIntWords(neg, hi, lo)
+	i := ms.bigint.misses % bigintMemoWays
+	set.lo[i], set.hi[i], set.b[i] = lo, hi, b
+	ms.bigint.miss()
+	return b
+}
+
+// newBigIntWords returns a new BigInt of magnitude hi*2^64+lo, negative
+// when neg, co-allocated with its words.
+func newBigIntWords(neg bool, hi, lo uint64) *BigInt {
+	z := newBigIntCap(128 / bits.UintSize)
+	w := z.v.Bits()[:128/bits.UintSize]
+	for i := range w {
+		if s := uint(i) * bits.UintSize; s < 64 {
+			w[i] = big.Word(lo >> s)
+		} else {
+			w[i] = big.Word(hi >> (s - 64))
+		}
+	}
+	z.v.SetBits(w) // drops the leading zero words
+	if neg {
+		z.v.Neg(&z.v)
+	}
+	return z
+}
+
+// words128 returns the magnitude of the words w, at most 128 bits of
+// them, as hi*2^64+lo.
+func words128(w []big.Word) (hi, lo uint64) {
+	for i, x := range w {
+		if s := uint(i) * bits.UintSize; s < 64 {
+			lo |= uint64(x) << s
+		} else {
+			hi |= uint64(x) << (s - 64)
+		}
+	}
+	return hi, lo
+}
+
+// newBigIntInt64 returns z as a BigInt co-allocated with its words.
+func newBigIntInt64(z int64) *BigInt {
+	b := newBigIntCap(64 / bits.UintSize)
+	b.v.SetInt64(z)
+	return b
+}
+
+// smallBigInt returns 0n or 1n.
+func smallBigInt(one bool) *BigInt {
+	if one {
+		return smallBigInts[smallBigIntMax+1]
+	}
+	return smallBigInts[smallBigIntMax]
 }
 
 // maxBigIntBits bounds the magnitude of every BigInt (SpiderMonkey's limit,
@@ -260,11 +408,15 @@ func (r *Realm) ToBigInt(v Value) (*BigInt, error) {
 	case TypeBigInt:
 		return p.AsBigInt(), nil
 	case TypeBoolean:
-		if p.AsBool() {
-			return NewBigIntFromInt64(1), nil
-		}
-		return NewBigIntFromInt64(0), nil
+		return smallBigInt(p.AsBool()), nil
 	case TypeString:
+		if s := p.AsString(); s.Len() <= shortDecimalMax {
+			if a, ok := s.ASCII(); ok {
+				if v, ok := shortDecimal(a); ok {
+					return r.bigintFromInt64(v), nil
+				}
+			}
+		}
 		if err := r.checkBigIntParse(p.AsString()); err != nil {
 			return nil, err
 		}
@@ -305,7 +457,7 @@ func (r *Realm) numberToBigInt(f float64) (*BigInt, error) {
 		return nil, r.RangeError("The number %s cannot be converted to a BigInt because it is not an integer", NumberToGoString(f))
 	}
 	if math.Abs(f) < 1<<63 {
-		return NewBigIntFromInt64(int64(f)), nil
+		return r.bigintFromInt64(int64(f)), nil
 	}
 	b := &BigInt{}
 	big.NewFloat(f).Int(&b.v)
@@ -320,6 +472,35 @@ func errBigIntTooBig(r *Realm) error { return r.RangeError("Maximum BigInt size 
 func StringToBigInt(s *String) (*BigInt, bool) {
 	b, over, ok := parseBigInt(s)
 	return b, ok && over == 0
+}
+
+// shortDecimalMax is the length of the longest string shortDecimal reads,
+// a sign and 18 digits. ToBigInt tries it on no longer string, so that a
+// longer rope is flattened once, by parseBigInt.
+const shortDecimalMax = 1 + 18
+
+// shortDecimal returns the value of a when it is an optional sign and 1
+// to 18 decimal digits, the StringIntegerLiterals that always fit an
+// int64; ok is false for any other string, which parseBigInt reads.
+func shortDecimal(a string) (v int64, ok bool) {
+	neg := false
+	if a != "" && (a[0] == '-' || a[0] == '+') {
+		neg, a = a[0] == '-', a[1:]
+	}
+	if a == "" || len(a) > shortDecimalMax-1 {
+		return 0, false
+	}
+	for i := range len(a) {
+		d := a[i] - '0'
+		if d > 9 {
+			return 0, false
+		}
+		v = v*10 + int64(d)
+	}
+	if neg {
+		v = -v
+	}
+	return v, true
 }
 
 // parseBigInt is StringToBigInt with the size limit apart: a valid literal

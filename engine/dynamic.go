@@ -36,9 +36,12 @@ import (
 // bounded, so a tree and all it holds are collected with its last closure.
 // Nothing needs a finalizer or a weak pointer.
 //
-// A closure is assumed to run in its own realm, as with host code: another
-// realm that calls one binds its caches in its own table (icBaseFor), where
-// they stay, for the call only.
+// A closure runs only in its own realm, the realm that compiled its tree:
+// its caches are bound in that realm's table, where they stay bound
+// between calls. Its realm is the one that ran the code creating it, its
+// tree's, so another realm's call or resumption of it fails before its
+// frame starts (errForeignFrame), as for any function of another realm,
+// and Realm.IsForeign reports it to a host.
 
 // dynFlag marks the funcMeta.dyn of every meta of a dynamic tree. Its low
 // bits are the base+1 of the function's inline caches in the realm's table,
@@ -98,7 +101,7 @@ func (r *Realm) dynMeta(code *bytecode.Function, ref *scriptOrModule) (*dynRoot,
 	d := &dynRoot{code: code, ref: ref, realm: r}
 	d.dyn = dynFlag
 	n := uint32(0)
-	if err := r.fillMeta(&d.funcMeta, code, &d.funcMeta, &n); err != nil {
+	if err := r.fillMeta(&d.funcMeta, code, &d.funcMeta, &n, newMetaSlab(code, true)); err != nil {
 		return nil, err
 	}
 	d.nfuncs = n
@@ -113,42 +116,32 @@ func (r *Realm) scriptClosure(d *dynRoot) *Object {
 }
 
 // enterDynamic is enterFrame for a closure of dynamic code whose inline
-// caches are unbound. Caches bound in another realm's table are unbound
-// when the call returns, a panic a host recovers included.
+// caches are unbound. The closure is r's (enterFrameSlow).
 func (r *Realm) enterDynamic(fn *Object, fd *FunctionData, this Value, args []Value) (Value, error) {
-	if r.bindDynamic(fd) {
-		defer func() { fd.icBase = icUnbound }()
-	}
+	r.bindDynamic(fd)
 	return r.enterFrame(fn, fd, this, args)
 }
 
 // resumeDynamic is resumeFrame for a generator or async function of dynamic
-// code whose inline caches are unbound.
+// code whose inline caches are unbound. The function is r's (resumeFrame).
 func (r *Realm) resumeDynamic(g *genFrame, v, mode Value) (Value, error) {
-	fd := g.fd
-	if r.bindDynamic(fd) {
-		defer func() { fd.icBase = icUnbound }()
-	}
+	r.bindDynamic(g.fd)
 	return r.resumeFrame(g, v, mode)
 }
 
 // bindDynamic binds the inline caches of the closure fd of dynamic code,
-// binding a range of the table to its function if it has none: a free one
-// of its size class, else new entries. A tree that binds its first range
-// joins the held trees, and a reclaim round runs first when the held trees
-// and bound closures have doubled since the last. It reports whether the
-// caches are another realm's, which the caller unbinds when the frame ends.
-func (r *Realm) bindDynamic(fd *FunctionData) bool {
+// a closure of r and so of a tree r compiled, binding a range of the table
+// to its function if it has none: a free one of its size class, else new
+// entries. A tree that binds its first range joins the held trees, and a
+// reclaim round runs first when the held trees and bound closures have
+// doubled since the last.
+func (r *Realm) bindDynamic(fd *FunctionData) {
 	m, count := fd.meta, fd.code.ICCount
 	if count == 0 {
 		fd.icBase = 0 // nothing to reclaim
-		return false
+		return
 	}
 	d := dynRootOf(m.root)
-	if d == nil || d.realm != r {
-		fd.icBase = r.icBaseFor(m, count)
-		return true
-	}
 	ds := r.dynState()
 	if len(ds.held)+ds.nfds >= ds.next {
 		r.reclaimDyn(ds)
@@ -166,7 +159,6 @@ func (r *Realm) bindDynamic(fd *FunctionData) bool {
 	d.fds = append(d.fds, fd)
 	ds.nfds++
 	fd.icBase = m.dyn&^dynFlag - 1
-	return false
 }
 
 // allocDynIC returns the base of a free range of 1<<class entries, growing
@@ -201,7 +193,7 @@ func (r *Realm) reclaimDyn(ds *dynState) {
 		if f.fn == nil {
 			continue
 		}
-		if fd, ok := f.fn.internal.(*FunctionData); ok && fd.meta != nil {
+		if fd, ok := dataOk(f.fn, kindFunction); ok && fd.meta != nil {
 			if d := dynRootOf(fd.meta.root); d != nil && d.realm == r {
 				d.used = true
 				if ds.active == nil {

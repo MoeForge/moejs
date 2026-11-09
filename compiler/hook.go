@@ -114,15 +114,16 @@ func compileFunction(name, params, body string, generator, async, typeScript boo
 	case fd == nil || fd.Pos != 0 || fd.End != len(src) || fd.Func.IsGenerator != generator || fd.Func.IsAsync != async:
 		return nil, dynamicError(s.File, "Function body ends the function early")
 	}
-	return compileUnit(func(noHoist map[*syntax.Function]bool) (*bytecode.Function, error) {
-		return compileDynamic(s, fd, name, src, stop, noHoist)
+	return compileUnit(func(noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (*bytecode.Function, error) {
+		return compileDynamic(s, fd, name, src, stop, noHoist, spill)
 	})
 }
 
 // compileDynamic compiles CompileFunction's script s, which declares the
-// function fd, without hoisting in the functions of noHoist.
-func compileDynamic(s *syntax.Script, fd *syntax.FuncDecl, name, src string, stop func() error, noHoist map[*syntax.Function]bool) (fn *bytecode.Function, err error) {
-	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist)
+// function fd, without hoisting in the functions of noHoist and with the
+// bindings of spill spilled.
+func compileDynamic(s *syntax.Script, fd *syntax.FuncDecl, name, src string, stop func() error, noHoist map[*syntax.Function]bool, spill map[*syntax.Function]map[*syntax.Binding]bool) (fn *bytecode.Function, err error) {
+	c := newCompiler(s.File, &scriptState{stop: stop}, noHoist, spill)
 	defer c.recover(&err)
 	defer c.release()
 	f := c.newFuncState(nil, nil, bytecode.KindScript, s.Scope)

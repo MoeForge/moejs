@@ -57,12 +57,16 @@ func (ta *typedArray) fixedLength() bool {
 // index implements CanonicalNumericIndexString and IsValidIntegerIndex for a
 // typedArrayKey key: the element index and whether it is valid. Every
 // valid index is an array index: an array holds fewer than 2^31 elements.
+// The index compares as an int64: an int of 32 bits holds an array index
+// of 2^31 or more as a negative number, which an int compare would take
+// for a valid one, as it would any index of an array out of bounds (whose
+// length is -1).
 func (ta *typedArray) index(key PropertyKey) (int, bool) {
 	if !key.IsIndex() {
 		return 0, false
 	}
-	i := int(key.Index())
-	return i, i < ta.length()
+	i := key.Index()
+	return int(i), int64(i) < int64(ta.length())
 }
 
 // bytes returns the bytes of the n elements from i on; they must be in
@@ -156,7 +160,7 @@ func typedArrayKey(key PropertyKey) bool {
 // and getOwnCell finds none in the shape: DefineOwnProperty and Set send
 // every typedArrayKey key to typedArrayDefine and typedArraySet.
 func typedArrayOwnCell(o *Object, key PropertyKey) (propCell, bool) {
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	if i, ok := ta.index(key); ok {
 		return propCell{value: ta.at(i), attrs: attrDefault}, true
 	}
@@ -167,7 +171,7 @@ func typedArrayOwnCell(o *Object, key PropertyKey) (propCell, bool) {
 // Number key f (TypedArrayGetElement): every Number is a canonical numeric
 // string. An index inFixed of a Number type is read in place.
 func typedArrayGetNumber(o *Object, f float64) Value {
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	i := int(f)
 	if float64(i) != f || i < 0 {
 		return Undefined()
@@ -183,7 +187,7 @@ func typedArrayGetNumber(o *Object, f float64) Value {
 		case elemInt32:
 			return IntValue(int(int32(binary.LittleEndian.Uint32(b))))
 		case elemUint32:
-			return IntValue(int(binary.LittleEndian.Uint32(b)))
+			return Int64Value(int64(binary.LittleEndian.Uint32(b))) // past an int on 32-bit systems
 		case elemInt16:
 			return IntValue(int(int16(binary.LittleEndian.Uint16(b))))
 		case elemUint16:
@@ -240,7 +244,7 @@ func (ta *typedArray) setFloat64(f, x float64) bool {
 // converted even when f is not a valid index. A Number written to an index
 // inFixed of a Number type is stored in place.
 func (r *Realm) typedArraySetNumber(o *Object, f float64, v Value) error {
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	i := int(f)
 	index := float64(i) == f && i >= 0
 	var u uint64
@@ -280,7 +284,7 @@ func (r *Realm) typedArraySetElement(ta *typedArray, i int, v Value) error {
 // typedArraySet implements [[Set]] of the typed array obj for a
 // typedArrayKey key.
 func (r *Realm) typedArraySet(obj *Object, key PropertyKey, v Value, receiver Value) (bool, error) {
-	ta := obj.internal.(*typedArray)
+	ta := dataOf(obj, kindTypedArray)
 	if receiver.IsObject() && receiver.AsObject() == obj {
 		u, err := r.toRaw(ta.kind, v)
 		if err != nil {
@@ -305,7 +309,7 @@ func (r *Realm) typedArraySet(obj *Object, key PropertyKey, v Value, receiver Va
 // typedArrayDefine implements [[DefineOwnProperty]] of the typed array o for
 // a typedArrayKey key.
 func (r *Realm) typedArrayDefine(o *Object, key PropertyKey, desc PropertyDescriptor) (bool, error) {
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	if _, ok := ta.index(key); !ok {
 		return false, nil
 	}
@@ -332,7 +336,7 @@ const maxTypedArrayKeys = 1 << 24
 
 // typedArrayKeysLimit checks the typed array o against maxTypedArrayKeys.
 func (r *Realm) typedArrayKeysLimit(o *Object) error {
-	if o.internal.(*typedArray).length() > maxTypedArrayKeys {
+	if dataOf(o, kindTypedArray).length() > maxTypedArrayKeys {
 		return r.RangeError("Too many properties to enumerate")
 	}
 	return nil
@@ -349,7 +353,7 @@ func (r *Realm) typedArraySetIntegrity(o *Object, frozen bool) error {
 	if !ok {
 		return r.TypeError("Cannot prevent extensions on a length-tracking typed array or one over a resizable buffer")
 	}
-	if o.internal.(*typedArray).length() > 0 {
+	if dataOf(o, kindTypedArray).length() > 0 {
 		if frozen {
 			return r.TypeError("Cannot freeze array buffer views with elements")
 		}
@@ -398,7 +402,6 @@ func installTypedArrays(r *Realm, b *binaryIntrinsics, d *binaryDefs) {
 		size := propCell{value: IntValue(elemSize[k]), attrs: 0}
 		kp := r.newIntrinsic(ClassObject, p, 2+len(methods))
 		kc := r.newConstructor(typedArrayCtorNames[k], 3, d.typedArrayCalls[k], d.typedArrayConstructs[k], kp)
-		kc.proto = c
 		kc.shape = kc.shape.rebase(r, root)
 		kc.ReserveSlots(r, 1+len(statics))
 		r.installOrReplace(kc, bpe, size)
@@ -420,8 +423,8 @@ func installTypedArrays(r *Realm, b *binaryIntrinsics, d *binaryDefs) {
 func (r *Realm) arrayToStringFn() Value {
 	v := bootstrapOwnValue(r.ArrayPrototype, StringKey(AtomToString))
 	if v.IsObject() {
-		if fd, ok := v.AsObject().internal.(*FunctionData); ok && fd.kind == FuncNative &&
-			reflect.ValueOf(fd.native).Pointer() == reflect.ValueOf(arrayProtoToString).Pointer() {
+		if fd, ok := dataOk(v.AsObject(), kindFunction); ok && fd.kind == FuncNative &&
+			reflect.ValueOf(fd.nat().native).Pointer() == reflect.ValueOf(arrayProtoToString).Pointer() {
 			return v
 		}
 	}
@@ -452,7 +455,7 @@ func typedArrayAbstractConstruct(r *Realm, args []Value, newTarget *Object) (Val
 // typedArrayToStringTag implements get %TypedArray%.prototype[@@toStringTag].
 func typedArrayToStringTag(r *Realm, this Value, args []Value) (Value, error) {
 	if this.IsObject() && this.AsObject().class == ClassTypedArray {
-		return StringValue(typedArrayCtorNames[this.AsObject().internal.(*typedArray).kind]), nil
+		return StringValue(typedArrayCtorNames[dataOf(this.AsObject(), kindTypedArray).kind]), nil
 	}
 	return Undefined(), nil
 }
@@ -464,16 +467,15 @@ func typedArrayToStringTag(r *Realm, this Value, args []Value) (Value, error) {
 func (r *Realm) newTypedArrayObject(proto *Object, kind elemType, buf *Object, offset, byteLength int) *Object {
 	r.markPrototype(proto)
 	to := &typedArrayObject{ta: typedArray{
-		view: dataView{buf: buf, data: buf.internal.(*arrayBuffer), offset: offset, length: byteLength},
+		view: dataView{buf: buf, data: extDataOf(buf, kindArrayBuffer), offset: offset, length: byteLength},
 		kind: kind,
 	}}
 	r.chargeObject(unsafe.Sizeof(typedArrayObject{}))
 	o := &to.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassTypedArray
 	o.flags = flagExtensible
-	o.internal = &to.ta
+	setData(o, kindTypedArray, &to.ta)
 	return o
 }
 
@@ -538,7 +540,7 @@ func (r *Realm) constructTypedArray(kind elemType, args []Value, newTarget *Obje
 	src := first.AsObject()
 	switch src.class {
 	case ClassTypedArray:
-		return r.typedArrayFromTypedArray(proto, kind, src.internal.(*typedArray))
+		return r.typedArrayFromTypedArray(proto, kind, dataOf(src, kindTypedArray))
 	case ClassArrayBuffer, ClassSharedArrayBuffer:
 		return r.typedArrayFromBuffer(proto, kind, src, Arg(args, 1), Arg(args, 2))
 	}
@@ -562,7 +564,7 @@ func (r *Realm) constructTypedArray(kind elemType, args []Value, newTarget *Obje
 	if err != nil {
 		return nil, err
 	}
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	for i, v := range vals {
 		if err := interruptEvery(r, int64(i)); err != nil {
 			return nil, err
@@ -594,7 +596,7 @@ func (r *Realm) typedArrayFromTypedArray(proto *Object, kind elemType, src *type
 	if err != nil {
 		return nil, err
 	}
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	if src.kind == kind {
 		return o, r.copyBytes(ta.bytes(0, n), src.bytes(0, n))
 	}
@@ -626,7 +628,7 @@ func (r *Realm) convertElements(dst *typedArray, di int, src *typedArray, si, n 
 
 // typedArrayFromBuffer implements InitializeTypedArrayFromArrayBuffer.
 func (r *Realm) typedArrayFromBuffer(proto *Object, kind elemType, bufObj *Object, byteOffset, length Value) (*Object, error) {
-	buf := bufObj.internal.(*arrayBuffer)
+	buf := extDataOf(bufObj, kindArrayBuffer)
 	size := int64(elemSize[kind])
 	off, err := r.ToIndex(byteOffset)
 	if err != nil {
@@ -673,11 +675,11 @@ func (r *Realm) typedArrayFromBuffer(proto *Object, kind elemType, bufObj *Objec
 // BigInt type), converting them as the iterator yields them is
 // unobservable. ok is false when the path does not apply.
 func (r *Realm) typedArrayFromDense(proto *Object, kind elemType, arr *Object) (o *Object, ok bool, err error) {
-	n := int(arr.internal.(*ArrayData).length)
-	if n > len(arr.elements) {
+	n := int(arr.arrayLen())
+	if n > arr.elemLen() {
 		return nil, false, nil
 	}
-	elems := arr.elements[:n]
+	elems := arr.elemsReadOnly()[:n]
 	big := kind.isBigInt()
 	for i, v := range elems {
 		if err := interruptEvery(r, int64(i)); err != nil {
@@ -690,7 +692,7 @@ func (r *Realm) typedArrayFromDense(proto *Object, kind elemType, arr *Object) (
 	if o, err = r.allocTypedArray(proto, kind, int64(n)); err != nil {
 		return nil, true, err
 	}
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	for i, v := range elems {
 		if err := interruptEvery(r, int64(i)); err != nil {
 			return nil, true, err
@@ -741,7 +743,7 @@ func (r *Realm) typedArrayFromArrayLike(proto *Object, kind elemType, src *Objec
 	if err != nil {
 		return nil, err
 	}
-	ta := o.internal.(*typedArray)
+	ta := dataOf(o, kindTypedArray)
 	for i := int64(0); i < n; i++ {
 		if err := interruptEvery(r, i); err != nil {
 			return nil, err
@@ -764,7 +766,7 @@ func (r *Realm) typedArrayFromArrayLike(proto *Object, kind elemType, src *Objec
 func (r *Realm) validateTypedArray(v Value, method string) (*typedArray, int, error) {
 	if v.IsObject() {
 		if o := v.AsObject(); o.class == ClassTypedArray {
-			ta := o.internal.(*typedArray)
+			ta := dataOf(o, kindTypedArray)
 			if n := ta.length(); n >= 0 {
 				return ta, n, nil
 			}
@@ -816,7 +818,7 @@ func (r *Realm) typedArrayCreateLength(c *Object, n int64, method string) (*Obje
 // typedArraySpeciesCreate implements TypedArraySpeciesCreate(o, args): the
 // result must have o's content type.
 func (r *Realm) typedArraySpeciesCreate(o *Object, args []Value, method string) (*Object, *typedArray, error) {
-	kind := o.internal.(*typedArray).kind
+	kind := dataOf(o, kindTypedArray).kind
 	c, err := r.speciesConstructor(o, r.binaryIntr().typedArrayCtors[kind])
 	if err != nil {
 		return nil, nil, err
@@ -846,7 +848,7 @@ func (r *Realm) typedArrayCreateSameType(kind elemType, n int) (*Object, *typedA
 	if err != nil {
 		return nil, nil, err
 	}
-	return o, o.internal.(*typedArray), nil
+	return o, dataOf(o, kindTypedArray), nil
 }
 
 // --- %TypedArray%.from and of ------------------------------------------------------

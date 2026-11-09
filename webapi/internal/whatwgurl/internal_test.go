@@ -215,3 +215,19 @@ func TestParseAllocs(t *testing.T) {
 		t.Errorf("the getters allocate %v times, want 1", allocs)
 	}
 }
+
+// TestHrefPastMax checks that the length of a serialization is counted
+// past maxHref, math.MaxInt on 32-bit systems, without wrapping, so that
+// set refuses it.
+func TestHrefPastMax(t *testing.T) {
+	w := hrefWriter{n: maxHref}
+	w.put("x")
+	if w.n != maxHref+1 {
+		t.Fatalf("n = %d, want %d", w.n, int64(maxHref)+1)
+	}
+	w = hrefWriter{cmp: "x", eq: true, n: maxHref}
+	w.put("x")
+	if w.eq || w.n != maxHref+1 {
+		t.Fatalf("compare past maxHref: eq = %v, n = %d", w.eq, w.n)
+	}
+}

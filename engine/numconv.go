@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/big"
 	"strconv"
+	"sync/atomic"
 )
 
 // isJSWhitespace reports whether c is a WhiteSpace or LineTerminator code
@@ -174,25 +175,49 @@ func digitValue(c byte) int {
 
 // NumberToString implements Number::toString(10).
 func NumberToString(f float64) *String {
-	if f == 0 {
-		return asciiString("0")
-	}
-	if f == math.Trunc(f) && f > -1e15 && f < 1e15 {
-		if i := int64(f); i >= 0 && i < 10 {
-			return smallIntStrings[i]
-		}
+	if f == math.Trunc(f) && f >= intStringMin && f < intStringMax {
+		return intString(int(f)) // -0 too: its string is "0"
 	}
 	var buf [32]byte
 	return asciiStringCopy(AppendNumber(buf[:0], f))
 }
 
-var smallIntStrings = func() [10]*String {
-	var a [10]*String
-	for i := range a {
-		a[i] = asciiString(strconv.Itoa(i))
+// intStrings holds the strings of the integers from intStringMin up to
+// intStringMax, each made on its first use and shared by every realm of
+// the process: a server-side render writes the same counts, indices and
+// sizes, and reads the same negative keys, at every render, each into a
+// new string. Each is made with its hash, which Hash would otherwise store
+// from every goroutine that hashes it, and marked strConst, so the live
+// measurement does not count it, as it skips the constants of shared code
+// (codePointStrings does the same).
+var intStrings [intStringMax - intStringMin]atomic.Pointer[String]
+
+const (
+	intStringMin = -128
+	intStringMax = 1024
+)
+
+// intString returns the string of i, intStringMin <= i < intStringMax.
+func intString(i int) *String {
+	if s := intStrings[i-intStringMin].Load(); s != nil {
+		return s
 	}
-	return a
-}()
+	return newIntString(i)
+}
+
+// newIntString makes and publishes the string of i; of two goroutines
+// that make one at once, both return the one published first.
+//
+//go:noinline
+func newIntString(i int) *String {
+	g := strconv.Itoa(i)
+	s := &String{s: g, n: int32(len(g)), kind: strASCII, flags: strConst, json: jsonPlain}
+	s.hash = s.contentHash()
+	if p := &intStrings[i-intStringMin]; !p.CompareAndSwap(nil, s) {
+		return p.Load()
+	}
+	return s
+}
 
 // NumberToGoString implements Number::toString(10) into a Go string.
 func NumberToGoString(f float64) string {

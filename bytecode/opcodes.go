@@ -15,135 +15,202 @@ type Op uint8
 // Ops marked "+X" in doc.go are followed by one ExtraArg word (a raw uint32)
 // whose layout is given per op; a few use two.
 const (
+	// --- the ops run has a case for, the ones the workloads run most first:
+	// run's switch lays out its cases in op order, so the hot ones lie
+	// together at its start, where a change to a case after them, or a new
+	// op's case, does not move them. The order is that of the mean, over the
+	// V8 suite, the gate rows and the plugin scenarios, of each op's share
+	// of the ops run dispatches, with ops moved up to twenty places to
+	// where the assembler pads fewest of the jumps those workloads run (a
+	// jump that would cross or end on a 32-byte boundary gets NOPs before
+	// it, which execute when the code before it falls through). The ops of
+	// one case, and those of a group the code numbers by offset (Lt .. Ge,
+	// JmpLt .. JmpStrictNe and its integer and constant forms), are
+	// together, in their order ---
+
+	GetLen      Op = iota // AB+X  R[A] = R[B].length;        X = ic:16
+	NewObject             // ABx  R[A] = {} with room for Bx properties
+	LoadConst             // ABx  R[A] = K[Bx]
+	Move                  // AB   R[A] = R[B]
+	Add                   // ABC  R[A] = R[B] + R[C]
+	Ret                   // A    return R[A]
+	Inc                   // AB   R[A] = ToNumeric(R[B]) + 1
+	DefineField           // AB+X R[A].name := R[B] (CreateDataProperty); X = name:16 | ic:16
+	Call                  // ABC  R[A] = R[A].call(this = R[A+1], R[A+2 .. A+1+B]); C&CallUndefThis: this is undefined; C&CallOverlap: the callee's frame starts at R[A+2]
+
+	// --- GetEnv of the innermost environment, without testing the depth
+	// (GetEnv1 and GetEnv2 read the enclosing one and the one around that
+	// without walking the chain) ---
+	GetEnv0 // ABC  GetEnv with B = 0
+
+	GetProp          // AB+X  R[A] = R[B].name;          X = name:16 | ic:16
+	RetUndef         // -    return undefined
+	IterNext         // AsBx  R[A+2] = next value of iterator R[A]; when done pc += sBx
+	New              // ABC  R[A] = new R[A](R[A+2 .. A+1+B]); C&CallOverlap: the constructor's frame starts at R[A+2]
+	GetGlobal        // A+X  R[A] = global[name]; ReferenceError if absent; X = name:16 | ic:16
+	GetGlobalOrUndef // A+X  R[A] = global[name] or undefined (typeof)
+	JmpT             // AsBx  if ToBoolean(R[A]) pc += sBx
+	JmpF             // AsBx  if !ToBoolean(R[A]) pc += sBx
+	Mul              // ABC
+	Jmp              // sBx   pc += sBx  (negative offsets are back-edges: interrupt check)
+	Eq               // ABC  R[A] = R[B] == R[C]
+	Ne               // ABC
+	BitAnd           // ABC
+	BitOr            // ABC
+	BitXor           // ABC
+	Shl              // ABC
+	Shr              // ABC  signed >>
+	UShr             // ABC  >>>
+
+	// --- compare and branch (a comparison whose result only feeds a
+	// conditional jump). The offset is relative to the X word. ---
+	JmpLt       // AsBx+X if R[A] < R[X] pc += sBx
+	JmpLe       // AsBx+X if R[A] <= R[X] pc += sBx
+	JmpGt       // AsBx+X if R[A] > R[X] pc += sBx
+	JmpGe       // AsBx+X if R[A] >= R[X] pc += sBx
+	JmpNLt      // AsBx+X if !(R[A] < R[X]) pc += sBx
+	JmpNLe      // AsBx+X if !(R[A] <= R[X]) pc += sBx
+	JmpNGt      // AsBx+X if !(R[A] > R[X]) pc += sBx
+	JmpNGe      // AsBx+X if !(R[A] >= R[X]) pc += sBx
+	JmpStrictEq // AsBx+X if R[A] === R[X] pc += sBx
+	JmpStrictNe // AsBx+X if R[A] !== R[X] pc += sBx
+
+	GetEnv1 // ABC  GetEnv with B = 1
+	SubImm  // ABC  R[A] = R[B] - int8(C)
+	GetElem // ABC   R[A] = R[B][R[C]]
+	SetProp // AB+X  R[A].name = R[B];          X = name:16 | ic:16; C = SetPropSloppy: SetPropSloppy
+	AddImm  // ABC  R[A] = R[B] + int8(C)
+	SetElem // ABC   R[A][R[B]] = R[C]
+	Closure // ABx  R[A] = new function object from Children[Bx]
+
+	// --- a typeof test and branch: TypeofIs and the jump on its result ---
+	JmpTypeofIs  // AsBx+X if typeof R[A] === TypeName(X) pc += sBx
+	JmpTypeofNot // AsBx+X if typeof R[A] !== TypeName(X) pc += sBx
+
+	StrictEq   // ABC
+	StrictNe   // ABC
+	CoerceThis // A     this = the global object if undefined or null, else ToObject(this); R[A] = this (sloppy function entry)
+	SetEnv     // ABC  env^B[C] = R[A]
+	Throw      // A    throw R[A]
+	LoadFalse  // A    R[A] = false
+
+	// --- an update fused with the op that reads its value ---
+	PostInc // AB   ToNumeric A B, then Inc B A: a postfix ++ whose value is used
+
+	LoadInt    // AsBx R[A] = sBx
+	JmpNullish // AsBx  if R[A] is null or undefined
+	GetEnv2    // ABC  GetEnv with B = 2
+	Dec        // AB   R[A] = ToNumeric(R[B]) - 1
+	LoadNull   // A    R[A] = null
+
+	// --- strict comparison and branch against a constant that is not a
+	// number: JmpStrictEq and JmpStrictNe with the right operand K[X] ---
+	JmpStrictEqK // AsBx+X if R[A] === K[X] pc += sBx
+	JmpStrictNeK // AsBx+X if R[A] !== K[X] pc += sBx
+
+	GetElemInc // ABC  Inc C C, then GetElem A B C: x[++k] of a register local k
+	GetElemRef // ABC+X R[C] = R[X], converted once; R[A] = R[B][R[C]]; X = register
+	NewArray   // ABx  R[A] = [] with capacity Bx
+	GetEnv     // ABC  R[A] = env^B[C]
+
+	// --- compare and branch against an integer: JmpLt .. JmpStrictNe with
+	// the right operand int32(X), in the same order ---
+	JmpLtI       // AsBx+X if R[A] < int32(X) pc += sBx
+	JmpLeI       // AsBx+X if R[A] <= int32(X) pc += sBx
+	JmpGtI       // AsBx+X if R[A] > int32(X) pc += sBx
+	JmpGeI       // AsBx+X if R[A] >= int32(X) pc += sBx
+	JmpNLtI      // AsBx+X if !(R[A] < int32(X)) pc += sBx
+	JmpNLeI      // AsBx+X if !(R[A] <= int32(X)) pc += sBx
+	JmpNGtI      // AsBx+X if !(R[A] > int32(X)) pc += sBx
+	JmpNGeI      // AsBx+X if !(R[A] >= int32(X)) pc += sBx
+	JmpStrictEqI // AsBx+X if R[A] === int32(X) pc += sBx
+	JmpStrictNeI // AsBx+X if R[A] !== int32(X) pc += sBx
+
+	CopyEnv       // -    env = shallow copy of env (per-iteration bindings)
+	JmpNotNullish // AsBx
+	Sub           // ABC
+	Div           // ABC
+	Mod           // ABC
+	Exp           // ABC  R[A] = R[B] ** R[C]
+	InstanceOf    // ABC  R[A] = R[B] instanceof R[C]
+	ArrayPush     // AB   append R[B] to array R[A]
+	LoadUndef     // A    R[A] = undefined
+	LoadCallee    // A    R[A] = the running function object
+	Not           // AB   R[A] = !R[B]
+	TypeofIs      // ABC  R[A] = typeof R[B] === TypeName(C)
+	SetGlobal     // A+X  global[name] = R[A]; ReferenceError if absent (strict function), else as SetGlobalSloppy
+	IterInit      // AB    R[A], R[A+1] = iterator state over R[B]
+	PostDec       // AB   ToNumeric A B, then Dec B A
+	PushEnv       // ABx  env = new Env(parent env, Bx slots)
+	LoadTrue      // A    R[A] = true
+	UndefRange    // AB   R[A .. A+B-1] = undefined
+	PopEnv        // -    env = env.parent
+	ToStr         // AB   R[A] = ToString(R[B])
+	Lt            // ABC
+	Le            // ABC
+	Gt            // ABC
+	Ge            // ABC
+	JmpNotUndef   // AsBx
+	Concat        // ABC  R[A] = R[B] concatenated with R[C] (both strings)
+	IterValue     // AB    R[B] = next value of iterator R[A], or undefined when done
+	IterRest      // AB    R[B] = array of the remaining values of iterator R[A]
+	IterClose     // AsBx  IteratorClose(R[A], normal); pc += sBx
+	LoadThis      // A    R[A] = this
+
+	// --- arguments.length and arguments[k] where the arguments object
+	// R[B] may not exist yet (Function.ForwardArguments) ---
+	ArgsLen // AB    R[A] = R[B].length
+	ArgsGet // ABC+X R[A] = R[B][R[C]] (X = 1: mapped)
+
+	ForInNext // AsBx  R[A+3] = next key still present on R[A+2]; when done pc += sBx
+
+	// --- the ops run leaves to its default case, coldOp, by kind ---
+
 	// --- loads and moves ---
-	LoadConst  Op = iota // ABx  R[A] = K[Bx]
-	LoadInt              // AsBx R[A] = sBx
-	LoadUndef            // A    R[A] = undefined
-	LoadNull             // A    R[A] = null
-	LoadTrue             // A    R[A] = true
-	LoadFalse            // A    R[A] = false
-	LoadHole             // A    R[A] = hole (TDZ marker)
-	LoadThis             // A    R[A] = this
-	LoadCallee           // A    R[A] = the running function object
-	Move                 // AB   R[A] = R[B]
-	UndefRange           // AB   R[A .. A+B-1] = undefined
+	LoadHole // A    R[A] = hole (TDZ marker)
 
 	// --- closure environments ---
-	GetEnv     // ABC  R[A] = env^B[C]
 	GetEnvChk  // ABC+X R[A] = env^B[C]; ReferenceError if hole; X = name const
-	SetEnv     // ABC  env^B[C] = R[A]
 	GetEnvW    // AB+X  R[A] = env^B[X]
 	GetEnvChkW // AB+X+X R[A] = env^B[X1]; ReferenceError if hole; X2 = name const
 	SetEnvW    // AB+X  env^B[X] = R[A]
-	PushEnv    // ABx  env = new Env(parent env, Bx slots)
-	PopEnv     // -    env = env.parent
-	CopyEnv    // -    env = shallow copy of env (per-iteration bindings)
 	CheckTDZ   // A+X  ReferenceError "Cannot access 'K[X]' before initialization" if R[A] is hole
 
-	// --- globals ---
-	GetGlobal        // A+X  R[A] = global[name]; ReferenceError if absent; X = name:16 | ic:16
-	GetGlobalOrUndef // A+X  R[A] = global[name] or undefined (typeof)
-	SetGlobal        // A+X  global[name] = R[A]; ReferenceError if absent
-
 	// --- properties ---
-	GetProp    // AB+X  R[A] = R[B].name;          X = name:16 | ic:16
-	GetLen     // AB+X  R[A] = R[B].length;        X = ic:16
-	SetProp    // AB+X  R[A].name = R[B];          X = name:16 | ic:16
-	GetElem    // ABC   R[A] = R[B][R[C]]
-	SetElem    // ABC   R[A][R[B]] = R[C]
-	DelProp    // AB+X  R[A] = delete R[B].name;   X = name const
-	DelElem    // ABC   R[A] = delete R[B][R[C]]
-	In         // ABC   R[A] = R[B] in R[C]
-	InstanceOf // ABC  R[A] = R[B] instanceof R[C]
+	DelProp // AB+X  R[A] = delete R[B].name;   X = name const
+	DelElem // ABC   R[A] = delete R[B][R[C]]
+	In      // ABC   R[A] = R[B] in R[C]
 
 	// --- literals ---
-	NewObject       // ABx  R[A] = {} with room for Bx properties
-	NewArray        // ABx  R[A] = [] with capacity Bx
-	DefineField     // AB+X R[A].name := R[B] (CreateDataProperty); X = name const
 	DefineElem      // ABC  R[A][R[B]] := R[C] (CreateDataProperty)
 	DefineMethod    // ABC  R[A][R[B]] := R[C], naming the function R[C] after the key (computed-key method)
 	DefineAccessor  // ABC+X define R[C] as the getter or setter of R[A][R[B]]; X = Accessor* flags
 	SetProto        // AB   R[A].[[Prototype]] = R[B] when object or null (__proto__: v)
 	CopyDataProps   // AB   copy own enumerable properties of R[B] into R[A]
 	CopyDataPropsEx // ABC  same, excluding the keys listed in array R[C]
-	ArrayPush       // AB   append R[B] to array R[A]
 	ArrayHole       // A    append a hole to array R[A]
 	AppendSpread    // AB   append every element of iterable R[B] to array R[A]
-	Closure         // ABx  R[A] = new function object from Children[Bx]
 	NewRegExp       // ABx  R[A] = new RegExp(K[Bx].pattern, K[Bx].flags)
 	GetTemplate     // A+X  R[A] = template object of K[X] (GetTemplateObject); X = const:16 | ic:16
 
 	// --- arithmetic ---
-	Add       // ABC  R[A] = R[B] + R[C]
-	Sub       // ABC
-	Mul       // ABC
-	Div       // ABC
-	Mod       // ABC
-	Exp       // ABC  R[A] = R[B] ** R[C]
-	AddImm    // ABC  R[A] = R[B] + int8(C)
-	SubImm    // ABC  R[A] = R[B] - int8(C)
-	Inc       // AB   R[A] = ToNumeric(R[B]) + 1
-	Dec       // AB   R[A] = ToNumeric(R[B]) - 1
 	Neg       // AB   R[A] = -R[B]
 	Plus      // AB   R[A] = +R[B] (ToNumber)
-	Not       // AB   R[A] = !R[B]
 	BitNot    // AB   R[A] = ~R[B]
 	ToNumeric // AB   R[A] = ToNumeric(R[B])
 	// RequireObjectCoercible throws TypeError when R[A] is null or undefined
 	// (destructuring through a pattern with no properties to read).
 	RequireObjectCoercible // A
-	ToStr                  // AB   R[A] = ToString(R[B])
-	Concat                 // ABC  R[A] = R[B] concatenated with R[C] (both strings)
 	Typeof                 // AB   R[A] = typeof R[B]
-	TypeofIs               // ABC  R[A] = typeof R[B] === TypeName(C)
-	BitAnd                 // ABC
-	BitOr                  // ABC
-	BitXor                 // ABC
-	Shl                    // ABC
-	Shr                    // ABC  signed >>
-	UShr                   // ABC  >>>
-
-	// --- comparison ---
-	Eq       // ABC  R[A] = R[B] == R[C]
-	Ne       // ABC
-	StrictEq // ABC
-	StrictNe // ABC
-	Lt       // ABC
-	Le       // ABC
-	Gt       // ABC
-	Ge       // ABC
-
-	// --- control flow ---
-	Jmp           // sBx   pc += sBx  (negative offsets are back-edges: interrupt check)
-	JmpT          // AsBx  if ToBoolean(R[A]) pc += sBx
-	JmpF          // AsBx  if !ToBoolean(R[A]) pc += sBx
-	JmpNullish    // AsBx  if R[A] is null or undefined
-	JmpNotNullish // AsBx
-	JmpNotUndef   // AsBx
 
 	// --- calls ---
-	Call             // ABC  R[A] = R[A].call(this = R[A+1], R[A+2 .. A+1+B]); C = CallUndefThis: this is undefined
 	CallSpread       // A    R[A] = R[A].call(this = R[A+1], ...R[A+2])
-	New              // AB   R[A] = new R[A](R[A+2 .. A+1+B])
 	NewSpread        // A    R[A] = new R[A](...R[A+2])
-	Ret              // A    return R[A]
-	RetUndef         // -    return undefined
-	Throw            // A    throw R[A]
 	ThrowConstAssign // +X  throw TypeError("Assignment to constant variable."); X = name const
 
 	// --- iteration ---
-	IterInit  // AB    R[A], R[A+1] = iterator state over R[B]
-	IterNext  // AsBx  R[A+2] = next value of iterator R[A]; when done pc += sBx
-	IterValue // AB    R[B] = next value of iterator R[A], or undefined when done
-	IterRest  // AB    R[B] = array of the remaining values of iterator R[A]
-	IterClose // AsBx  IteratorClose(R[A], normal); pc += sBx
 	IterThrow // AB    IteratorClose(R[A], throw R[B]); throw R[B]
 	ForInInit // AB    R[A] = key list of R[B], R[A+1] = 0, R[A+2] = ToObject(R[B]) (or undefined)
-	ForInNext // AsBx  R[A+3] = next key still present on R[A+2]; when done pc += sBx
-
-	// --- references (on the jump table, numbered after the ops above so
-	// that code without them keeps its encoding) ---
-	GetElemRef // ABC+X R[C] = R[X], converted once; R[A] = R[B][R[C]]; X = register
 
 	// --- classes (dispatched off the interpreter's jump table) ---
 	CtorEntry         // A     R[A] = new.target; TypeError when a class constructor is called
@@ -215,37 +282,32 @@ const (
 	JmpWith         // AsBx+X pc += sBx if the with object R[A] has a binding name (HasProperty, not @@unscopables-blocked); X = name const
 	WithGet         // AB+X  R[A] = binding name of the with object R[B]; X = name:16 | strict<<16
 	WithSet         // AB+X  set binding name of the with object R[A] to R[B]; X = name:16 | strict<<16
-	CoerceThis      // -     this = the global object if undefined or null, else ToObject(this) (sloppy function entry)
-	MapArguments    // A     make the arguments object R[A] mapped to the parameters in the function's own Env
+	MapArguments    // AB    make the arguments object R[A] mapped to the parameters in the function's own Env (B = 1: lazily, no parameter is assigned)
 	CallEval        // ABC+X R[A] = call of callee R[A] with this R[A+1] and args R[A+2..] (B = argc, C = 1: one spread array), a direct eval when the callee is %eval%; X = index into Extra.Evals
 
-	// --- compare and branch (a comparison whose result only feeds a
-	// conditional jump; numbered last so that code without them keeps its
-	// encoding). The offset is relative to the X word. ---
-	JmpLt       // AsBx+X if R[A] < R[X] pc += sBx
-	JmpLe       // AsBx+X if R[A] <= R[X] pc += sBx
-	JmpGt       // AsBx+X if R[A] > R[X] pc += sBx
-	JmpGe       // AsBx+X if R[A] >= R[X] pc += sBx
-	JmpNLt      // AsBx+X if !(R[A] < R[X]) pc += sBx
-	JmpNLe      // AsBx+X if !(R[A] <= R[X]) pc += sBx
-	JmpNGt      // AsBx+X if !(R[A] > R[X]) pc += sBx
-	JmpNGe      // AsBx+X if !(R[A] >= R[X]) pc += sBx
-	JmpStrictEq // AsBx+X if R[A] === R[X] pc += sBx
-	JmpStrictNe // AsBx+X if R[A] !== R[X] pc += sBx
+	// --- the first of a switch's cases on constants that test R[A] in a row ---
+	JmpCaseK // AsBx+X JmpStrictEqK, then each JmpStrictEqK after it that tests R[A]
 
-	// --- compare and branch against an integer: JmpLt .. JmpStrictNe with
-	// the right operand int32(X), in the same order ---
-	JmpLtI       // AsBx+X if R[A] < int32(X) pc += sBx
-	JmpLeI       // AsBx+X if R[A] <= int32(X) pc += sBx
-	JmpGtI       // AsBx+X if R[A] > int32(X) pc += sBx
-	JmpGeI       // AsBx+X if R[A] >= int32(X) pc += sBx
-	JmpNLtI      // AsBx+X if !(R[A] < int32(X)) pc += sBx
-	JmpNLeI      // AsBx+X if !(R[A] <= int32(X)) pc += sBx
-	JmpNGtI      // AsBx+X if !(R[A] > int32(X)) pc += sBx
-	JmpNGeI      // AsBx+X if !(R[A] >= int32(X)) pc += sBx
-	JmpStrictEqI // AsBx+X if R[A] === int32(X) pc += sBx
-	JmpStrictNeI // AsBx+X if R[A] !== int32(X) pc += sBx
+	// --- a call that may need no object ---
+	RegExpTest // AsBx+X R[A] = /K[X.lo]/.test(R[X.hi]) and pc += sBx when no code could see the literal's object; else on to the call
 
+	// --- f.apply(x, arguments) where the arguments object R[B] may not
+	// exist yet (Function.ForwardArguments) ---
+	ApplyArguments // ABC R[A] = Call R[A] with this R[A+1] and arguments R[A+2], R[B] (C = 1: mapped)
+
+	// --- a run of an array literal's elements that are constants ---
+	ArrayPushK // A+X  append K[X.lo] .. K[X.lo+X.hi-1] to array R[A]
+
+	// --- an array literal whose elements are all constants ---
+	NewArrayK // A+X  R[A] = [K[X.lo], .., K[X.lo+X.hi-1]]
+
+	// --- an object literal of data properties with static keys, made at
+	// once from the values its properties evaluated to ---
+	NewObjectLit // ABC+X R[A] = {K[X.lo]: R[B], .., K[X.lo+C-1]: R[B+C-1]}; X = key:16 | ic:16
+
+	// A new op goes here, after every other, so that a case of its in run
+	// comes after the hot ones, and at the end of the fuzz corpus's op order
+	// (engine's fuzzOps).
 	opCount
 )
 
@@ -454,8 +516,8 @@ var opTable = [...]opInfo{
 	JmpWith:         {"JmpWith", FmtAsBx, 1},
 	WithGet:         {"WithGet", FmtAB, 1},
 	WithSet:         {"WithSet", FmtAB, 1},
-	CoerceThis:      {"CoerceThis", FmtNone, 0},
-	MapArguments:    {"MapArguments", FmtA, 0},
+	CoerceThis:      {"CoerceThis", FmtA, 0},
+	MapArguments:    {"MapArguments", FmtAB, 0},
 	CallEval:        {"CallEval", FmtABC, 1},
 
 	JmpLt:       {"JmpLt", FmtAsBx, 1},
@@ -479,6 +541,25 @@ var opTable = [...]opInfo{
 	JmpNGeI:      {"JmpNGeI", FmtAsBx, 1},
 	JmpStrictEqI: {"JmpStrictEqI", FmtAsBx, 1},
 	JmpStrictNeI: {"JmpStrictNeI", FmtAsBx, 1},
+	JmpStrictEqK: {"JmpStrictEqK", FmtAsBx, 1},
+	JmpStrictNeK: {"JmpStrictNeK", FmtAsBx, 1},
+	JmpTypeofIs:  {"JmpTypeofIs", FmtAsBx, 1},
+	JmpTypeofNot: {"JmpTypeofNot", FmtAsBx, 1},
+	JmpCaseK:     {"JmpCaseK", FmtAsBx, 1},
+
+	RegExpTest:     {"RegExpTest", FmtAsBx, 1},
+	ApplyArguments: {"ApplyArguments", FmtABC, 0},
+	ArrayPushK:     {"ArrayPushK", FmtA, 1},
+	ArgsLen:        {"ArgsLen", FmtAB, 0},
+	ArgsGet:        {"ArgsGet", FmtABC, 1},
+	GetElemInc:     {"GetElemInc", FmtABC, 0},
+	PostInc:        {"PostInc", FmtAB, 0},
+	PostDec:        {"PostDec", FmtAB, 0},
+	NewArrayK:      {"NewArrayK", FmtA, 1},
+	NewObjectLit:   {"NewObjectLit", FmtABC, 1},
+	GetEnv1:        {"GetEnv1", FmtABC, 0},
+	GetEnv2:        {"GetEnv2", FmtABC, 0},
+	GetEnv0:        {"GetEnv0", FmtABC, 0},
 }
 
 // CompareJump returns the op that jumps when the comparison op (Lt, Le, Gt,
@@ -500,10 +581,19 @@ func CompareJump(op Op, jumpIf bool) (Op, bool) {
 	return 0, false
 }
 
+// EnvOperand marks the X word of JmpLt .. JmpNGe whose right operand is
+// slot X>>8&0xff of env^0 instead of register X: a binding closures share
+// that the op reads itself, as a loop's bound is. Its low byte is A.
+const EnvOperand = 1 << 16
+
 // Immediate returns the form of the compare-and-branch op (JmpLt ..
 // JmpStrictNe) whose right operand is the integer in the X word instead of
 // a register.
 func (op Op) Immediate() Op { return op - JmpLt + JmpLtI }
+
+// Constant returns the form of JmpStrictEq or JmpStrictNe whose right
+// operand is the constant the X word names instead of a register.
+func (op Op) Constant() Op { return op - JmpStrictEq + JmpStrictEqK }
 
 // ImmediateOperand reports whether n can be the X word of an immediate
 // compare-and-branch op: an int32 other than -0.
@@ -543,18 +633,18 @@ func JumpTarget(pc int, w uint32) int { return pc + 1 + int(DecodeSBx(w)) }
 
 // SavesPC reports whether the engine may run a frame again from the
 // instruction after one of op: a suspension saves that pc to resume at
-// (GenStart, Yield, AsyncGenStart, Await, AsyncYield), and CoerceThis,
-// MapArguments and CallEval may rerun the frame from it. The engine stores
-// it with the frame's environment depth above PCBits.
+// (GenStart, Yield, AsyncGenStart, Await, AsyncYield), and CoerceThis and
+// CallEval may rerun the frame from it. The engine stores it with the
+// frame's environment depth above PCBits.
 func (op Op) SavesPC() bool {
 	switch op {
-	case GenStart, Yield, AsyncGenStart, Await, AsyncYield, CoerceThis, MapArguments, CallEval:
+	case GenStart, Yield, AsyncGenStart, Await, AsyncYield, CoerceThis, CallEval:
 		return true
 	}
 	return false
 }
 
-// TypeName indices used by TypeofIs (operand C).
+// TypeName indices used by TypeofIs (operand C) and JmpTypeofIs (X).
 const (
 	TypeUndefined uint8 = iota
 	TypeObject
@@ -599,6 +689,13 @@ const (
 // plain call f(x)): the callee gets undefined and R[A+1] is not read, so no
 // LoadUndef fills it.
 const CallUndefThis = 1
+
+// SetProp's operand C in sloppy code: the write is SetPropSloppy's, which
+// ignores a rejected assignment. The compiler emits this form for a named
+// write in sloppy code, whose writes are as frequent as strict code's:
+// the engine runs it in SetProp's case, which a SetPropSloppy leaves for
+// coldOp, a call.
+const SetPropSloppyFlag = 1
 
 // ThrowError kinds (operand A).
 const (

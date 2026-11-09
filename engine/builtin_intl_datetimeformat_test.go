@@ -70,7 +70,7 @@ func intlTestDTF(t testing.TB, r *Realm, expr string) *intlDateTimeFormat {
 	env, err := r.EvaluateModule(code)
 	require.NoError(t, err)
 	v, _ := env.GetBindingValue("f")
-	return v.AsObject().internal.(*intlDateTimeFormat)
+	return extDataOf(v.AsObject(), kindIntlDateTimeFormat)
 }
 
 // TestIntlDateTimeFormatAllocs: format allocates its result only, one

@@ -67,13 +67,23 @@ func TestAssignIntoRegister(t *testing.T) {
 		{"generator resumes", []string{`function* g() { let s = 1; s = s + (yield s); yield s; } var it = g(); it.next().value + ":" + it.next(10).value`}, "1:11"},
 		{"generator returns at the yield", []string{`var r; function* g() { let s = 1; try { s = s + (yield s); } finally { r = s; } } var it = g(); it.next(); it.return(7); r`}, "1"},
 		{"value of the assignment", []string{`function f(s) { const t = (s = s * 3 + 1); return s + ":" + t; } f(2)`}, "7:7"},
+		{"store in a chain", []string{`function f(o, s) { for (var i = 0; i < 3; i++) s = o[i] = s * 2 + 1; return s + ":" + o.join(); } f([], 1)`}, "15:3,7,15"},
+		{"store in a chain to a property", []string{`function f(o, s) { s = o.p = s + o.q; return s + ":" + o.p; } f({q: 2}, 1)`}, "3:3"},
+		{"store in a chain, its value used", []string{`function f(o, s) { const t = (s = o[0] = s * 3); return s + ":" + t + ":" + o[0]; } f([], 2)`}, "6:6:6"},
+		{"store in a chain, the key reads", []string{`function f(o, s) { s = o[s] = s + 1; return s + ":" + o[1]; } f({}, 1)`}, "2:2"},
+		{"store in a chain, the object reads", []string{`function f(s) { s = s.p = s.q + 1; return s; } f({q: 1})`}, "2"},
+		{"store in a chain, a setter sees the value", []string{`function f(s) { var seen; const o = {set p(v) { seen = v; }}; s = o.p = s * 2; return s + ":" + seen; } f(4)`}, "8:8"},
+		{"store in a chain throws", []string{`function f(o) { let s = 5; try { s = o.p = s + 1; } catch (e) { return s; } } f({set p(v) { throw 0; }})`}, "5"},
+		{"store in a chain throws, strict", []string{`function f(o) { "use strict"; let s = 5; try { s = o[0] = s + 1; } catch (e) { return s; } } f(Object.freeze([1]))`}, "5"},
+		{"store in a chain throws, finally", []string{`function f(o) { let s = 5, r; try { try { s = o.p = s + 1; } finally { r = s; } } catch (e) {} return r; } f({set p(v) { throw 0; }})`}, "5"},
 		{"script completion", []string{`var x = 2; function f(s) { return s = s * 3; } f(x)`}, "6"},
 	})
 }
 
 // TestAssignIntoRegisterThrows throws from each op that lastOpWrites lets
 // write the variable's register (the cases of interp_run.go's arithmetic,
-// comparison and property sections, coldOp's In and InstanceOf, classOp's
+// comparison and property sections and InstanceOf, coldOp's In and
+// InstanceOf, classOp's
 // GetPrivate and InPrivate): the catch must find the old value, which
 // holds only while the op writes R[A] once it has a result. Not, Typeof,
 // TypeofIs, StrictEq and StrictNe cannot throw.
@@ -84,12 +94,17 @@ func TestAssignIntoRegisterThrows(t *testing.T) {
 		{"Add string", `"a"`, "s + " + bad},
 		{"Add BigInt mix", "5", "1n + s"},
 		{"Sub", "5", "s - " + bad},
+		{"Mul", "5", "s * " + bad},
 		{"Mul BigInt mix", "5", "s * 2n"},
 		{"Div", "5", "s / " + bad},
 		{"Mod BigInt mix", "5", "s % 1n"},
 		{"Exp BigInt mix", "5", "s ** 2n"},
 		{"AddImm", bad, "s + 1"},
 		{"SubImm", bad, "s - 1"},
+		{"Inc", bad, "++s"},
+		{"Dec", bad, "--s"},
+		{"PostInc", bad, "s++"},
+		{"PostDec", bad, "s--"},
 		{"BitAnd", "5", "s & 1n"},
 		{"BitOr", "5", "s | " + bad},
 		{"BitXor", "5", "s ^ 1n"},
@@ -127,6 +142,10 @@ func TestAssignIntoRegisterThrows(t *testing.T) {
 	cases = append(cases,
 		scriptCase{"GetPrivate", []string{`class C { #x = 1; static f() { let s = {}; const old = s; try { s = s.#x; } catch (e) { return s === old; } } } C.f()`}, "true"},
 		scriptCase{"InPrivate", []string{`class C { #x = 1; static f() { let s = 5; try { s = #x in s; } catch (e) { return s; } } } C.f()`}, "5"},
+		// GetElemInc increments its key before the read that throws.
+		scriptCase{"GetElemInc null", []string{`function f() { let s = 5, k = 0; try { s = null[++k]; } catch (e) { return s + ":" + k; } } f()`}, "5:1"},
+		scriptCase{"GetElemInc key", []string{`function f() { const bad = ` + bad + `; let s = 5, k = bad; try { s = [1][++k]; } catch (e) { return s + ":" + (k === bad); } } f()`}, "5:true"},
+		scriptCase{"GetElemInc getter", []string{`function f() { let s = 5, k = 0; try { s = {get 1() { throw 0; }}[++k]; } catch (e) { return s + ":" + k; } } f()`}, "5:1"},
 		// Suspensions inside the value.
 		scriptCase{"throw at a yield", []string{`function* g() { let s = 1; try { s = s + (yield); } catch (e) { s = s * 10; } yield s; } var it = g(); it.next(); it.throw(0).value`}, "10"},
 		scriptCase{"yield as the left operand", []string{`function* g() { let s = 1; s = (yield) + s; yield s; } var it = g(); it.next(); it.next(5).value`}, "6"},
@@ -139,4 +158,25 @@ func TestAssignIntoRegisterThrows(t *testing.T) {
 		scriptCase{"string append keeps the old string", []string{`function f() { let s = "x".repeat(100), t = s; s = s + "y"; s = s + "z"; return t.length + ":" + s.length + ":" + (t + "q").slice(-2); } f()`}, "100:102:xq"},
 	)
 	runScriptCases(t, cases)
+}
+
+// TestValueFromItsRegister: an object literal's property and a member
+// assignment whose value is not used read a local from its own register
+// (compiler localReg): the property or the store gets the local's value at
+// that point, a setter or a definition that throws leaves it as it was, and
+// sloppy code's stores to primitives and to frozen objects stay silent.
+func TestValueFromItsRegister(t *testing.T) {
+	runScriptCases(t, []scriptCase{
+		{"shorthand and named", []string{`function f(a, b) { var o = {a, b: b, c: a}; return o.a + o.b + o.c; } f(1, 2)`}, "4"},
+		{"value read before later properties", []string{`function f(a) { var o = {x: a, y: (a = 5), z: a}; return [o.x, o.y, o.z].join(); } f(1)`}, "1,5,5"},
+		{"shorthand __proto__ is an own property", []string{`function f(__proto__) { var o = {__proto__}; return Object.getPrototypeOf(o) === Object.prototype && o.__proto__ === 7; } f(7)`}, "true"},
+		{"index key", []string{`function f(a) { var o = {0: a, "1": a}; return o[0] + o[1]; } f(3)`}, "6"},
+		{"setter sees the value", []string{`function f(v) { var seen, o = {set p(x) { seen = x; }}; o.p = v; return seen; } f(9)`}, "9"},
+		{"element store", []string{`function f(v, k) { var o = {}; o[k] = v; o.q = v; return o.z + o.q; } f(4, "z")`}, "8"},
+		{"throwing setter keeps the local", []string{`function f(v) { var o = {set p(x) { throw x; }}; try { o.p = v; } catch (e) { return e + ":" + v; } } f(2)`}, "2:2"},
+		{"sloppy primitive target", []string{`function f(v) { var s = "str"; s.p = v; return typeof s.p; } f(1)`}, "undefined"},
+		{"sloppy frozen target", []string{`function f(v) { var o = Object.freeze({p: 1}); o.p = v; return o.p; } f(5)`}, "1"},
+		{"strict frozen target throws", []string{`function f(v) { "use strict"; var o = Object.freeze({p: 1}); try { o.p = v; } catch (e) { return e instanceof TypeError; } } f(5)`}, "true"},
+		{"value of the assignment", []string{`function f(o, v) { var r = (o.p = v); return r + o.p; } f({}, 3)`}, "6"},
+	})
 }

@@ -38,6 +38,7 @@ const (
 	rxgSearch
 	rxgSplit
 	rxgConstructor
+	rxgTest
 	numRegExpGuards
 )
 
@@ -66,6 +67,7 @@ var regexpGuardKeys = [numRegExpGuards]PropertyKey{
 	rxgSearch:      SymbolKey(SymSearch),
 	rxgSplit:       SymbolKey(SymSplit),
 	rxgConstructor: constructorKey,
+	rxgTest:        StringKey(AtomTest),
 }
 
 // Masks of regexpGuard properties an algorithm depends on.
@@ -78,6 +80,7 @@ const (
 	rxSearch   = 1 << rxgSearch
 	rxSplit    = 1 << rxgSplit
 	rxSpecies  = 1 << rxgConstructor // SpeciesConstructor(rx, %RegExp%) is %RegExp% (with guardRegExpSpecies)
+	rxTest     = 1 << rxgTest
 )
 
 // regexpGuard watches the %RegExp.prototype% properties of regexpGuardKeys
@@ -143,6 +146,26 @@ func (r *Realm) pristineRegExp(rx *Object, mask uint32) *RegExpData {
 		}
 	}
 	return rx.RegExpData()
+}
+
+// regexpProtoIntact reports whether the %RegExp.prototype% properties in
+// mask hold their original values: pristineRegExp's check of the
+// prototype, for code that has no instance to check (literalTest).
+func (r *Realm) regexpProtoIntact(mask uint32) bool {
+	if r.sharedIntrinsics {
+		return true
+	}
+	g, p := &r.regexpGuard, r.RegExpPrototype
+	if p.shape != g.shape && !g.rearm(p) || mask&g.missing != 0 {
+		return false
+	}
+	for m := mask; m != 0; m &= m - 1 {
+		i := bits.TrailingZeros32(m)
+		if p.slots[g.slot[i]] != g.want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // --- abstract operations ------------------------------------------------------------
@@ -821,10 +844,9 @@ func (r *Realm) newRegExpStringIterator(matcher *Object, s *String, global, full
 	o := &it.obj
 	proto := r.RegExpStringIteratorPrototype
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassRegExpStringIterator
 	o.flags = flagExtensible
-	o.internal = &it.data
+	setData(o, kindRegExpStringIter, &it.data)
 	return o
 }
 
@@ -832,7 +854,7 @@ func (r *Realm) newRegExpStringIterator(matcher *Object, s *String, global, full
 func regexpStringIteratorNext(r *Realm, this Value, args []Value) (Value, error) {
 	var it *regexpStringIter
 	if this.IsObject() && this.AsObject().class == ClassRegExpStringIterator {
-		it, _ = this.AsObject().internal.(*regexpStringIter)
+		it = dataOf(this.AsObject(), kindRegExpStringIter)
 	}
 	if it == nil {
 		return Undefined(), r.TypeError("%%RegExpStringIteratorPrototype%%.next called on incompatible receiver %s", r.DisplayString(this))

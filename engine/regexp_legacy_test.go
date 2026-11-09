@@ -158,7 +158,7 @@ func TestRegExpCompileKeyOrder(t *testing.T) {
 func TestRegExpCompileLazy(t *testing.T) {
 	r := NewRealm()
 	p := r.RegExpPrototype
-	require.IsType(t, (*pendingCompile)(nil), p.internal)
+	require.IsType(t, (*pendingCompile)(nil), p.payload())
 	assert.Equal(t, noFillAll, p.shape.noFill)
 	rx, err := r.NewRegExp(FromGoString("a"), AtomEmpty)
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestRegExpCompileLazy(t *testing.T) {
 	v, err := rx.GetProp(r, compileKey)
 	require.NoError(t, err)
 	require.True(t, IsCallable(v))
-	assert.Nil(t, p.internal)
+	assert.Nil(t, p.payload())
 	assert.Zero(t, p.flags&flagHasLazy)
 	assert.NotNil(t, r.pristineRegExp(rx, rxExec|rxFlags|rxMatch|rxReplace))
 	_, err = r.Call(v, ObjectValue(rx), []Value{StringValue(FromGoString("b")), StringValue(FromGoString("g"))})
@@ -179,7 +179,7 @@ func TestRegExpCompileLazy(t *testing.T) {
 	assert.NotNil(t, r.pristineRegExp(rx, rxExec|rxFlags|rxMatch|rxReplace), "compile keeps the instance shape")
 
 	s := newShared()
-	assert.Nil(t, s.RegExpPrototype.internal)
+	assert.Nil(t, s.RegExpPrototype.payload())
 	_, _, ok = s.RegExpPrototype.shape.Lookup(compileKey)
 	assert.True(t, ok)
 }
@@ -405,7 +405,7 @@ func TestRegExpStaticsLazy(t *testing.T) {
 	r := NewRealm()
 	c := r.RegExpCtor
 	require.True(t, c.flags&flagHasLazy != 0)
-	require.IsType(t, (*FunctionData)(nil), c.internal)
+	require.IsType(t, (*FunctionData)(nil), c.payload())
 	assert.Equal(t, noFillStatics, c.shape.noFill, "only a static's fill is refused")
 	assert.Same(t, r.SetCtor.shape, c.shape, "the shape Set shares")
 	key := StringKey(staticAtom("$1"))
@@ -476,7 +476,7 @@ func TestRegExpStaticsSharedShapeIC(t *testing.T) {
 	// fill reads the key of site i on o with the site's entry cleared.
 	fill := func(i int, o *Object) *Shape {
 		f := elem(i)
-		fd := f.internal.(*FunctionData)
+		fd := f.funcData()
 		if fd.icBase != icUnbound {
 			r.ic[fd.icBase] = ICEntry{}
 		}

@@ -53,7 +53,7 @@ func (o *Object) RegExpData() *RegExpData {
 	if o.class != ClassRegExp {
 		return nil
 	}
-	d, _ := o.internal.(*RegExpData)
+	d := dataOf(o, kindRegExp)
 	return d
 }
 
@@ -80,6 +80,9 @@ type compiledRegExp struct {
 	// run matches an anchored run pattern on ASCII subjects
 	// (string_regexp.go), else nil.
 	run *runPattern
+	// fast holds the literal and the native program, built on the first
+	// match (fastPaths): a pattern compiled and never run costs no more.
+	fast atomic.Pointer[reFast]
 	// Lazily compiled variants. A compiledRegExp is shared by every realm of
 	// the process (regexpPrograms), so the variants are published atomically;
 	// two realms racing on the first use compile equal programs and either
@@ -142,10 +145,45 @@ func (c *compiledRegExp) btProgram() (*btProg, error) {
 	return p, nil
 }
 
+// reFast is what a pattern's searches use before or instead of its
+// program.
+type reFast struct {
+	// lit is a literal every match contains (regexp_literal.go), else nil.
+	lit *reLiteral
+	// nat is the native program (regexp_nat.go) of a pattern of the RE2
+	// class, which runs every subject it fits (reSubject.nat) instead of
+	// re; nil when the program would be too large.
+	nat *natProg
+}
+
+// fastPaths returns c's literal and native program, building them from the
+// key on first use, as btProgram does; a pattern that fails to parse again
+// (it cannot) gets neither.
+func (c *compiledRegExp) fastPaths() *reFast {
+	if f := c.fast.Load(); f != nil {
+		return f
+	}
+	f := &reFast{}
+	if ast, err := parseRegExp(c.key.units(), c.flags); err == nil {
+		f.lit = requiredLiteral(ast, c.flags)
+		if c.re != nil {
+			f.nat = compileNat(ast, c.flags)
+		}
+	}
+	if !c.fast.CompareAndSwap(nil, f) {
+		f = c.fast.Load()
+	}
+	return f
+}
+
 // useBT reports whether sub runs on the backtracking VM.
 func (c *compiledRegExp) useBT(sub *reSubject) bool {
 	return c.re == nil || sub.private || c.btCR && sub.crLS || c.btFoldWord && sub.foldWord
 }
+
+// simpleExec reports whether RegExpBuiltinExec matches c with the
+// single-class matcher, which searches: c has one and is not sticky.
+func (c *compiledRegExp) simpleExec() bool { return c.simple != nil && !c.flags.sticky }
 
 // regexpCacheKey identifies a compiled pattern. An ASCII pattern is its own
 // text; any other pattern is regexpWideKey (a byte ASCII text never holds)
@@ -219,6 +257,7 @@ type regexpState struct {
 	lastAt int32
 	lastS  *String
 	lastC  *compiledRegExp
+	nat    natMachine
 }
 
 func (r *Realm) regexpState() *regexpState {
@@ -346,8 +385,15 @@ type reSubject struct {
 	// \b and \B with i); private a u-mode character U+F0000..U+F07FF, which
 	// the working copy cannot tell from a surrogate stand-in.
 	crLS, foldWord, private bool
-	b2u                     []int32 // UTF-16 subjects: byte offset -> unit offset, len(text)+1
-	u2b                     []int32 // UTF-16 subjects: unit offset -> byte offset, len(units)+1
+	// never is set when the subject lacks the pattern's required literal
+	// (regexp_literal.go): it has no working copy and no match.
+	never bool
+	// nat is set when the native matcher runs the subject: positions are
+	// code units and a UTF-16 subject has no working copy.
+	nat  bool
+	b2u  []int32  // UTF-16 subjects: byte offset -> unit offset, len(text)+1
+	u2b  []int32  // UTF-16 subjects: unit offset -> byte offset, len(units)+1
+	wide []uint16 // UTF-16 subjects: the code units
 }
 
 // len returns the subject length in positions.
@@ -393,20 +439,30 @@ func (sub *reSubject) advance(b int) int {
 // character (its code point); every other surrogate unit is encoded as its
 // private-use stand-in rune (see regexp_translate.go).
 func (r *Realm) initRegExpSubject(sub *reSubject, s *String, c *compiledRegExp) {
-	// sub keeps s, a rope as it came (the cache compares pointers), and f
-	// is what is read.
+	// sub keeps s, a rope or lazy string as it came (the cache compares
+	// pointers), and f is what is read.
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
 	unicode := c.flags.unicode
+	fp := c.fastPaths()
+	if fp.nat != nil && fp.nat.fits(f.Len()) {
+		if f.kind == strASCII {
+			*sub = reSubject{s: s, text: asciiBytes(f.s), ascii: true, unicode: unicode, nat: true}
+		} else {
+			*sub = reSubject{s: s, units: true, unicode: unicode, wide: f.units(), nat: true}
+		}
+		return
+	}
 	if f.kind == strASCII {
 		*sub = reSubject{s: s, text: asciiBytes(f.s), ascii: true, unicode: unicode}
 		sub.crLS = c.btCR && strings.IndexByte(f.s, '\r') >= 0
 		return
 	}
+	u := f.units()
 	if c.re == nil {
-		*sub = reSubject{s: s, units: true, unicode: unicode}
+		*sub = reSubject{s: s, units: true, unicode: unicode, wide: u}
 		return
 	}
 	st := r.regexpState()
@@ -416,7 +472,14 @@ func (r *Realm) initRegExpSubject(sub *reSubject, s *String, c *compiledRegExp) 
 			return
 		}
 	}
-	u := f.units()
+	if fp.lit != nil {
+		// No working copy for a subject without the literal.
+		*sub = reSubject{s: s, units: true, unicode: unicode, wide: u}
+		if fp.lit.index(sub, 0, len(u)) < 0 {
+			sub.never = true
+			return
+		}
+	}
 	text := make([]byte, 0, len(u)+len(u)/2)
 	u2b := make([]int32, len(u)+1)
 	r.charge(cap(text) + 4*len(u2b))
@@ -456,7 +519,7 @@ func (r *Realm) initRegExpSubject(sub *reSubject, s *String, c *compiledRegExp) 
 		}
 	}
 	b2u[len(text)] = int32(len(u))
-	*sub = reSubject{s: s, text: text, unicode: unicode, crLS: crLS, foldWord: foldWord, private: private, b2u: b2u, u2b: u2b}
+	*sub = reSubject{s: s, text: text, unicode: unicode, crLS: crLS, foldWord: foldWord, private: private, b2u: b2u, u2b: u2b, wide: u}
 	st.subjects[st.subjNext] = *sub
 	st.subjNext = (st.subjNext + 1) % int32(len(st.subjects))
 }
@@ -471,10 +534,27 @@ func (r *Realm) initRegExpSubject(sub *reSubject, s *String, c *compiledRegExp) 
 // context character on text[prev:], so `^`, `\b` and `\B` see the real
 // neighbours (Go's regexp has no start-offset API).
 func (c *compiledRegExp) matchAt(r *Realm, sub *reSubject, bytePos int, sticky bool) ([]int, error) {
+	fp := c.fastPaths()
+	if l := fp.lit; l != nil {
+		if sub.never {
+			return nil, nil
+		}
+		if l.whole {
+			return l.match(sub, bytePos, sticky), nil
+		}
+		var ok bool
+		if bytePos, ok = l.start(sub, bytePos, sticky); !ok {
+			return nil, nil
+		}
+	}
 	if c.run != nil {
 		if m, handled, err := c.run.match(r, sub, bytePos, sticky); handled {
 			return m, err
 		}
+	}
+	if sub.nat {
+		m, _, err := fp.nat.exec(r, sub, bytePos, sticky, true, nil)
+		return m, err
 	}
 	if c.useBT(sub) {
 		return c.matchBT(r, sub, bytePos, sticky)
@@ -570,8 +650,14 @@ func (c *compiledRegExp) findAll(r *Realm, sub *reSubject) ([][]int, error) {
 	if err := r.CheckInterrupt(); err != nil {
 		return nil, err
 	}
+	if lit := c.fastPaths().lit; lit != nil && (sub.never || lit.index(sub, 0, sub.s.Len()) < 0) {
+		return nil, nil
+	}
 	sticky := c.flags.sticky
-	if !c.tr.minLen0 && !sticky && len(sub.text) <= regexpUninterruptedLimit && !c.useBT(sub) {
+	if sub.nat && (c.run == nil || !sub.ascii) {
+		return c.findAllNat(r, sub)
+	}
+	if !sub.nat && !c.tr.minLen0 && !sticky && len(sub.text) <= regexpUninterruptedLimit && !c.useBT(sub) {
 		return c.re.FindAllSubmatchIndex(sub.text, -1), nil
 	}
 	var out [][]int
@@ -595,6 +681,59 @@ func (c *compiledRegExp) findAll(r *Realm, sub *reSubject) ([][]int, error) {
 				return nil, err
 			}
 		}
+	}
+	return out, nil
+}
+
+// findAllNat is findAll of a subject the native matcher runs, which is
+// matchAt's search repeated: the matches go into one slice, of which the
+// results are windows, so k matches cost O(log k) allocations rather than
+// k.
+func (c *compiledRegExp) findAllNat(r *Realm, sub *reSubject) ([][]int, error) {
+	fp := c.fastPaths()
+	l, sticky, ns, n := fp.lit, c.flags.sticky, fp.nat.nslots, sub.s.Len()
+	var flat []int
+	for pos := 0; pos <= n; {
+		at := len(flat)
+		if l != nil && l.whole {
+			u := l.find(sub, pos, sticky)
+			if u < 0 {
+				break
+			}
+			flat = append(flat, u, u+len(l.units))
+		} else {
+			from := pos
+			if l != nil {
+				var ok bool
+				if from, ok = l.start(sub, pos, sticky); !ok {
+					break
+				}
+			}
+			var ok bool
+			var err error
+			if flat, ok, err = fp.nat.exec(r, sub, from, sticky, true, flat); err != nil {
+				return nil, err
+			} else if !ok {
+				break
+			}
+		}
+		if flat[at+1] == flat[at] {
+			pos = sub.advance(flat[at+1])
+		} else {
+			pos = flat[at+1]
+		}
+		if (at/ns+1)&1023 == 0 {
+			if err := r.CheckInterrupt(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(flat) == 0 {
+		return nil, nil
+	}
+	out := make([][]int, len(flat)/ns)
+	for i := range out {
+		out[i] = flat[i*ns : (i+1)*ns : (i+1)*ns]
 	}
 	return out, nil
 }
@@ -679,7 +818,9 @@ func lastIndexIsNumber(rx *Object) bool {
 // regexpBuiltinExec implements RegExpBuiltinExec, returning capture indices
 // in code units (nil for no match). lastIndex is read and updated per spec,
 // then the flags and matcher of d, which reading lastIndex may have changed:
-// sub, initialized for the program before, is then initialized again.
+// sub, initialized for the program before, is then initialized again. A
+// single-class pattern that is not sticky (simpleExec) is matched on the
+// code units of s, without sub: a caller may leave sub zero for one.
 func (r *Realm) regexpBuiltinExec(rx *Object, d *RegExpData, s *String, sub *reSubject) ([]int, error) {
 	lastIndex, err := r.execLastIndex(rx, d)
 	if err != nil {
@@ -700,8 +841,14 @@ func (r *Realm) regexpBuiltinExec(rx *Object, d *RegExpData, s *String, sub *reS
 		}
 		return nil, nil
 	}
-	m, err := r.regexpMatchFrom(d.c, s, sub, int(lastIndex), sticky)
-	if err != nil {
+	var m []int
+	if d.c.simpleExec() {
+		// A set of BMP units, in u mode none a surrogate: a lastIndex
+		// inside a pair finds what the pair's start would (regexpMatchFrom).
+		if start, end, ok := d.c.simple.find(s, int(lastIndex)); ok {
+			m = []int{start, end}
+		}
+	} else if m, err = r.regexpMatchFrom(d.c, s, sub, int(lastIndex), sticky); err != nil {
 		return nil, err
 	}
 	if m == nil {
@@ -752,20 +899,43 @@ func (r *Realm) regexpMatchFrom(c *compiledRegExp, s *String, sub *reSubject, la
 	return m, nil
 }
 
-// execResultObject co-allocates an exec result array, its length payload
-// and its three named slots (index, input, groups).
-type execResultObject struct {
-	obj   Object
-	ad    ArrayData
-	slots [3]Value
-}
+// execResultObject co-allocates an exec result array and its three named
+// slots (index, input, groups); execResult1 and execResult2 its elements
+// too, for a regexp of no or one capture group.
+type (
+	execResultObject struct {
+		inlineObject
+		slots [3]Value
+	}
+	execResult1 struct {
+		execResultObject
+		buf [1]Value
+	}
+	execResult2 struct {
+		execResultObject
+		buf [2]Value
+	}
+)
 
 // regexpExecResult builds the exec result array for capture indices m (code
 // units): elements, `index`, `input`, `groups` and, with the d flag, `indices`.
 func (r *Realm) regexpExecResult(d *RegExpData, s *String, m []int) *Object {
 	st := r.regexpState()
 	n := d.c.ngroups()
-	items := make([]Value, n+1)
+	var eo *execResultObject
+	var items []Value
+	switch {
+	case d.c.flags.hasIndices:
+		items = make([]Value, n+1)
+	case n == 0:
+		x := &execResult1{}
+		eo, items = &x.execResultObject, x.buf[:]
+	case n == 1:
+		x := &execResult2{}
+		eo, items = &x.execResultObject, x.buf[:]
+	default:
+		eo, items = &execResultObject{}, make([]Value, n+1)
+	}
 	for i := range items {
 		if m[2*i] < 0 {
 			items[i] = Undefined()
@@ -783,17 +953,14 @@ func (r *Realm) regexpExecResult(d *RegExpData, s *String, m []int) *Object {
 			addProperty(r, StringKey(AtomInput), attrDefault).
 			addProperty(r, StringKey(AtomGroups), attrDefault)
 	}
-	if !d.c.flags.hasIndices {
-		eo := &execResultObject{}
-		r.chargeObject(unsafe.Sizeof(execResultObject{}))
-		arr := &eo.obj
+	if eo != nil {
+		r.chargeObject(unsafe.Sizeof(execResultObject{}) + uintptr(len(items)*valueSize))
+		arr := eo.initInline()
 		arr.shape = st.execShape
-		arr.proto = st.execShape.proto
 		arr.class = ClassArray
 		arr.flags = flagExtensible
-		arr.elements = items
-		eo.ad = ArrayData{length: uint32(len(items)), lengthWritable: true}
-		arr.internal = &eo.ad
+		arr.setElems(items)
+		arr.setArrayLen(uint32(len(items)))
 		eo.slots = [3]Value{IntValue(m[0]), StringValue(s), groups}
 		arr.slots = eo.slots[:]
 		return arr
@@ -877,13 +1044,12 @@ func (r *Realm) regexpCreate(proto *Object, pattern *String, flagsText *String, 
 	r.chargeObject(unsafe.Sizeof(regexpObject{}))
 	o := &ro.obj
 	o.shape = shape
-	o.proto = proto
 	o.class = ClassRegExp
 	o.flags = flagExtensible
 	o.slots = ro.slot[:1]
 	o.slots[0] = IntValue(0)
 	ro.data = RegExpData{source: pattern, flags: flagsText, c: c, legacy: r}
-	o.internal = &ro.data
+	setData(o, kindRegExp, &ro.data)
 	return o, nil
 }
 
@@ -985,7 +1151,7 @@ func regexpNew(r *Realm, args []Value, newTarget *Object) (Value, error) {
 		return Undefined(), err
 	}
 	if newTarget != r.RegExpCtor {
-		o.internal.(*RegExpData).legacy = nil // a subclass instance: no compile
+		dataOf(o, kindRegExp).legacy = nil // a subclass instance: no compile
 	}
 	return ObjectValue(o), nil
 }
@@ -1022,8 +1188,8 @@ var regexpProtoGetters = []getterDef{
 
 func installRegExp(r *Realm) {
 	fd := r.RegExpCtor.FunctionData()
-	fd.SetNative(regexpCall)
-	fd.SetConstructor(regexpConstruct)
+	fd.setNative(regexpCall)
+	fd.setConstructor(regexpConstruct)
 	if r.buildingShared {
 		r.RegExpCtor.ReserveSlots(r, 1+len(regexpStaticDefs)) // @@species (installSpecies), the statics
 	} else {
@@ -1048,7 +1214,9 @@ func (r *Realm) RegExpExec(rx *Object, s *String) (Value, error) {
 		return Undefined(), r.TypeError("RegExpExec requires a RegExp object")
 	}
 	var sub reSubject
-	r.initRegExpSubject(&sub, s, d.c)
+	if !d.c.simpleExec() {
+		r.initRegExpSubject(&sub, s, d.c)
+	}
 	m, err := r.regexpBuiltinExec(rx, d, s, &sub)
 	if err != nil {
 		return Undefined(), err
@@ -1100,25 +1268,9 @@ func regexpProtoTest(r *Realm, this Value, args []Value) (Value, error) {
 		// lastIndex is neither written nor used, and coercing a number is
 		// unobservable (any other value, whose valueOf may throw or even
 		// recompile rx, takes RegExpBuiltinExec); a plain match suffices.
-		var ok bool
-		if d.c.simple != nil {
-			_, _, ok = d.c.simple.find(s, 0)
-		} else {
-			var sub reSubject
-			r.initRegExpSubject(&sub, s, d.c)
-			if d.c.run != nil && sub.ascii {
-				if ok, err = d.c.run.test(r, sub.text); err != nil {
-					return Undefined(), err
-				}
-			} else if !d.c.useBT(&sub) {
-				ok = d.c.re.Match(sub.text)
-			} else {
-				m, err := d.c.matchBT(r, &sub, 0, false)
-				if err != nil {
-					return Undefined(), err
-				}
-				ok = m != nil
-			}
+		ok, err := r.matchesFrom0(d.c, s)
+		if err != nil {
+			return Undefined(), err
 		}
 		if ok {
 			r.noteMatch(d, s, d.c, 0)
@@ -1126,12 +1278,75 @@ func regexpProtoTest(r *Realm, this Value, args []Value) (Value, error) {
 		return Bool(ok), nil
 	}
 	var sub reSubject
-	r.initRegExpSubject(&sub, s, d.c)
+	if !d.c.simpleExec() {
+		r.initRegExpSubject(&sub, s, d.c)
+	}
 	m, err := r.regexpBuiltinExec(rx, d, s, &sub)
 	if err != nil {
 		return Undefined(), err
 	}
 	return Bool(m != nil), nil
+}
+
+// matchesFrom0 reports whether c matches s from index 0: the match of
+// RegExpBuiltinExec for a RegExp neither global nor sticky, without its
+// indices.
+func (r *Realm) matchesFrom0(c *compiledRegExp, s *String) (bool, error) {
+	if c.simple != nil {
+		_, _, ok := c.simple.find(s, 0)
+		return ok, nil
+	}
+	var sub reSubject
+	r.initRegExpSubject(&sub, s, c)
+	fp := c.fastPaths()
+	if fp.lit != nil {
+		if sub.never {
+			return false, nil
+		}
+		if fp.lit.whole {
+			return fp.lit.match(&sub, 0, false) != nil, nil
+		}
+		if _, ok := fp.lit.start(&sub, 0, false); !ok {
+			return false, nil
+		}
+	}
+	if c.run != nil && sub.ascii {
+		return c.run.test(r, sub.text)
+	}
+	if sub.nat {
+		var bounds [2]int
+		_, ok, err := fp.nat.exec(r, &sub, 0, false, false, bounds[:0])
+		return ok, err
+	}
+	if !c.useBT(&sub) {
+		return c.re.Match(sub.text), nil
+	}
+	m, err := c.matchBT(r, &sub, 0, false)
+	return m != nil, err
+}
+
+// literalTest is /K[k]/.test(s) of m's regular expression literal K[k]
+// (RegExpTest) while the test and exec of %RegExp.prototype% are the
+// originals: the match test would run on a fresh RegExp of the literal,
+// whose lastIndex it reads as 0 and, as the literal is neither global
+// nor sticky, writes none. done is false, and the call RegExpTest guards
+// runs instead, for a literal that is either or fails to compile.
+func (r *Realm) literalTest(m *funcMeta, k uint32, s *String) (ok, done bool, err error) {
+	pattern, flags := m.regexpConst(k)
+	f, _ := flags.ASCII()
+	fl, valid := parseRegExpFlags(f)
+	if !valid || fl.global || fl.sticky {
+		return false, false, nil
+	}
+	c, err := r.compileRegExp(pattern, fl)
+	if err != nil {
+		return false, false, nil
+	}
+	if ok, err = r.matchesFrom0(c, s); ok {
+		st := r.regexps // noteMatch of a RegExp of this realm
+		st.lastS, st.lastC, st.lastAt = s, c, 0
+	}
+	return ok, true, err
 }
 
 func regexpProtoToString(r *Realm, this Value, args []Value) (Value, error) {
@@ -1331,8 +1546,10 @@ func regexpMatch(r *Realm, rx *Object, d *RegExpData, s *String) (Value, error) 
 		return ObjectValue(r.NewArrayFromSlice(items)), nil
 	}
 	var sub reSubject
-	r.initRegExpSubject(&sub, s, d.c)
 	if !d.c.flags.global {
+		if !d.c.simpleExec() {
+			r.initRegExpSubject(&sub, s, d.c)
+		}
 		m, err := r.regexpBuiltinExec(rx, d, s, &sub)
 		if err != nil {
 			return Undefined(), err
@@ -1342,6 +1559,7 @@ func regexpMatch(r *Realm, rx *Object, d *RegExpData, s *String) (Value, error) 
 		}
 		return ObjectValue(r.regexpExecResult(d, s, m)), nil
 	}
+	r.initRegExpSubject(&sub, s, d.c)
 	if err := r.setRegExpLastIndex(rx, 0); err != nil {
 		return Undefined(), err
 	}
@@ -1455,7 +1673,7 @@ func regexpReplace(r *Realm, rx *Object, d *RegExpData, s *String, replaceValue 
 		if err := r.setRegExpLastIndex(rx, 0); err != nil {
 			return Undefined(), err
 		}
-		if !functional && sub.ascii && !d.c.tr.minLen0 && !d.c.flags.sticky && len(sub.text) <= regexpUninterruptedLimit && !d.c.useBT(&sub) {
+		if !functional && sub.ascii && !sub.nat && !d.c.tr.minLen0 && !d.c.flags.sticky && len(sub.text) <= regexpUninterruptedLimit && !d.c.useBT(&sub) {
 			if err := r.CheckInterrupt(); err != nil {
 				return Undefined(), err
 			}
@@ -1665,7 +1883,7 @@ func regexpReplaceFast(c *compiledRegExp, sub *reSubject, tmpl *String) (*String
 	if !ok && tmpl.Len() != 0 {
 		return nil, false
 	}
-	if !c.re.Match(sub.text) {
+	if lit := c.fastPaths().lit; lit != nil && lit.index(sub, 0, len(sub.text)) < 0 || !c.re.Match(sub.text) {
 		return sub.s, true
 	}
 	var b []byte

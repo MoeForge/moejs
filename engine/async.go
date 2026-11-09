@@ -70,7 +70,7 @@ func (r *Realm) asyncOp(fd *FunctionData, base int, w uint32, pc int) (int, erro
 		}
 		regs = st.stack[base:top:top]
 		regs[a] = ObjectValue(o)
-		g := &o.internal.(*asyncGenerator).g
+		g := &extDataOf(o, kindAsyncGenerator).g
 		g.out = regs[a]
 		return pc, g.save(regs, pc)
 	case bytecode.AsyncYield:
@@ -78,7 +78,7 @@ func (r *Realm) asyncOp(fd *FunctionData, base int, w uint32, pc int) (int, erro
 		if err != nil {
 			return pc, err
 		}
-		ag, ok := o.internal.(*asyncGenerator)
+		ag, ok := extDataOk(o, kindAsyncGenerator)
 		if !ok {
 			return pc, r.wrongKind(w, "an async generator")
 		}
@@ -99,15 +99,17 @@ func (r *Realm) asyncOp(fd *FunctionData, base int, w uint32, pc int) (int, erro
 		g.recv, g.state = uint8(a), genSuspendedYield
 		return pc, g.save(regs, pc)
 	default:
-		// The module and sloppy ops follow the async iteration ops: one
-		// range test sends them on without asyncIterOp's hop.
-		if op := bytecode.Op(w); op >= bytecode.ImportCall {
-			if op >= bytecode.SetGlobalSloppy {
-				return r.sloppyOp(fd, base, w, pc)
-			}
+		// The async iteration, module and sloppy ops, by name: the op
+		// order puts the ones run has a case for (CoerceThis) among the
+		// hot ops, away from the others of their kind.
+		switch bytecode.Op(w) {
+		case bytecode.AsyncIterInit, bytecode.AsyncIterNext, bytecode.AsyncIterResult,
+			bytecode.AsyncIterClose, bytecode.AsyncIterClosed, bytecode.AsyncDelegate:
+			return r.asyncIterOp(fd, base, w, pc)
+		case bytecode.ImportCall, bytecode.ImportMeta:
 			return r.moduleOp(fd, base, w, pc)
 		}
-		return r.asyncIterOp(fd, base, w, pc)
+		return r.sloppyOp(fd, base, w, pc)
 	}
 	return pc, nil
 }
@@ -154,7 +156,7 @@ func (r *Realm) await(fd *FunctionData, base int, w uint32) (*genFrame, []Value,
 		if err != nil {
 			return nil, nil, err
 		}
-		ag, ok := o.internal.(*asyncGenerator)
+		ag, ok := extDataOk(o, kindAsyncGenerator)
 		if !ok {
 			return nil, nil, r.wrongKind(w, "an async function or generator")
 		}
@@ -207,7 +209,7 @@ func (r *Realm) awaitNext(j *jobState, p *Object, v Value) (Value, Value, bool) 
 	}
 	mode := Undefined()
 	if p != nil {
-		d := p.internal.(*promiseData)
+		d := dataOf(p, kindPromise)
 		switch d.state {
 		case PromisePending:
 			return v, Undefined(), false
@@ -368,17 +370,15 @@ func (r *Realm) asyncFunc(v Value, w uint32) error {
 // %AsyncGeneratorPrototype%.
 func (r *Realm) makeAsyncFunction(o *Object) {
 	ai := r.asyncIntr()
-	if o.internal.(*FunctionData).code.Generator {
-		o.proto = ai.AsyncGeneratorFunctionPrototype
-		o.shape = r.rootShapeFor(o.proto).
+	if o.funcData().code.Generator {
+		o.shape = r.rootShapeFor(ai.AsyncGeneratorFunctionPrototype).
 			addProperty(r, StringKey(AtomLength), attrConfigurable).
 			addProperty(r, StringKey(AtomName), attrConfigurable).
 			addProperty(r, StringKey(AtomPrototype), attrWritable)
 		o.slots = append(o.slots, ObjectValue(r.NewObjectWithProto(ai.AsyncGeneratorPrototype)))
 		return
 	}
-	o.proto = ai.AsyncFunctionPrototype
-	o.shape = r.rootShapeFor(o.proto).
+	o.shape = r.rootShapeFor(ai.AsyncFunctionPrototype).
 		addProperty(r, StringKey(AtomLength), attrConfigurable).
 		addProperty(r, StringKey(AtomName), attrConfigurable)
 }

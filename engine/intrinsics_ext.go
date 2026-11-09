@@ -23,6 +23,9 @@ type extIntrinsics struct {
 	// funcProtoHasInstance is the original Function.prototype[@@hasInstance];
 	// instanceof skips the call when the lookup finds it (compare.go).
 	funcProtoHasInstance *Object
+	// funcProtoApply is the original Function.prototype.apply, which
+	// ApplyArguments calls through without its arguments object.
+	funcProtoApply *Object
 
 	IteratorPrototype       *Object
 	StringIteratorPrototype *Object
@@ -89,7 +92,7 @@ func (r *Realm) visitExtIntrinsics(visit func(*Object)) {
 		visit(a.Set)
 	}
 	for _, o := range [...]*Object{
-		x.SymbolPrototype, x.SymbolCtor, x.funcProtoHasInstance,
+		x.SymbolPrototype, x.SymbolCtor, x.funcProtoHasInstance, x.funcProtoApply,
 		x.IteratorPrototype, x.StringIteratorPrototype,
 		x.arrayValuesFn, x.arrayIterNextFn, x.stringIterFn, x.stringIterNextFn,
 		x.MapPrototype, x.MapCtor, x.MapIteratorPrototype,

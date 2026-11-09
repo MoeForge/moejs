@@ -40,11 +40,33 @@ import (
 // without a check (bytecode.KindOperands) takes the rows for what an
 // instruction does, its cold paths included.
 //
+// It reads the code and the inline cache entries that the fast run reads
+// without bounds checks (codeWords, frameEnv.ic) with Go's checks, and
+// checks the entry against the function's ICCount besides.
+//
 // Those are what the fast run relies on (window). The accesses themselves
 // are ordinary slice indexes, so the checked build runs under checkptr and
 // the race detector as any code does. The operations run hands to coldOp,
 // iterOp and the class, generator, async and sloppy helpers index the
 // stack through slices of the frame and Go's bounds checks in either build.
+
+// codeWords is the code as the checked run reads it: through a slice,
+// with Go's bounds checks, where the fast run reads it with none
+// (interp_unchecked.go).
+type codeWords []uint32
+
+func codeOf(code []uint32) codeWords { return code }
+
+func (c codeWords) at(pc int) uint32 { return c[pc] }
+
+// ic is the fast run's unchecked read of an inline cache entry, checked:
+// the index is below the function's ICCount and the entry is in r.ic.
+func (ev *frameEnv) ic(r *Realm, i int) *ICEntry {
+	if n := int(ev.fd.code.ICCount); i >= n {
+		panic(fmt.Sprintf("engine: regcheck: %q reads inline cache %d of %d", ev.fd.code.Name, i, n))
+	}
+	return &r.ic[ev.icBase+i]
+}
 
 // regSpans is the layout the checked run compares its accesses with; a
 // test replaces it to break a row.
@@ -192,6 +214,11 @@ func (c *checkedRegs) refresh() *checkedRegs {
 	if len(c.st.stack) < c.base+c.n {
 		panic(fmt.Sprintf("engine: regcheck: %q runs with registers %d..%d past the stack's %d", c.fn, c.base, c.base+c.n-1, len(c.st.stack)))
 	}
+	if cap(c.st.stack) != 0 && c.base >= cap(c.st.stack) {
+		// The fast run's window would start past the stack's allocation
+		// (window, growStack's spare register).
+		panic(fmt.Sprintf("engine: regcheck: %q runs at base %d of a stack of capacity %d", c.fn, c.base, cap(c.st.stack)))
+	}
 	c.stack = unsafe.SliceData(c.st.stack)
 	return c
 }
@@ -263,8 +290,7 @@ func hasRegKind(v Value, kind bytecode.RegKind) bool {
 		if !v.IsObject() {
 			return false
 		}
-		_, ok := v.AsObject().internal.(*ArrayData)
-		return ok
+		return v.AsObject().class == ClassArray
 	case bytecode.RegIndex:
 		f := v.AsNumber()
 		return v.IsNumber() && f >= 0 && f == math.Trunc(f)

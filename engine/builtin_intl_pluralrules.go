@@ -134,7 +134,7 @@ func intlPluralRulesConstruct(r *Realm, args []Value, newTarget *Object) (Value,
 	r.charge(size)
 	r.markPrototype(proto)
 	o := r.newObject(ClassIntlPluralRules, r.rootShapeFor(proto))
-	o.internal = pr
+	setExtData(o, kindIntlPluralRules, pr)
 	return ObjectValue(o), nil
 }
 

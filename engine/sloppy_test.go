@@ -75,6 +75,8 @@ func TestSloppyThis(t *testing.T) {
 		// CoerceThis reruns the frame from the next instruction (sloppy.go).
 		{"handler after coercion", []string{`function f() { try { throw this; } catch (e) { return e === this && e instanceof Number; } } f.call(4)`}, "true"},
 		{"parameter scope", []string{`function f(a = 1) { var v = 2; return [this instanceof Number, (() => a)(), (() => v)()].join(); } f.call(5)`}, "true,1,2"},
+		{"this read twice after coercion", []string{`function f() { var a = this, b = this; return a === b && typeof a; } f.call("x")`}, "object"},
+		{"coercion with mapped arguments", []string{`function f(a) { arguments[0] = 2; return [a, this instanceof String, arguments.length].join(); } f.call("s", 1)`}, "2,true,1"},
 		{"loop after coercion", []string{`function f(n) { var s = 0; for (var i = 0; i < n; i++) s += this.k; return s; } f.call({ k: 2 }, 10)`}, "20"},
 		{"deep recursion", []string{`function f(n) { return n === 0 ? this === globalThis : f(n - 1); } f(500)`}, "true"},
 	})
@@ -198,6 +200,30 @@ func TestSloppyGlobals(t *testing.T) {
 	})
 }
 
+// TestSetPropSloppyCache: sloppy code's named property writes, which
+// coldOp executes, take the cache strict code's take. A hit stores; a miss
+// on another shape, a primitive, a frozen object, a read-only property or
+// a setter does what sloppy code does there, ignoring what strict code
+// throws for; and the cache still hits after the misses.
+func TestSetPropSloppyCache(t *testing.T) {
+	r := NewRealm()
+	got := runScriptsIn(t, r, `function set(o, v) { o.x = v; return o.x; }
+		var out = [], a = {x: 0}, seen;
+		for (var i = 0; i < 5; i++) out.push(set(a, i));
+		out.push(set({y: 1, x: 2}, 7));
+		out.push(String(set("str", 1)));
+		out.push(set(Object.freeze({x: 3}), 9));
+		var ro = {}; Object.defineProperty(ro, "x", {value: 4, writable: false});
+		out.push(set(ro, 9));
+		out.push(set({set x(v) { seen = v; }, get x() { return -1; }}, 5), seen);
+		for (var i = 0; i < 3; i++) out.push(set(a, 10 + i));`, `out.join()`)
+	assert.Equal(t, "0,1,2,3,4,7,undefined,3,4,-1,5,10,11,12", got)
+	strict := runScriptsIn(t, r, `function sset(o, v) { "use strict"; o.x = v; return o.x; }
+		for (var i = 0; i < 5; i++) sset(a, i);
+		var e; try { sset(Object.freeze({x: 3}), 9); } catch (x) { e = x; }`, `e instanceof TypeError`)
+	assert.Equal(t, "true", strict)
+}
+
 // TestOffTableDispatch covers the ops asyncOp's default case routes by
 // opcode range: async iteration to asyncIterOp, ImportCall to moduleOp, the
 // sloppy ops to sloppyOp, and an opcode past the last to the unknown-opcode
@@ -211,7 +237,7 @@ func TestOffTableDispatch(t *testing.T) {
 		g = 3; with (o) { out.push(x + g); } function f() { return typeof this; } out.push(f());`, `out.join()`)
 	assert.Equal(t, "true,5,object,1,2", got)
 	bad := bytecode.Function{Name: "bad", Strict: true, Kind: bytecode.KindNormal,
-		Code: []uint32{bytecode.EncodeABC(bytecode.Op(bytecode.OpCount), 0, 0, 0)}}
+		Code: []uint32{bytecode.EncodeABC(bytecode.Op(bytecode.OpCount), 0, 0, 0), bytecode.EncodeABC(bytecode.RetUndef, 0, 0, 0)}}
 	f, _ := testClosure(r, &bad)
 	_, err := r.CallObject(f, Undefined(), nil)
 	assert.Equal(t, "TypeError: internal: unknown opcode", errorString(err))
@@ -324,6 +350,81 @@ func TestMappedArguments(t *testing.T) {
 		{"closure mapped", []string{`function f(a) { var g = () => a; arguments[0] = 9; return g(); } f(1)`}, "9"},
 		{"duplicate params", []string{`function f(a, a) { return a; } f(1, 2)`}, "2"},
 		{"toString tag", []string{`function f() { return Object.prototype.toString.call(arguments); } f()`}, "[object Arguments]"},
+	})
+}
+
+// TestLazyMappedArguments checks the mapped arguments object of a function
+// that never assigns a parameter, which keeps its elements and writes them
+// through to the parameters (MapArguments B = 1), against the one that
+// builds the map at entry, and the paths that leave the lazy state.
+func TestLazyMappedArguments(t *testing.T) {
+	runScriptCases(t, []scriptCase{
+		// Lazy: no code assigns a parameter.
+		{"write then param", []string{`function f(a, b) { arguments[1] = 5; return a + "," + b; } f(1, 2)`}, "1,5"},
+		{"param then write then param", []string{`function f(a) { var x = a; arguments[0] = x + 1; return a + "," + arguments[0]; } f(1)`}, "2,2"},
+		{"write then closure", []string{`function f(a) { var g = function () { return a; }; arguments[0] = 9; return g(); } f(1)`}, "9"},
+		{"update through arguments", []string{`function f(a) { arguments[0]++; arguments[0] += 2; return a; } f(1) + "," + f(5)`}, "4,8"},
+		{"more arguments", []string{`function f(a) { arguments[1] = 7; arguments[0] = 6; return [a, arguments[1], arguments.length].join(); } f(1, 2, 3)`}, "6,7,3"},
+		{"fewer arguments", []string{`function f(a, b) { arguments[1] = 7; return [typeof b, arguments[1], arguments.length].join(); } f(1)`}, "undefined,7,1"},
+		{"no arguments", []string{`function f(a) { arguments[0] = 1; return typeof a; } f()`}, "undefined"},
+		{"escaped", []string{`function f(a) { return [arguments, function () { return a; }]; } var p = f(1); p[0][0] = 3; p[1]()`}, "3"},
+		{"descriptor", []string{`function f(a) { arguments[0] = 2; return JSON.stringify(Object.getOwnPropertyDescriptor(arguments, "0")); } f(1)`}, `{"value":2,"writable":true,"enumerable":true,"configurable":true}`},
+		{"apply", []string{`function g(x, y) { return x + y; } function f(a, b) { arguments[0] = 10; return g.apply(null, arguments) + a; } f(1, 2)`}, "22"},
+		{"spread and keys", []string{`function f(a, b) { arguments[0] = 3; var k = []; for (var i in arguments) k.push(i); return [...arguments].join() + ";" + k.join() + ";" + Object.keys(arguments).join(); } f(1, 2)`}, "3,2;0,1;0,1"},
+		{"delete", []string{`function f(a) { delete arguments[0]; arguments[0] = 5; return a + "," + arguments[0]; } f(1)`}, "1,5"},
+		{"delete keeps the others", []string{`function f(a, b) { delete arguments[0]; arguments[0] = 5; arguments[1] = 6; return [a, b, arguments[0], arguments[1]].join(); } f(1, 2)`}, "1,6,5,6"},
+		{"define accessor", []string{`function f(a, b) { Object.defineProperty(arguments, "0", {get() { return "g"; }}); arguments[1] = 3; return [a, b, arguments[0]].join(); } f(1, 2)`}, "1,3,g"},
+		{"define non-writable value", []string{`function f(a) { Object.defineProperty(arguments, "0", {value: 7, writable: false}); arguments[0] = 9; return a + "," + arguments[0]; } f(1)`}, "7,7"},
+		{"define non-writable", []string{`function f(a) { arguments[0] = 2; Object.defineProperty(arguments, "0", {writable: false}); arguments[0] = 9; return a + "," + arguments[0]; } f(1)`}, "2,2"},
+		{"define value keeps alias", []string{`function f(a) { Object.defineProperty(arguments, "0", {value: 4}); var r = a; arguments[0] = 5; return [r, a, arguments[0]].join(); } f(1)`}, "4,5,5"},
+		{"define above parameters", []string{`function f(a) { Object.defineProperty(arguments, "1", {get() { return "g"; }}); arguments[0] = 2; return [a, arguments[0], arguments[1]].join(); } f(1, 2)`}, "2,2,g"},
+		{"define after delete", []string{`function f(a, b) { delete arguments[0]; Object.defineProperty(arguments, "0", {value: 3}); arguments[1] = 4; return [a, b, arguments[0]].join(); } f(1, 2)`}, "1,4,3"},
+		{"length set", []string{`function f(a, b) { arguments.length = 1; arguments[1] = 3; return [b, Array.prototype.slice.call(arguments).length].join(); } f(1, 2)`}, "3,1"},
+		{"length deleted", []string{`function f(a) { delete arguments.length; arguments[0] = 2; return a + "," + arguments.length; } f(1)`}, "2,undefined"},
+		{"freeze", []string{`function f(a) { Object.freeze(arguments); arguments[0] = 2; return [a, arguments[0], Object.isFrozen(arguments)].join(); } f(1)`}, "1,1,true"},
+		{"freeze after write", []string{`function f(a) { arguments[0] = 2; Object.freeze(arguments); return a + "," + arguments[0]; } f(1)`}, "2,2"},
+		{"seal", []string{`function f(a) { Object.seal(arguments); arguments[0] = 2; var d = Object.getOwnPropertyDescriptor(arguments, "0"); return [a, arguments[0], d.configurable, d.writable, delete arguments[0]].join(); } f(1)`}, "2,2,false,true,false"},
+		{"seal then define", []string{`function f(a) { Object.seal(arguments); Object.defineProperty(arguments, "0", {value: 3}); arguments[0] = 4; return a + "," + Object.getOwnPropertyDescriptor(arguments, "0").configurable; } f(1)`}, "4,false"},
+		{"prevent extensions", []string{`function f(a) { Object.preventExtensions(arguments); arguments[0] = 2; arguments[1] = 3; return [a, arguments.length, 1 in arguments].join(); } f(1)`}, "2,1,false"},
+		{"reverse", []string{`function f(a, b, c) { Array.prototype.reverse.call(arguments); return [a, b, c].join(); } f(1, 2, 3)`}, "3,2,1"},
+		{"shift", []string{`function f(a, b) { Array.prototype.shift.call(arguments); return [a, b, arguments.length, arguments[0], 1 in arguments].join(); } f(1, 2)`}, "2,2,1,2,false"},
+		{"splice", []string{`function f(a, b, c) { Array.prototype.splice.call(arguments, 0, 1, "x", "y"); return [a, b, c, arguments.length].join(); } f(1, 2, 3)`}, "x,y,2,4"},
+		{"fill", []string{`function f(a, b) { Array.prototype.fill.call(arguments, 0); return [a, b].join(); } f(1, 2)`}, "0,0"},
+		{"arrow uses outer arguments", []string{`function f(a) { var g = () => { arguments[0] = 5; }; g(); return a; } f(1)`}, "5"},
+		{"generator", []string{`function* g(a) { yield arguments; yield a; } var it = g(1); var args = it.next().value; args[0] = 4; it.next().value`}, "4"},
+		{"generator writes after resume", []string{`function* g(a, b) { yield; arguments[1] = a; yield b; } var it = g(1, 2); it.next(); it.next().value`}, "1"},
+		{"async", []string{`var log = [];
+async function f(a, b) { var args = arguments; await null; arguments[0] = 7; log.push(a); await null; args[1] = 3; log.push(b, arguments[0]); }
+function o(a) { return (async () => { await null; arguments[0] = 8; log.push(a); })(); }
+f(1, 2); o(1);`, `log.join()`}, "7,8,3,7"},
+
+		// Unaffected: strict code and parameters that are not simple.
+		{"strict", []string{`function f(a) { "use strict"; arguments[0] = 2; return a; } f(1)`}, "1"},
+		{"strict script", []string{`"use strict"; function f(a) { arguments[0] = 2; return a; } f(1)`}, "1"},
+		{"default", []string{`function f(a = 0) { arguments[0] = 2; return a; } f(1)`}, "1"},
+		{"rest", []string{`function f(a, ...r) { arguments[0] = 2; return a; } f(1)`}, "1"},
+		{"pattern", []string{`function f({x}, b) { arguments[1] = 2; return b; } f({}, 1)`}, "1"},
+
+		// Eager: some code assigns a parameter, or the layout is not the identity.
+		{"assign after read", []string{`function f(a) { var r = arguments[0]; a = 2; return r + "," + arguments[0]; } f(1)`}, "1,2"},
+		{"write then assign", []string{`function f(a) { arguments[0] = 2; var r = a; a = 3; return r + "," + arguments[0]; } f(1)`}, "2,3"},
+		{"compound", []string{`function f(a) { a += 2; return arguments[0]; } f(1)`}, "3"},
+		{"update", []string{`function f(a) { a++; return arguments[0]; } f(1)`}, "2"},
+		{"nested closure", []string{`function f(a) { (function () { a = 5; })(); return arguments[0]; } f(1)`}, "5"},
+		{"with", []string{`function f(a) { var o = {}; with (o) { a = 2; } return arguments[0]; } f(1)`}, "2"},
+		{"with property", []string{`function f(a) { var o = {a: 0}; with (o) { a = 2; } return arguments[0] + "," + o.a; } f(1)`}, "1,2"},
+		{"destructuring", []string{`function f(a, b) { [a, b] = [3, 4]; return arguments[0] + arguments[1]; } f(1, 2)`}, "7"},
+		{"object destructuring", []string{`function f(a) { ({x: a} = {x: 6}); return arguments[0]; } f(1)`}, "6"},
+		{"for-in", []string{`function f(a) { for (a in {k: 1}); return arguments[0]; } f(1)`}, "k"},
+		{"for-of", []string{`function f(a) { for (a of [8]); return arguments[0]; } f(1)`}, "8"},
+		{"for var-in", []string{`function f(a) { for (var a in {q: 1}); return arguments[0]; } f(1)`}, "q"},
+		{"var init", []string{`function f(a) { var a = 9; return arguments[0]; } f(1)`}, "9"},
+		{"function declaration", []string{`function f(a) { function a() {} return typeof arguments[0]; } f(1)`}, "function"},
+		{"duplicate params", []string{`function f(a, a) { arguments[1] = 5; var r = a; arguments[0] = 6; return r + "," + a; } f(1, 2)`}, "5,5"},
+		{"eager generator", []string{`function* g(a) { yield; a = 5; yield arguments[0]; } var it = g(1); it.next(); it.next().value`}, "5"},
+		{"eager async", []string{`var log = []; async function f(a) { await null; a = 9; log.push(arguments[0]); } f(1);`, `log.join()`}, "9"},
+		{"eager define accessor", []string{`function f(a) { Object.defineProperty(arguments, "0", {get() { return "g"; }}); a = 2; return a + "," + arguments[0]; } f(1)`}, "2,g"},
+		{"eager delete", []string{`function f(a) { delete arguments[0]; a = 2; return typeof arguments[0]; } f(1)`}, "undefined"},
 	})
 }
 

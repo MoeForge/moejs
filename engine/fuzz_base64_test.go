@@ -116,7 +116,7 @@ func fuzzUint8ArrayBase64(t *testing.T, r *Realm, data []byte, s string) {
 		}
 		return v
 	}
-	bytesOf := func(v Value) []byte { return v.AsObject().internal.(*typedArray).viewed() }
+	bytesOf := func(v Value) []byte { return dataOf(v.AsObject(), kindTypedArray).viewed() }
 	opts := func(alphabet, handling string, omitPadding bool) Value {
 		o := r.NewObject()
 		a := binaryNames()

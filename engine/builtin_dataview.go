@@ -57,7 +57,7 @@ func (v *dataView) bytes() []byte {
 func thisDataView(r *Realm, this Value, method string) (*dataView, error) {
 	if this.IsObject() {
 		if o := this.AsObject(); o.class == ClassDataView {
-			if v, ok := o.internal.(*dataView); ok {
+			if v, ok := dataOk(o, kindDataView); ok {
 				return v, nil
 			}
 		}
@@ -115,7 +115,7 @@ func dataViewConstruct(r *Realm, args []Value, newTarget *Object) (Value, error)
 	var buf *arrayBuffer
 	if bv.IsObject() {
 		if c := bv.AsObject().class; c == ClassArrayBuffer || c == ClassSharedArrayBuffer {
-			buf, _ = bv.AsObject().internal.(*arrayBuffer)
+			buf = extDataOf(bv.AsObject(), kindArrayBuffer)
 		}
 	}
 	if buf == nil {
@@ -164,14 +164,13 @@ func dataViewConstruct(r *Realm, args []Value, newTarget *Object) (Value, error)
 // length-tracking) of buf from offset.
 func (r *Realm) newDataViewObject(proto, buf *Object, offset, length int) *Object {
 	r.markPrototype(proto)
-	vo := &viewObject{view: dataView{buf: buf, data: buf.internal.(*arrayBuffer), offset: offset, length: length}}
+	vo := &viewObject{view: dataView{buf: buf, data: extDataOf(buf, kindArrayBuffer), offset: offset, length: length}}
 	r.chargeObject(unsafe.Sizeof(viewObject{}))
 	o := &vo.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassDataView
 	o.flags = flagExtensible
-	o.internal = &vo.view
+	setData(o, kindDataView, &vo.view)
 	return o
 }
 

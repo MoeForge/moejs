@@ -20,7 +20,7 @@ import (
 // TestLiveValuesReachLimit checks that what a script parks where only the
 // package's Go state holds it counts for the memory limit, which bounds
 // what the run keeps however many tasks it took to keep it: each case
-// parks about 19 MiB twice, a task apart, under a limit of 32 MiB, and the
+// parks about 18 MiB twice, a task apart, under a limit of 32 MiB, and the
 // second passes the limit. The measurement between the two sees the first
 // only through what the package reports. The value is many small objects,
 // whose allocation past the limit stops the loop; a typed array of that
@@ -74,8 +74,11 @@ AbortSignal.any([ac.signal]).addEventListener("abort", () => b.length)`, false},
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			h.api.SetContext(ctx)
+			// Values are smaller on 32-bit systems: twice as many keep two
+			// parked arrays past the limit there too.
+			n := 163840 * 64 / strconv.IntSize
 			got, err := h.runErr(`globalThis.keep = [];
-const big = () => { const a = []; for (let i = 0; i < 131072; i++) a.push({ i }); return a };
+const big = () => { const a = []; for (let i = 0; i < ` + strconv.Itoa(n) + `; i++) a.push({ i }); return a };
 for (let i = 0; i < 2; i++) {
   await (async () => {
     ` + c.park + `;

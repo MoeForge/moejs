@@ -66,10 +66,20 @@ func (sb *StringBuilder) spill(c int) {
 // from a UTF-16 string never goes through the ASCII buffer and an upgrade.
 func (sb *StringBuilder) growFor(s *String, n int) {
 	f := s
-	if s.kind == strRope {
+	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
-	if f.kind == strUTF16 && sb.u == nil && sb.b == nil && sb.n == 0 {
+	if f.kind == strUTF16 {
+		sb.growUnits(n)
+		return
+	}
+	sb.Grow(n)
+}
+
+// growUnits reserves n code units for a result known to hold UTF-16: an
+// empty builder starts in UTF-16 storage of that capacity.
+func (sb *StringBuilder) growUnits(n int) {
+	if sb.u == nil && sb.b == nil && sb.n == 0 {
 		sb.u = make([]uint16, 0, n)
 		return
 	}
@@ -255,7 +265,7 @@ func (sb *StringBuilder) WriteGoString(s string) {
 
 // WriteString appends a JavaScript string.
 func (sb *StringBuilder) WriteString(s *String) {
-	if s.kind == strRope {
+	if s.needsFlat() {
 		sb.writeRope(s)
 		return
 	}
@@ -267,8 +277,8 @@ func (sb *StringBuilder) WriteString(s *String) {
 	sb.appendUnits(s.units())
 }
 
-// writeRope is WriteString of a rope, out of line so that the view (flat)
-// does not grow WriteString's frame.
+// writeRope is WriteString of a rope or lazy string, out of line so that
+// the view (flat) does not grow WriteString's frame.
 //
 //go:noinline
 func (sb *StringBuilder) writeRope(s *String) {

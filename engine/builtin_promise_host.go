@@ -58,7 +58,7 @@ type hostPromise struct {
 // that uses it. It fails, settling nothing, for any other p: one another
 // realm made, or one with resolving functions.
 func (r *Realm) SettlePromise(p *Object, v Value, reject bool) error {
-	d, ok := p.internal.(*promiseData)
+	d, ok := dataOk(p, kindPromise)
 	if !ok || !d.host || hostPromiseOfData(d).realm != r {
 		return r.TypeError("SettlePromise: not a promise of this realm's NewHostPromise")
 	}
@@ -83,7 +83,7 @@ func (o *Object) PromiseResult() (state PromiseState, result Value, ok bool) {
 	if o.class != ClassPromise {
 		return PromisePending, Undefined(), false
 	}
-	d := o.internal.(*promiseData)
+	d := dataOf(o, kindPromise)
 	return d.state, d.result, true
 }
 

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"math"
 	"unsafe"
 )
 
@@ -33,7 +32,6 @@ type Value struct {
 // reserved space; a canonical NaN uses 0x7FF8 so the two never collide.
 const (
 	reservedPrefix = uint64(0x7FFA) << 48
-	reservedMask   = uint64(0xFFFF) << 48
 
 	bitsFalse     = reservedPrefix | 0
 	bitsTrue      = reservedPrefix | 1
@@ -69,23 +67,35 @@ const (
 	tagAsync
 )
 
-// NumberValue boxes a float64, canonicalizing NaN.
+// The number boxing and AsNumber below convert between float64 and its
+// bits as math.Float64bits and Float64frombits do, with no call: inlined
+// in a caller that is inlined in turn, as into run, the call would leave
+// its inline mark, a NOP that every use runs.
+
+// NumberValue boxes a float64, canonicalizing NaN. f != f tests for a NaN
+// with one compare of f against itself, where a test of its exponent and
+// fraction bits takes two 64-bit masks in registers, which run's
+// arithmetic cases would load for every result.
 func NumberValue(f float64) Value {
-	bits := math.Float64bits(f)
-	if bits&0x7FF0000000000000 == 0x7FF0000000000000 && bits&0x000FFFFFFFFFFFFF != 0 {
+	bits := *(*uint64)(unsafe.Pointer(&f))
+	if f != f {
 		bits = canonicalNaN
 	}
 	return Value{bits: bits}
 }
 
+// numberNotNaN boxes f, which is not a NaN, as NumberValue does without its
+// test.
+func numberNotNaN(f float64) Value { return Value{bits: *(*uint64)(unsafe.Pointer(&f))} }
+
 // IntValue boxes an integer as a JavaScript number.
-func IntValue(i int) Value { return Value{bits: math.Float64bits(float64(i))} }
+func IntValue(i int) Value { f := float64(i); return Value{bits: *(*uint64)(unsafe.Pointer(&f))} }
 
 // Int64Value boxes an int64 as a JavaScript number (may lose precision above 2^53).
-func Int64Value(i int64) Value { return Value{bits: math.Float64bits(float64(i))} }
+func Int64Value(i int64) Value { f := float64(i); return Value{bits: *(*uint64)(unsafe.Pointer(&f))} }
 
 // Uint32Value boxes a uint32 as a JavaScript number.
-func Uint32Value(i uint32) Value { return Value{bits: math.Float64bits(float64(i))} }
+func Uint32Value(i uint32) Value { f := float64(i); return Value{bits: *(*uint64)(unsafe.Pointer(&f))} }
 
 // Bool boxes a boolean.
 func Bool(b bool) Value {
@@ -153,8 +163,16 @@ func (v *Value) setScalar(x Value) {
 	v.bits = x.bits
 }
 
-// IsNumber reports whether v is a JavaScript number.
-func (v Value) IsNumber() bool { return v.ptr == nil && v.bits&reservedMask != reservedPrefix }
+// setScalarBits stores x, a value that holds no pointer, into *v, which
+// holds none either (the caller has just read it as a number): only the
+// bits, so neither a branch nor a store of the pointer word.
+func (v *Value) setScalarBits(x Value) { v.bits = x.bits }
+
+// IsNumber reports whether v is a JavaScript number. It compares the top
+// 16 bits, shifted down, with an immediate: masking them in place takes
+// the mask and the prefix as 64-bit constants in registers, which run's
+// cases would load for every operand they check.
+func (v Value) IsNumber() bool { return v.ptr == nil && v.bits>>48 != reservedPrefix>>48 }
 
 // IsUndefined reports whether v is undefined.
 func (v Value) IsUndefined() bool { return v.ptr == nil && v.bits == bitsUndefined }
@@ -176,8 +194,9 @@ func (v Value) IsTrue() bool { return v.ptr == nil && v.bits == bitsTrue }
 // IsFalse reports whether v is the boolean false.
 func (v Value) IsFalse() bool { return v.ptr == nil && v.bits == bitsFalse }
 
-// IsHole reports whether v is the internal hole marker.
-func (v Value) IsHole() bool { return v.ptr == nil && v.bits == bitsHole }
+// IsHole reports whether v is the internal hole marker. Its bits differ
+// from an ordinary element's, which needs no test of the pointer.
+func (v Value) IsHole() bool { return v.bits == bitsHole && v.ptr == nil }
 
 // IsString reports whether v is a string.
 func (v Value) IsString() bool { return v.ptr != nil && v.bits == tagString }
@@ -203,7 +222,21 @@ func (v Value) isImportRef() bool { return v.ptr != nil && v.bits == tagImport }
 func (v Value) isAsyncFrame() bool { return v.ptr != nil && v.bits == tagAsync }
 
 // AsNumber returns the float64 payload. Only valid when IsNumber.
-func (v Value) AsNumber() float64 { return math.Float64frombits(v.bits) }
+func (v Value) AsNumber() float64 { b := v.bits; return *(*float64)(unsafe.Pointer(&b)) }
+
+// isScalar reports whether v holds no pointer: a number, a boolean,
+// undefined, null or the hole.
+func (v Value) isScalar() bool { return v.ptr == nil }
+
+// scalarFloat returns the bits of v, a value that holds no pointer, as a
+// float64: its number, or a NaN for the other scalars, whose payloads are
+// reserved NaNs (reservedPrefix, a quiet NaN's exponent and top fraction
+// bits). Arithmetic on two scalars is so a NaN unless both are numbers:
+// run's operators compute on scalars first and test the one result for a
+// NaN, rather than the reserved prefix of each operand, and send a NaN to
+// the slow path, which tells a number's NaN from another value
+// (TestScalarFloatNaN).
+func (v Value) scalarFloat() float64 { b := v.bits; return *(*float64)(unsafe.Pointer(&b)) }
 
 // AsBool returns the boolean payload. Only valid when IsBool.
 func (v Value) AsBool() bool { return v.bits == bitsTrue }

@@ -97,13 +97,16 @@ export function classArrow() { return J([new A().m(9)(), new B().m()]); }
 
 // TestArgumentsAllocation checks that the arguments object is co-allocated
 // with its named slots and up to four elements, and that functions that never
-// reference `arguments` do not create one.
+// reference `arguments`, or only read its length and elements, do not create
+// one.
 func TestArgumentsAllocation(t *testing.T) {
 	skipInRegcheck(t)
-	allocs, _, _ := callAllocs(t, `export function f(a, b) { return arguments.length + a + b; }`, IntValue(1), IntValue(2))
+	allocs, _, _ := callAllocs(t, `function g(x) { return x.length; } export function f(a, b) { return g(arguments) + a + b; }`, IntValue(1), IntValue(2))
 	assert.Equal(t, 1.0, allocs, "arguments object with inline elements")
-	allocs, _, _ = callAllocs(t, `export function f() { return arguments.length; }`, IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5))
+	allocs, _, _ = callAllocs(t, `function g(x) { return x.length; } export function f() { return g(arguments); }`, IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5))
 	assert.Equal(t, 2.0, allocs, "arguments object plus an element array beyond four")
+	allocs, _, _ = callAllocs(t, `export function f(a, b) { var q = arguments; return arguments.length + q[4] + a + b; }`, IntValue(1), IntValue(2), IntValue(3), IntValue(4), IntValue(5))
+	assert.Equal(t, 0.0, allocs, "no arguments object for reads of its length and elements")
 	allocs, _, _ = callAllocs(t, `export function f(a, b) { return a + b; }`, IntValue(1), IntValue(2))
 	assert.Equal(t, 0.0, allocs, "no arguments object without a reference")
 }

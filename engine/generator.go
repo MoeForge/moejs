@@ -132,7 +132,7 @@ func (r *Realm) genOp(fd *FunctionData, base int, w uint32, pc int) (int, error)
 		}
 		regs = st.stack[base:top:top]
 		regs[a] = ObjectValue(o)
-		g := o.internal.(*genFrame)
+		g := dataOf(o, kindGenerator)
 		g.out = regs[a]
 		return pc, g.save(regs, pc)
 	case bytecode.Yield:
@@ -140,7 +140,7 @@ func (r *Realm) genOp(fd *FunctionData, base int, w uint32, pc int) (int, error)
 		if err != nil {
 			return pc, err
 		}
-		g, ok := o.internal.(*genFrame)
+		g, ok := dataOk(o, kindGenerator)
 		if !ok {
 			return pc, r.wrongKind(w, "a generator")
 		}
@@ -190,8 +190,7 @@ func (r *Realm) genFunc(v Value, w uint32) error {
 // inheriting from %GeneratorPrototype%.
 func (r *Realm) makeGeneratorFunction(o *Object) {
 	gi := r.generatorIntrinsics()
-	o.proto = gi.GeneratorFunctionPrototype
-	o.shape = r.rootShapeFor(o.proto).
+	o.shape = r.rootShapeFor(gi.GeneratorFunctionPrototype).
 		addProperty(r, StringKey(AtomLength), attrConfigurable).
 		addProperty(r, StringKey(AtomName), attrConfigurable).
 		addProperty(r, StringKey(AtomPrototype), attrWritable)
@@ -213,7 +212,7 @@ func (r *Realm) newGenerator(fn *Object, fd *FunctionData, this Value) (*Object,
 	gen := &generatorObject{g: genFrame{fn: fn, fd: fd, this: this, regs: make([]Value, fd.code.NumRegs)}}
 	r.chargeObject(unsafe.Sizeof(generatorObject{}) + uintptr(len(gen.g.regs)*valueSize))
 	o := initObject(&gen.obj, ClassGenerator, r.rootShapeFor(proto))
-	o.internal = &gen.g
+	setData(o, kindGenerator, &gen.g)
 	return o, nil
 }
 
@@ -223,7 +222,7 @@ func (r *Realm) newGenerator(fn *Object, fd *FunctionData, this Value) (*Object,
 func (r *Realm) genResume(this, v, mode Value, method string) (Value, error) {
 	var g *genFrame
 	if this.IsObject() && this.AsObject().class == ClassGenerator {
-		g = this.AsObject().internal.(*genFrame)
+		g = dataOf(this.AsObject(), kindGenerator)
 	}
 	if g == nil {
 		return Undefined(), r.TypeError("Generator.prototype.%s called on incompatible receiver %s", method, r.DisplayString(this))
@@ -259,12 +258,16 @@ func (r *Realm) genResume(this, v, mode Value, method string) (Value, error) {
 // resumeFrame continues the suspended frame g, handing a resumption after
 // a Yield or Await the value v and mode, and returns what run returns. The
 // state is genExecuting until the frame suspends again or completes; an
-// interrupt raised before resuming leaves the frame suspended.
+// interrupt raised before resuming, or a frame of another realm's function
+// (errForeignFrame), leaves the frame suspended.
 func (r *Realm) resumeFrame(g *genFrame, v, mode Value) (Value, error) {
 	if r.interruptFlag.Load() != 0 {
 		if err := r.pendingInterrupt(); err != nil {
 			return Undefined(), err
 		}
+	}
+	if g.fd.realm != r {
+		return Undefined(), r.errForeignFrame()
 	}
 	if g.fd.icBase == icUnbound {
 		return r.resumeDynamic(g, v, mode)
@@ -287,9 +290,7 @@ func (r *Realm) resumeFrame(g *genFrame, v, mode Value) (Value, error) {
 	}
 	fi := st.nframes
 	if fi == len(st.frames) {
-		nf := make([]frameInfo, max(initialFrames, 2*len(st.frames)))
-		copy(nf, st.frames)
-		st.frames = nf
+		r.growFrames()
 	}
 	st.frames[fi] = frameInfo{fn: g.fn, pc: g.pc, base: uint32(base)}
 	st.nframes = fi + 1

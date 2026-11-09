@@ -22,8 +22,8 @@ var rowCorpus = []string{
 		var r = [];
 		var x = a + b, y = a - b, z = a * b, w = a / b, m = a % b, e = a ** b;
 		r.push(x, y, z, w, m, e, a & b, a | b, a ^ b, a << b, a >> b, a >>> b);
-		var n = ~a, g = -a, p = +c, q = !a, s = "s" + a, u = ` + "`t${a}u${b}`" + `;
-		r.push(n, g, p, q, s, u, a == b, a != b, a === b, a !== b, a < b, a <= b, a > b, a >= b);
+		var n = ~a, g = -a, p = +c, q = !a, s = "s" + a, u = ` + "`t${a}u${b}`" + `, us = ` + "`v${c}`" + `;
+		r.push(n, g, p, q, s, u, us, a == b, a != b, a === b, a !== b, a < b, a <= b, a > b, a >= b);
 		var i = a, j = i++, k = i--, l = ++i, o = --i, v = a + 1, h = a - 1;
 		var t = typeof a, ts = typeof c === "string";
 		r.push(i, j, k, l, o, v, h, t, ts);
@@ -42,15 +42,23 @@ var rowCorpus = []string{
 		for (var i = 4; i > 0; i--) s++;
 		for (var i = 0; i <= 4; i++) s++;
 		for (var i = 4; i >= 0; i--) s++;
+		var lim = o, lf = function () { return lim; };
+		for (var i = 0; i < lim; i++) s++;
+		if (n >= lim) s++; if (d < lim) s++;
+		var p = n, q = o;
+		if (p < q) s++; if (p <= q) s++; if (p > q) s++; if (p >= q) s++;
+		if (!(p < q)) s++; if (!(p <= q)) s++; if (!(p > q)) s++; if (!(p >= q)) s++;
 		if (n < o) s++; if (n <= o) s++; if (n > o) s++; if (n >= o) s++;
 		if (!(n < o)) s++; if (!(n <= o)) s++; if (!(n > o)) s++; if (!(n >= o)) s++;
 		if (n < 4) s++; if (n <= 4) s++; if (n > 4) s++; if (n >= 4) s++;
 		if (!(n < 4)) s++; if (!(n <= 4)) s++; if (!(n > 4)) s++; if (!(n >= 4)) s++;
 		if (n === 5) s++; if (n !== 5) s++; if (n === o) s++; if (n !== o) s++;
+		if (d === "ab") s++; if (d !== "ab") s++; if (u === null) s++; if (u !== undefined) s++;
+		if (typeof d == "string") s++; if (typeof u != "object") s++;
 		if (n) s++; if (!o) s++;
 		var w = u ?? n, x = d ?? o, y = u?.p, z = d?.length;
 		function dflt(q = n, r = o) { return q + r; }
-		return [s, w, x, y, z, dflt(), dflt(1, 2)].join();
+		return [s, w, x, y, z, dflt(), dflt(1, 2), lf()].join();
 	}
 	flow(5, 3, undefined, "ab"); flow(2, 9, null, "");`,
 	// Objects, elements, globals, closures and their environments, strict
@@ -67,11 +75,13 @@ var rowCorpus = []string{
 		var cap = 5;
 		var f = function () { cap++; return cap; };
 		var fe = function self(n) { return n ? self(n - 1) : self.name; };
+		var nest = function (m) { return function (q) { return function (v) { return function () { return cap + m + q + v; }; }; }; };
 		class C { x = o.a; y = arr; }
-		var c = new C(), c2 = new C(1, 2);
+		var c = new C(), c2 = new C(1, 2), isC = c2 instanceof C;
 		var sp = [...arr, ...hole];
 		var tu = typeof undeclaredGlobal;
-		return [o.c, arr[1], g, f(), f(), fe(2), c.x, c2.y.length, sp.length, none, yes, no, hole.length, tu].join();
+		var j = 0, el = arr[++j];
+		return [o.c, arr[1], g, f(), f(), fe(2), nest(1)(2)(3)(), c.x, c2.y.length, isC, sp.length, none, yes, no, hole.length, tu, el].join();
 	}
 	function tdz(c) {
 		if (c) {
@@ -89,7 +99,7 @@ var rowCorpus = []string{
 	function Ctor(a, b) { this.s = a + b; }
 	function locals() { var p, q, r; return [p, q, r].length; }
 	function calls(x) {
-		var r = [plain(), args(1, 2, x), o.m() === o, o.n(x), new Ctor(x, 2).s, new Ctor().s, locals()];
+		var r = [plain(), args(1, 2, x), o.m() === o, o.n(x), new Ctor(x, 2).s, new Ctor().s, locals(), o instanceof Ctor];
 		return r.join();
 	}
 	calls(3);`,
@@ -117,14 +127,28 @@ var rowCorpus = []string{
 		return out.join();
 	}
 	handles(1); handles(0);`,
+	// Reads of the arguments a frame keeps: their count and an element,
+	// in sloppy code (mapped) and strict.
+	`function count() { return arguments.length; }
+	function at(i) { var v = arguments[i]; return v; }
+	function strictAt(i) { "use strict"; var v = arguments[i]; return v; }
+	count(1, 2, 3) + at(1, 5) + strictAt(0, 7);`,
 }
 
-// rowHandMade are programs the compiler does not emit: Concat with its
-// operands in other registers than its result (the compiler concatenates
-// in place).
-var rowHandMade = []*bytecode.Function{{Name: "concat", NumRegs: 3, Strict: true, Code: []uint32{
-	bytecode.EncodeAsBx(bytecode.LoadInt, 1, 4), bytecode.EncodeAsBx(bytecode.LoadInt, 2, 5),
-	bytecode.EncodeABC(bytecode.Concat, 0, 1, 2), bytecode.EncodeABC(bytecode.Ret, 0, 0, 0)}}}
+// rowHandMade are programs the compiler does not emit: Concat of strings
+// with its operands in other registers than its result (the compiler
+// concatenates in place), and Inc and Dec into another register than
+// their operand's (the compiler's update in place, and PostInc and PostDec
+// for a postfix update whose value is used).
+var rowHandMade = []*bytecode.Function{{Name: "concat", NumRegs: 3, Strict: true,
+	Consts: []bytecode.Const{{Kind: bytecode.ConstString, Str: "a", IsASCII: true}, {Kind: bytecode.ConstString, Str: "b", IsASCII: true}},
+	Code: []uint32{
+		bytecode.EncodeABx(bytecode.LoadConst, 1, 0), bytecode.EncodeABx(bytecode.LoadConst, 2, 1),
+		bytecode.EncodeABC(bytecode.Concat, 0, 1, 2), bytecode.EncodeABC(bytecode.Ret, 0, 0, 0)}},
+	{Name: "incdec", NumRegs: 3, Strict: true, Code: []uint32{
+		bytecode.EncodeAsBx(bytecode.LoadInt, 1, 4),
+		bytecode.EncodeABC(bytecode.Inc, 0, 1, 0), bytecode.EncodeABC(bytecode.Dec, 2, 0, 0),
+		bytecode.EncodeABC(bytecode.Ret, 2, 0, 0)}}}
 
 // rowRun runs program p of rowCorpus and then rowHandMade and returns the
 // message of the panic it ends with, or "".
@@ -230,10 +254,7 @@ func cutRow(op bytecode.Op, run int, cut rowCut) func(bytecode.Op, uint32, uint3
 // reaches those registers other than through its window, or not at all on
 // its inline path; each must still pass, so the list stays exact.
 var rowUntouched = map[string]string{
-	"New/0/last":        "the block's last register is an argument, which run passes as a slice of the stack, or without arguments the slot after the constructor, which it does not read",
-	"IterThrow/0/run":   "run reads the thrown value inline; iterOp closes the record through a slice of the frame",
-	"IterThrow/0/first": "as IterThrow/0/run",
-	"IterThrow/0/last":  "as IterThrow/0/run",
+	"New/0/last": "the block's last register is an argument, which run passes as a slice of the stack, or without arguments the slot after the constructor, which it does not read",
 }
 
 // TestRegCheckRowSensitivity checks every row of the register layouts

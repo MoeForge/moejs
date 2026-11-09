@@ -8,6 +8,8 @@ func installFunction(r *Realm) {
 	// +3: caller, arguments and @@hasInstance (installSymbol).
 	r.FunctionPrototype.ReserveSlots(r, len(functionPrototypeMethods)+3)
 	r.installBuiltins(r.FunctionPrototype, functionPrototypeMethods)
+	apply, _ := r.FunctionPrototype.GetOwnDataValue(StringKey(AtomApply))
+	r.funcProtoApply = apply.AsObject()
 	// AddRestrictedFunctionProperties: caller and arguments are accessors
 	// whose getter and setter are both %ThrowTypeError%.
 	thrower := r.NewNativeFunction(AtomEmpty, 0, throwTypeError)
@@ -38,13 +40,13 @@ func functionProtoApply(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	argArray := Arg(args, 1)
 	if argArray.IsNullish() {
-		return r.CallObject(this.AsObject(), Arg(args, 0), nil)
+		return r.callValue(this, Arg(args, 0), nil)
 	}
 	list, err := r.CreateListFromArrayLike(argArray)
 	if err != nil {
 		return Undefined(), err
 	}
-	return r.CallObject(this.AsObject(), Arg(args, 0), list)
+	return r.callValue(this, Arg(args, 0), list)
 }
 
 // functionProtoCall implements Function.prototype.call(thisArg, ...args).
@@ -57,7 +59,7 @@ func functionProtoCall(r *Realm, this Value, args []Value) (Value, error) {
 	if len(args) > 1 {
 		rest = args[1:]
 	}
-	return r.CallObject(this.AsObject(), Arg(args, 0), rest)
+	return r.callValue(this, Arg(args, 0), rest)
 }
 
 // functionProtoBind implements Function.prototype.bind(thisArg, ...args);

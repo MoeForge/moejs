@@ -127,8 +127,8 @@ func (r *Realm) classOp(fd *FunctionData, base int, w uint32, pc int) (int, erro
 		st.stack[base+a] = key.Value()
 	case bytecode.GetProtoOf:
 		p := Null()
-		if v := regs[b]; v.IsObject() && v.AsObject().proto != nil {
-			p = ObjectValue(v.AsObject().proto)
+		if v := regs[b]; v.IsObject() && v.AsObject().Proto() != nil {
+			p = ObjectValue(v.AsObject().Proto())
 		}
 		regs[a] = p
 	case bytecode.GetSuper:
@@ -147,14 +147,15 @@ func (r *Realm) classOp(fd *FunctionData, base int, w uint32, pc int) (int, erro
 		}
 		st.stack[base+a] = res
 	case bytecode.SuperCallSpread:
-		argv, err := r.spreadArgs(top, regs[a+2])
+		sp := st.sp // past any arguments the frame keeps (ForwardArguments)
+		argv, err := r.spreadArgs(sp, regs[a+2])
 		if err != nil {
 			return pc, err
 		}
 		regs = st.stack[base:top:top]
-		st.sp = top + len(argv) // keep the callee's window above the argument list
+		st.sp = sp + len(argv) // keep the callee's window above the argument list
 		res, err := r.superCall(regs[a], regs[a+1], argv)
-		st.sp = top
+		st.sp = sp
 		if err != nil {
 			return pc, err
 		}
@@ -278,7 +279,7 @@ func (r *Realm) createClass(f *Object, heritage Value, derived bool, protoAt int
 	proto := r.NewObjectWithProto(protoParent)
 	proto.addNamed(r, StringKey(AtomConstructor), propCell{value: ObjectValue(f), attrs: attrHidden})
 	f.addNamed(r, StringKey(AtomPrototype), propCell{value: ObjectValue(proto), attrs: 0})
-	f.internal.(*FunctionData).SetHomeObject(proto)
+	f.funcData().SetHomeObject(proto)
 	r.interp.stack[protoAt] = ObjectValue(proto)
 	return nil
 }
@@ -291,7 +292,7 @@ func (r *Realm) defineClassMethod(o *Object, k Value, fn *Object) error {
 	if err != nil {
 		return err
 	}
-	fd := fn.internal.(*FunctionData)
+	fd := fn.funcData()
 	fd.SetHomeObject(o)
 	if fd.name == nil || fd.name.Len() == 0 {
 		name, err := r.keyFunctionName(key, "")

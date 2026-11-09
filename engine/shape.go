@@ -2,10 +2,13 @@ package engine
 
 import (
 	"maps"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"weak"
+
+	"github.com/MoeForge/moejs/bytecode"
 )
 
 // Property attribute bits stored in Shape nodes and dictionary entries.
@@ -86,7 +89,7 @@ var (
 	sharedShapeCount int
 )
 
-// codeKeys holds the property-name constants of compiled code (materialize).
+// codeKeys holds the property-name constants of compiled code (fillMeta).
 // With the static atoms and the well-known symbols they are the keys bounded
 // by code size rather than by data. Guarded by sharedTransMu.
 var codeKeys = map[*String]struct{}{}
@@ -96,9 +99,27 @@ func addCodeKeys(keys []PropertyKey) {
 	sharedTransMu.Lock()
 	defer sharedTransMu.Unlock()
 	for _, k := range keys {
-		if k.IsString() && !isStaticAtom(k.String()) && len(codeKeys) < maxCodeKeys {
-			codeKeys[k.String()] = struct{}{}
+		addCodeKey(k)
+	}
+}
+
+// addConstKeys is addCodeKeys for the keys of a function's constants
+// (constKeys): keys[i] is a key where consts[i] is a ConstString with Key
+// set.
+func addConstKeys(keys []PropertyKey, consts []bytecode.Const) {
+	sharedTransMu.Lock()
+	defer sharedTransMu.Unlock()
+	for i := range consts {
+		if consts[i].Kind == bytecode.ConstString && consts[i].Key {
+			addCodeKey(keys[i])
 		}
+	}
+}
+
+// addCodeKey is addCodeKeys of one key (sharedTransMu held).
+func addCodeKey(k PropertyKey) {
+	if k.IsString() && !isStaticAtom(k.String()) && len(codeKeys) < maxCodeKeys {
+		codeKeys[k.String()] = struct{}{}
 	}
 }
 
@@ -137,17 +158,17 @@ const (
 	noFillAdd
 )
 
-// Shape is an immutable node of a realm's transition tree. A shape encodes
-// the object's [[Prototype]] (through its root) and the ordered list of named
-// properties with their attributes; the slot of a property is its index in
-// the chain, so slot == position in Object.slots.
+// Shape is an immutable node of a realm's transition tree. A shape holds
+// the object's [[Prototype]], which no object keeps itself, and the ordered
+// list of named properties with their attributes; the slot of a property is
+// its index in the chain, so slot == position in Object.slots.
 type Shape struct {
 	parent *Shape
 	proto  *Object // [[Prototype]] shared by every object with this shape
 	key    PropertyKey
 	slot   uint32
 	attrs  uint8
-	isDict bool // the process-wide dictionary sentinel
+	isDict bool // a dictionary sentinel (dictShapeFor)
 	shared bool // immutable and readable from any goroutine (the shared tree)
 	// propsLent records that the first published child extended this
 	// shape's props in place (publish); guarded by sharedTransMu.
@@ -162,6 +183,14 @@ type Shape struct {
 	// owned marks a shape of the chain a global object continues in past
 	// maxShapeProps (addOwned) instead of moving to dictionary mode.
 	owned bool
+	// tally is, on the dictionary sentinel of the objects that left a
+	// shape of maxShapeProps properties as they went on (dictShapeAt), the
+	// entries the last of them grew to, at most dictRoomMax: the room the
+	// next one takes. On any other shape of a realm's own tree it counts
+	// the objects whose slots grew here with less room than the trunk
+	// below gives (growSlots), and Object.create's objects given less on a
+	// root (createObject), up to math.MaxUint16.
+	tally uint16
 
 	transSmall []transition
 	transMap   map[transitionKey]*Shape
@@ -326,7 +355,7 @@ func (s *Shape) Count() int { return int(s.count) }
 // Proto returns the [[Prototype]] encoded by the shape.
 func (s *Shape) Proto() *Object { return s.proto }
 
-// IsDictionary reports whether s is the dictionary sentinel.
+// IsDictionary reports whether s is a dictionary sentinel.
 func (s *Shape) IsDictionary() bool { return s.isDict }
 
 // Lookup finds key in the shape and returns its slot and attributes.
@@ -502,6 +531,132 @@ func (s *Shape) transition(key PropertyKey, attrs uint8) *Shape {
 	return nil
 }
 
+// trunk returns the end of the chain of only children below s: the first
+// shape from s down its only children that has none or several, or whose
+// child is a dictionary sentinel. It reads what a transition reads: a
+// shared shape's published children, a local shape's strong ones (a local
+// shape with weak children has all its strong ones, so several).
+func (s *Shape) trunk() *Shape {
+	end, _ := s.trunkPast(maxShapeProps)
+	return end
+}
+
+// leaf reports whether s has no child: no object went past it.
+func (s *Shape) leaf() bool {
+	if s.shared {
+		t := s.sharedTrans.Load()
+		return t == nil || t.m == nil && len(t.small) == 0
+	}
+	return s.transMap == nil && len(s.transSmall) == 0
+}
+
+// room is the slots to give an object that goes on to s, the end of a
+// trunk (Shape.trunkPast): its properties where no object went past it;
+// where objects went on from it to different keys, the most of the ends
+// of the trunks below its children, or one more where it has more
+// children than transSmall holds.
+func (s *Shape) room() int {
+	n := int(s.count)
+	if n >= maxShapeProps || s.leaf() {
+		return n
+	}
+	ts := s.transSmall
+	if s.shared {
+		t := s.sharedTrans.Load()
+		if t.m != nil {
+			return n + 1
+		}
+		ts = t.small
+	} else if s.transMap != nil {
+		return n + 1
+	}
+	m := n + 1
+	for _, c := range ts {
+		if !c.shape.isDict {
+			end, _ := c.shape.trunkPast(0)
+			m = max(m, int(end.count))
+		}
+	}
+	return min(m, maxShapeProps)
+}
+
+// ctorRoom returns, for root, the root shape of a constructor's objects
+// that take own properties as they are constructed, the room the objects
+// that went on past those took and the most that grew their slots there:
+// at one shape of the trunk below root past own (trunkPast), or at the
+// children of its end together, as a tree's nodes that take their left
+// or their right child first grow at one child or the other (Shape.tally,
+// counted by growSlots). Children past what transSmall holds are not
+// counted.
+func (root *Shape) ctorRoom(own int) (room, grew int) {
+	end, g := root.trunkPast(own)
+	if int(end.count) < own {
+		return 0, 0
+	}
+	n := 0
+	if !end.shared && end.transMap == nil {
+		for _, t := range end.transSmall {
+			if !t.shape.isDict {
+				n += int(t.shape.tally)
+			}
+		}
+	}
+	return end.room(), max(int(g), n)
+}
+
+// trunkPast is trunk, and the most objects that grew their slots at one
+// shape of the chain of more than past properties (Shape.tally).
+func (s *Shape) trunkPast(past int) (*Shape, uint16) {
+	var grew uint16
+	for range maxShapeProps {
+		var c *Shape
+		if s.shared {
+			t := s.sharedTrans.Load()
+			if t == nil || t.m != nil || len(t.small) != 1 {
+				return s, grew
+			}
+			c = t.small[0].shape
+		} else {
+			if s.transMap != nil || len(s.transSmall) != 1 {
+				return s, grew
+			}
+			c = s.transSmall[0].shape
+		}
+		if c.isDict {
+			return s, grew
+		}
+		if s = c; int(s.count) > past {
+			grew = max(grew, s.tally)
+		}
+	}
+	return s, grew
+}
+
+// trunkProbe is how many objects a shape gives the bounded room of
+// growSlots, where the trunk below it gives more, before it may give the
+// trunk's (Shape.trunkRoom).
+const trunkProbe = 4
+
+// trunkRoom reports whether s gives the room of the trunk below it, where
+// that passes the count of past properties: the chain tells where the
+// objects that went on stopped, not how many stopped before its end, so
+// that one object that went on to maxShapeProps would give every later one
+// room for as many. Of the objects s gave room up to past (counted in
+// s.tally), trunkProbe or more and at least half the number that grew at
+// a shape of the trunk beyond past (grew, of trunkPast) show the trunk is
+// the common path. A shared shape, which a realm does not write, never
+// gives it.
+func (s *Shape) trunkRoom(grew uint16) bool {
+	return s.tally >= trunkProbe && 2*int(grew) >= int(s.tally)
+}
+
+// tallyGrowth counts an object given less room at s than the trunk below.
+func (s *Shape) tallyGrowth() {
+	if !s.shared && s.tally < math.MaxUint16 {
+		s.tally++
+	}
+}
+
 // child returns the child of s for key/attrs that addProperty would return
 // without creating one, or nil.
 func (s *Shape) child(key PropertyKey, attrs uint8) *Shape {
@@ -555,7 +710,7 @@ func (s *Shape) namedChild(t *sharedTransitions, name string) *Shape {
 	if names == nil {
 		names = s.nameIndex()
 	}
-	h := hashASCII(name)
+	h := strHash32(strHash64(name))
 	slots := names.slots
 	mask := uint32(len(slots) - 1)
 	for i := h & mask; ; i = (i + 1) & mask {
@@ -752,7 +907,12 @@ func (s *Shape) publish(key PropertyKey, attrs uint8) *Shape {
 // s (same prototype, properties and slots), for a transition the shared
 // tree no longer takes. The replay is cached through ordinary transitions.
 func (r *Realm) localize(s *Shape) *Shape {
-	n := r.localRoot(s.proto)
+	var n *Shape
+	if s.proto == nil {
+		n = r.newLocalRoot(nil)
+	} else {
+		n = r.localRoot(s.proto)
+	}
 	for _, p := range s.Props() {
 		n = n.addProperty(r, p.key, p.attrs)
 	}
@@ -1048,8 +1208,20 @@ func (s *Shape) ownedPop(r *Realm) *Shape {
 	if !q.owned {
 		return q
 	}
+	n := q.ownedCopy(r)
+	if t := s.table; t != nil {
+		t.remove(s.props, s.slot)
+		n.table, s.table = t, nil
+	}
+	return n
+}
+
+// ownedCopy returns a copy of the owned shape q without a lookup table,
+// whose props end at its count, so that an add to it appends to a new
+// array (ownedPop).
+func (q *Shape) ownedCopy(r *Realm) *Shape {
 	r.chargeShape()
-	n := &Shape{
+	return &Shape{
 		parent: q.parent,
 		proto:  q.proto,
 		key:    q.key,
@@ -1060,9 +1232,36 @@ func (s *Shape) ownedPop(r *Realm) *Shape {
 		owned:  true,
 		props:  q.props[:q.count:q.count],
 	}
-	if t := s.table; t != nil {
-		t.remove(s.props, s.slot)
-		n.table, s.table = t, nil
+}
+
+// without returns the shape of s's properties but the one at slot, in
+// their order, for a global object's deletion before its end
+// (Object.removeNamed): from the shape before the key the properties after
+// it are added again, their slots one lower, through the tree's
+// transitions up to maxShapeProps and in a new owned chain past them. An
+// owned shape before the key is copied (ownedCopy), so the old chain's
+// props, which a snapshot of its keys may still be reading, are never
+// written; an owned result costs a copy of the props and a lookup table,
+// as long as the object's properties, which it charges as toDictionary
+// charges its entries (addOwned charges its shapes only).
+func (s *Shape) without(r *Realm, slot uint32) *Shape {
+	props := s.Props()
+	n := s
+	for n.count > slot {
+		n = n.parent
+	}
+	if n.owned {
+		n = n.ownedCopy(r)
+	}
+	for _, p := range props[slot+1:] {
+		if n.count >= maxShapeProps {
+			n = n.addOwned(r, p.key, p.attrs)
+		} else {
+			n = n.addProperty(r, p.key, p.attrs)
+		}
+	}
+	if n.owned {
+		r.charge(cap(n.props)*shapePropSize + 4*len(n.table.slots))
 	}
 	return n
 }
@@ -1103,7 +1302,27 @@ func (e *ICEntry) Valid(r *Realm, o *Object) bool {
 // Holder walks HolderDepth prototypes up from o. Only meaningful after Valid.
 func (e *ICEntry) Holder(o *Object) *Object {
 	for range e.loc >> 24 {
-		o = o.proto
+		o = o.shape.proto
+	}
+	return o
+}
+
+// Near reports whether HolderDepth is 2 at most, which HolderNear reads.
+func (e *ICEntry) Near() bool { return e.loc < 3<<24 }
+
+// HolderNear is Holder for an entry that is Near, without a loop. Inlined
+// into (*Realm).run's cases, Holder's loop and the read after it, which
+// the loop and the read of depth 0 join, are laid out at the end of run (a
+// branch around a loop is not taken to be unlikely, as one around a call
+// is): a hit would jump out of its case and back, to code whose place
+// moves with every case before it. run reads a Near entry through
+// HolderNear and continues, and any other through Holder.
+func (e *ICEntry) HolderNear(o *Object) *Object {
+	if e.loc >= 1<<24 {
+		o = o.shape.proto
+		if e.loc >= 2<<24 {
+			o = o.shape.proto
+		}
 	}
 	return o
 }
@@ -1131,7 +1350,7 @@ func (r *Realm) rootShapeFor(proto *Object) *Shape {
 // never handed out by rootShapeFor.
 //
 // The root of a prototype the program created lives in the prototype itself
-// (dictProps.root), so it, its transition tree and the names in it are
+// (objectExt.root), so it, its transition tree and the names in it are
 // collected with the prototype: a pooled runtime that runs `new F()` with a
 // fresh F, a class declaration or Object.create(fresh) on every request
 // keeps none of them. rootShapes holds only the roots that live as long as
@@ -1140,8 +1359,9 @@ func (r *Realm) rootShapeFor(proto *Object) *Shape {
 // shared template and the late groups collect (buildSharedTemplate,
 // addSharedRoots).
 func (r *Realm) localRoot(proto *Object) *Shape {
-	if proto != nil && proto.dict != nil && proto.dict.root != nil {
-		return proto.dict.root
+	// Reads proto.ext directly to stay inlinable; proto is not nil.
+	if proto.bits&bitHasExt != 0 && (*objectExt)(proto.ext).root != nil {
+		return (*objectExt)(proto.ext).root
 	}
 	return r.newLocalRoot(proto)
 }
@@ -1161,12 +1381,91 @@ func (r *Realm) newLocalRoot(proto *Object) *Shape {
 		r.rootShapes[proto] = s
 		return s
 	}
-	if proto.dict == nil {
-		proto.dict = &dictProps{}
+	x := proto.extData()
+	if x == nil {
+		x = proto.newExt()
 	}
-	proto.dict.root = s
+	x.root = s
 	return s
 }
+
+// dictSentinelKey is the transition key of a dictionary sentinel from its
+// root. No property has it.
+var dictSentinelKey = PropertyKey{Value{bits: reservedPrefix | 6}}
+
+// dictRoomMax bounds the entries a dictionary takes for the objects that
+// left the same shape before it (Shape.tally): those tell where the
+// last of them stopped, not how many stopped earlier, so one that went on
+// to many more would give every later one room for as many. Up to four
+// times maxShapeProps, the room is at most two doublings past the
+// properties of the shape, where append's growth would give one.
+const dictRoomMax = 4 * maxShapeProps
+
+// dictShapeAt is dictShapeFor for an object that leaves s, a shape of
+// maxShapeProps properties, for dictionary mode as it goes on adding: the
+// sentinel of the objects that left s, which records the room they took
+// (Shape.tally). A shared shape, which a realm does not write, gives the
+// sentinel all its prototype's dictionary-mode objects share, which
+// records nothing.
+func (r *Realm) dictShapeAt(s *Shape) *Shape {
+	if s.shared {
+		return r.dictShapeFor(s.proto)
+	}
+	if d := s.transition(dictSentinelKey, 0); d != nil {
+		return d
+	}
+	d := &Shape{proto: s.proto, key: rootKey, isDict: true}
+	r.chargeShape()
+	s.addTransition(dictSentinelKey, 0, d)
+	return d
+}
+
+// dictShapeFor returns the shape of r's dictionary-mode objects whose
+// prototype is proto. A shape has no properties to describe for them, so
+// it only carries the prototype, which every object reads from its shape:
+// no inline cache is filled for it (isDict), and all such objects share it.
+// A local root keeps its sentinel as a transition, which dies with the root
+// and which the live walk counts.
+func (r *Realm) dictShapeFor(proto *Object) *Shape {
+	root := r.rootShapeFor(proto)
+	if root.shared {
+		return sharedDictShape(root)
+	}
+	if s := root.transition(dictSentinelKey, 0); s != nil {
+		return s
+	}
+	s := &Shape{proto: proto, key: rootKey, isDict: true}
+	r.chargeShape()
+	root.addTransition(dictSentinelKey, 0, s)
+	return s
+}
+
+// sharedDictShape is dictShapeFor for a shared root: the sentinels of the
+// shared prototypes live as long as the process, in a snapshot replaced
+// under sharedTransMu.
+func sharedDictShape(root *Shape) *Shape {
+	if m := sharedDictShapes.Load(); m != nil {
+		if s, ok := (*m)[root]; ok {
+			return s
+		}
+	}
+	sharedTransMu.Lock()
+	defer sharedTransMu.Unlock()
+	old := sharedDictShapes.Load()
+	next := make(map[*Shape]*Shape, 16)
+	if old != nil {
+		if s, ok := (*old)[root]; ok {
+			return s
+		}
+		maps.Copy(next, *old)
+	}
+	s := &Shape{proto: root.proto, key: rootKey, isDict: true, shared: true}
+	next[root] = s
+	sharedDictShapes.Store(&next)
+	return s
+}
+
+var sharedDictShapes atomic.Pointer[map[*Shape]*Shape]
 
 // sharedHostShapes caches process-wide the host shapes (hostShapeFor) that
 // landed in the shared tree, so a shared realm converting a Go map with a

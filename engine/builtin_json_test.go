@@ -1,7 +1,11 @@
 package engine
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"math"
+	"math/rand/v2"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -538,4 +542,248 @@ func TestJSONRoundTrip(t *testing.T) {
 	assert.Nil(t, s)
 	_, err = r.JSONParse(FromGoString(`{`))
 	assertErrorKind(t, err, KindSyntaxError, "Unexpected end of JSON input")
+}
+
+// TestJSONStringifyPlainString: JSON.stringify of a long ASCII string with
+// nothing to escape is the string between quotation marks without a copy
+// of its text, and a serializer's escaping of a text into a script,
+// JSON.stringify(s).slice(1, -1), gives s itself; a string with something
+// to escape, a short one and a UTF-16 one are quoted as before.
+func TestJSONStringifyPlainString(t *testing.T) {
+	r := NewRealm()
+	long := strings.Repeat("<div class=x>text</div>", 20)
+	s := FromGoString(long)
+	q := callJSON(t, r, "stringify", StringValue(s)).AsString()
+	got, err := callMethodErr(r, StringValue(q), "slice", IntValue(1), IntValue(-1))
+	require.NoError(t, err)
+	assert.Same(t, s, got.AsString(), "the text itself")
+	assert.Equal(t, `"`+long+`"`, q.GoString())
+	rope := concat(FromGoString(long), FromGoString(long))
+	assert.Equal(t, `"`+long+long+`"`, callJSON(t, r, "stringify", StringValue(rope)).AsString().GoString())
+	for _, v := range []string{"short", strings.Repeat("a", 70) + "\"q\"\n\\", strings.Repeat("é", 70) + "\"", strings.Repeat("ab", 40) + "\x01"} {
+		want, _ := json.Marshal(v)
+		assert.Equal(t, string(want), callJSON(t, r, "stringify", str(v)).AsString().GoString(), "%q", v)
+	}
+	assert.Equal(t, `"`+long+`"`, runScriptsIn(t, r, `JSON.stringify(`+"`"+long+"`"+`, null, 2)`))
+	assert.Equal(t, `"X"`, runScriptsIn(t, r, `JSON.stringify('`+long+`', () => 'X')`), "a replacer function still runs")
+	assert.Equal(t, "true", runScriptsIn(t, r, `var s = 'q'.repeat(100); JSON.stringify(s).slice(1, -1) === s`))
+}
+
+func callJSON(t *testing.T, r *Realm, name string, args ...Value) Value {
+	t.Helper()
+	v, err := callMethodErr(r, ObjectValue(r.JSON), name, args...)
+	require.NoError(t, err)
+	return v
+}
+
+// TestJSONStringifyRopeShapes: the rope JSON.stringify returns for a plain
+// string behaves in every use as the flat string of the same text, for a
+// text that holds its units and for one that is a slice of a longer
+// string; slices across its children included.
+func TestJSONStringifyRopeShapes(t *testing.T) {
+	r := NewRealm()
+	assert.Equal(t, "same", runScriptsIn(t, r, `
+const e = "<p class=a>" + "x".repeat(90) + "</p>";
+const big = "z".repeat(5000) + e + "z".repeat(5000);
+const out = [];
+for (const v of [e, big.slice(5000, 5000 + e.length), "x".repeat(64)]) {
+  const R = () => JSON.stringify(v), F = ['"', v, '"'].join("");
+  const ops = [
+    s => s.length, s => s === F, s => s == F, s => s.charAt(7), s => s.charCodeAt(0), s => s.codePointAt(3), s => s.at(-1),
+    s => s.indexOf("x"), s => s.lastIndexOf("x"), s => s.includes("x</"), s => s.startsWith('"<p'), s => s.endsWith('p>"'),
+    s => s.slice(0, 10), s => s.slice(1, -1), s => s.slice(5, 20), s => s.slice(-6), s => s.slice(1, 2), s => s.slice(-2, -1),
+    s => s.substring(3, 40), s => s.substr(2, 5), s => s.split("x").length, s => s.split("").length, s => s.replace(/x+/, "y"),
+    s => s.replaceAll("x", ""), s => s.toUpperCase(), s => s.toLowerCase(), s => s.trim(), s => s.padStart(130, "-"),
+    s => s.padEnd(130, "-"), s => s.repeat(2), s => s.concat("!"), s => s + "!", s => "!" + s, s => s.localeCompare(F),
+    s => s.normalize("NFC"), s => s.match(/x+/)[0].length, s => [...s].length, s => encodeURIComponent(s), s => JSON.parse(s),
+    s => JSON.stringify(s), s => JSON.stringify({k: s}), s => { const o = {}; o[s] = 1; return o[F] + Object.keys(o)[0]; },
+    s => new Map([[s, 1]]).get(F), s => new Set([s, F]).size, s => s.isWellFormed(), s => `+"`${s}`"+`, s => String(s) === F,
+    s => s < F || s > F, s => s.search(/p>/), s => [s, s].join(), s => s.slice(0, 10) + s.slice(10) === F,
+    s => s.slice(1, -1).slice(2, 30), s => s.slice(1, -1) === v, s => ({[s]: 2})[F], s => Symbol.for(s) === Symbol.for(F),
+  ];
+  for (const op of ops) {
+    const a = op(R()), b = op(F);
+    if (a !== b) out.push(op + ": " + a + " / " + b);
+  }
+}
+out.join("\n") || "same"`))
+}
+
+// TestJSONStringifyPlainStringDepth: a serializer's escaping of a text,
+// run again on what it gave, gives the text itself each time, so these ropes do not
+// nest; quoting such a rope again has quotation marks to escape and is
+// flat.
+func TestJSONStringifyPlainStringDepth(t *testing.T) {
+	r := NewRealm()
+	s := FromGoString(strings.Repeat("<li>item</li>", 10))
+	esc := evalValue(t, r, `(s => JSON.stringify(s).slice(1, -1))`)
+	v := StringValue(s)
+	for range 10 {
+		var err error
+		v, err = r.Call(esc, Undefined(), []Value{v})
+		require.NoError(t, err)
+	}
+	assert.Same(t, s, v.AsString())
+	q := callJSON(t, r, "stringify", StringValue(s))
+	require.True(t, isRopeForTest(q.AsString()))
+	qq := callJSON(t, r, "stringify", q).AsString()
+	assert.False(t, isRopeForTest(qq))
+	assert.Equal(t, `"\"`+s.GoString()+`\""`, qq.GoString())
+}
+
+// TestJSONStringifyPlainStringCharges: under a memory limit, quoting a
+// long plain string charges two rope headers, not a copy of the text; a
+// flattening of the result charges its copy, as for any rope.
+func TestJSONStringifyPlainStringCharges(t *testing.T) {
+	r := NewRealm()
+	r.SetMemoryLimit(1 << 30)
+	s := FromGoString(strings.Repeat("abcd", 1<<14))
+	before := r.Stats().AllocatedBytes
+	q := callJSON(t, r, "stringify", StringValue(s)).AsString()
+	quoted := r.Stats().AllocatedBytes - before
+	assert.Positive(t, quoted)
+	assert.Less(t, quoted, int64(512), "the rope headers")
+	q.flatten()
+	assert.GreaterOrEqual(t, r.Stats().AllocatedBytes-before, int64(s.Len()+2), "the flat copy")
+}
+
+// TestJSONEscapesExact: jsonEscapes flags exactly the bytes JSON quoting
+// escapes and the control characters among them, whatever the bytes next
+// to them, so that jsonQuotedLen can count them.
+func TestJSONEscapesExact(t *testing.T) {
+	near := []byte{0, 1, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1f, 0x20, 0x21, '"', '#', '\\', ']', 'a', 0x7f, 0x80, 0xa2, 0xdc, 0xff}
+	rng := rand.New(rand.NewPCG(7, 8))
+	var w [8]byte
+	for range 200000 {
+		for i := range w {
+			if rng.IntN(4) == 0 {
+				w[i] = byte(rng.Uint32())
+			} else {
+				w[i] = near[rng.IntN(len(near))]
+			}
+		}
+		all, ctl := jsonEscapes(binary.LittleEndian.Uint64(w[:]))
+		for i, c := range w {
+			esc := c < 0x20 || c == '"' || c == '\\'
+			require.Equal(t, esc, all>>(8*i+7)&1 == 1, "% x byte %d", w, i)
+			require.Equal(t, c < 0x20, ctl>>(8*i+7)&1 == 1, "% x byte %d", w, i)
+		}
+	}
+}
+
+// TestJSONStringifyStringSized: JSON.stringify of a string that is not a
+// plain long one writes its quoting into a buffer of exactly its length,
+// one allocation for an output of up to smallASCIIMax bytes and the units
+// and the header past it, with the output of the general path; it leaves
+// the size hint of the other values' outputs as it was.
+// TestJSONStringifyStringLimit: the quoting of a string past the length
+// limit throws, whether it is a plain rope, escaped, UTF-16, or has \u
+// escapes of controls or lone surrogates; one at the limit does not.
+func TestJSONStringifyStringLimit(t *testing.T) {
+	old := maxStringLength
+	maxStringLength = 200
+	defer func() { maxStringLength = old }()
+	r := NewRealm()
+	for _, c := range []struct {
+		src string
+		ok  bool
+	}{
+		{`"x".repeat(199)`, false}, // plain: 201
+		{`"x".repeat(198)`, true},
+		{`"\n".repeat(100)`, false}, // escaped: 202
+		{`"\n".repeat(99)`, true},
+		{`"é".repeat(199)`, false}, // UTF-16: 201
+		{`"é".repeat(198)`, true},
+		{`"\u0001".repeat(34)`, false}, // \u escapes: 206
+		{`"\u0001".repeat(33)`, true},
+		{`"\ud800".repeat(34)`, false}, // lone surrogates: 206
+		{`"\ud800".repeat(33)`, true},
+		{`"x".repeat(150) + "\n".repeat(25)`, false}, // 202
+		{`"x".repeat(150) + "\n".repeat(24)`, true},
+	} {
+		out := runScriptsIn(t, r, "JSON.stringify("+c.src+").length")
+		if c.ok {
+			assert.Equal(t, "200", out, c.src)
+		} else {
+			assert.True(t, strings.HasPrefix(out, "RangeError: Invalid string length"), "%s: %s", c.src, out)
+		}
+	}
+}
+
+func TestJSONStringifyStringSized(t *testing.T) {
+	r := NewRealm()
+	quoteAll := evalValue(t, r, `(s => JSON.stringify([s]).slice(1, -1))`) // the general path
+	rng := rand.New(rand.NewPCG(9, 10))
+	pick := []string{`a`, `z`, ` `, `\"`, `\\`, `\n`, `\t`, `\x01`, `\x1f`, `\x7f`, `é`, `€`, `😀`, `\ud800`, `\udc00`, `<`, `\u2028`}
+	for k := range 3000 {
+		var b strings.Builder
+		n := rng.IntN(200)
+		if k%10 == 0 {
+			n = rng.IntN(5000)
+		}
+		ascii := k%2 == 0
+		for range n {
+			p := pick[rng.IntN(len(pick))]
+			if ascii && (p[0] >= 0x80 || strings.HasPrefix(p, `\u`)) {
+				p = "q"
+			}
+			b.WriteString(p)
+		}
+		src := `"` + b.String() + `"`
+		v := evalValue(t, r, src)
+		if k%3 == 0 && v.AsString().Len() > 2 {
+			h := v.AsString().Len() / 2
+			v = StringValue(concat(v.AsString().Substring(0, h), v.AsString().Substring(h, v.AsString().Len())))
+		}
+		got := callJSON(t, r, "stringify", v).AsString()
+		want, err := r.Call(quoteAll, Undefined(), []Value{v})
+		require.NoError(t, err)
+		require.True(t, got.Equals(want.AsString()), "%s: %q / %q", src, got.GoString(), want.AsString().GoString())
+		if got.kind == strRope {
+			continue // plain: TestJSONStringifyPlainString
+		}
+		f := v.AsString()
+		if f.kind == strRope {
+			f = f.flat(new(String))
+		}
+		n64, plain := jsonQuotedLen(f)
+		require.Equal(t, int64(got.Len()), n64)
+		require.Equal(t, plain, f.kind == strASCII && got.Len() == f.Len()+2)
+	}
+	// One allocation up to smallASCIIMax bytes, the bytes or units and the
+	// header past it, of the output's size.
+	hint := r.jsonSizeHint
+	for _, c := range []struct {
+		s      string
+		allocs float64
+	}{
+		{"short", 1},
+		{strings.Repeat("a\"", 20), 1},
+		{strings.Repeat("a\"", 21), 2},
+		{strings.Repeat("ab\n", 3000), 2},
+		{strings.Repeat("é\x01", 3000), 2},
+	} {
+		v := StringValue(FromGoString(c.s))
+		args := []Value{v}
+		n := callJSON(t, r, "stringify", v).AsString().Len()
+		assert.Equal(t, c.allocs, testing.AllocsPerRun(20, func() { jsonStringify(r, Undefined(), args) }), "%.20q", c.s)
+		var m0, m1 runtime.MemStats
+		runtime.ReadMemStats(&m0)
+		for range 20 {
+			jsonStringify(r, Undefined(), args)
+		}
+		runtime.ReadMemStats(&m1)
+		size := n
+		if FromGoString(c.s).kind == strUTF16 {
+			size = 2 * n
+		}
+		room := size + size/8 + 16 // a size class
+		if size > 32<<10 {
+			room = (size + 8191) &^ 8191 // pages
+		}
+		per := int(m1.TotalAlloc-m0.TotalAlloc) / 20
+		assert.LessOrEqual(t, per, room+int(stringHeaderSize)+16, "%.20q: %d bytes for %d", c.s, per, size)
+	}
+	assert.Equal(t, hint, r.jsonSizeHint, "strings leave the size hint")
+	assert.Equal(t, `"\u0001\ud800"`, runScriptsIn(t, r, `JSON.stringify("\x01\ud800")`))
 }

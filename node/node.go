@@ -76,11 +76,19 @@ type FSOptions struct {
 	// Mount is the absolute path at which JavaScript sees Root, such as
 	// "/workspace". An absolute path JavaScript gives must lie under it,
 	// and realpath and glob return paths under it. Empty means Root
-	// itself.
+	// itself. On Windows it may also have a drive ("C:\work", "c:/work")
+	// or be a share ("\\server\share\work"); without either, as
+	// "/workspace", it has no volume, and a rooted path (\x) is on the
+	// volume of Cwd. Paths are read as Node.js reads them there: either
+	// separator, "." and ".." cleaned before the check against Mount,
+	// which ignores case, and the paths the package makes have
+	// backslashes and Mount's own spelling.
 	Mount string
 	// Cwd is the directory relative paths resolve against, as
 	// process.cwd() is in Node.js: an absolute path under Mount, or a
-	// path relative to Mount. Empty means Mount.
+	// path relative to Mount. Empty means Mount. On Windows it takes the
+	// forms of Mount, and a drive-relative path (C:x) resolves against it
+	// on its drive.
 	Cwd string
 	// Write allows the functions that change the file system: writeFile,
 	// appendFile, mkdir, rm, rmdir, unlink, rename, copyFile and cp.
@@ -92,8 +100,10 @@ type FSOptions struct {
 	// model. path is the absolute path in JavaScript's view (under Mount)
 	// with every symbolic link resolved, so that a link cannot dodge the
 	// policy; a path that does not exist yet has its existing part
-	// resolved. An error fails the operation: one that errors.Is finds
-	// fs.ErrNotExist fails it with ENOENT, a syscall.Errno with that
+	// resolved. On Windows it has backslashes, and Mount's spelling of
+	// the part that is Mount. An error fails the operation: one that
+	// errors.Is finds fs.ErrNotExist fails it with ENOENT, a syscall.Errno
+	// with that
 	// errno, any other with EACCES. It is called on the loop for the
 	// synchronous functions and on a worker goroutine for the others, so
 	// concurrently.

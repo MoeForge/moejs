@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"weak"
 
@@ -351,9 +350,9 @@ func (e *env) netError(msg string, err error) engine.Value {
 func errCode(err error) string {
 	var dns *net.DNSError
 	switch {
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case errors.Is(err, errConnRefused):
 		return "ECONNREFUSED"
-	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, io.ErrUnexpectedEOF):
+	case errors.Is(err, errConnReset), errors.Is(err, io.ErrUnexpectedEOF):
 		return "ECONNRESET"
 	case errors.As(err, &dns):
 		return "ENOTFOUND"

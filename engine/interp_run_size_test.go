@@ -26,6 +26,9 @@ func TestRunIsNotBig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles the engine package")
 	}
+	if !is64 {
+		t.Skip("the run loop it sizes is the 64-bit one, and its -m=2 output is past what a 32-bit process holds")
+	}
 	gocmd, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("no go command on PATH")
