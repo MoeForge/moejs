@@ -217,7 +217,7 @@ func ropeHasAt(s, sub *String, at int) (match, ok bool) {
 
 // flatIndexOf is IndexOf of flat strings, from >= 0.
 func flatIndexOf(f, sub *String, from int) int {
-	if from+int(sub.n) > int(f.n) {
+	if from > int(f.n)-int(sub.n) {
 		return -1
 	}
 	if f.kind == strASCII && sub.kind == strASCII {
@@ -230,22 +230,26 @@ func flatIndexOf(f, sub *String, from int) int {
 	if f.kind == strASCII && sub.kind == strUTF16 {
 		return -1
 	}
+	// A direct scan: each unit equal to the first of sub, then the rest of
+	// sub against the slice of the text at that position, whose bounds are
+	// checked once. hits counts the units the rest matched before a
+	// mismatch; when they outweigh the positions scanned, the linear search
+	// takes over (directScanSwitch, string_search.go).
 	m := int(sub.n)
 	first := sub.at(0)
-	last := int(f.n) - m
 	u := f.units()
+	last := len(u) - m
 	hits := 0
 outer:
 	for i := from; i <= last; i++ {
 		if u[i] != first {
 			continue
 		}
-		for j := 1; j < m; j++ {
-			if u[i+j] != sub.at(j) {
+		t := u[i : i+m]
+		for j := 1; j < len(t); j++ {
+			if t[j] != sub.at(j) {
 				hits += j
-				// Repeated partial matches pay for preprocessing; easy
-				// searches keep the direct scan and its immediate hits.
-				if m >= 16 && hits > m && last-i > 16 {
+				if directScanSwitch(m, hits, i-from, last-i) {
 					return searchFlatUnits(f, sub, i+1, false)
 				}
 				continue outer

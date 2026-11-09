@@ -1029,7 +1029,7 @@ func (s *String) IndexOf(sub *String, from int) int {
 	if int(sub.n) == 0 {
 		return min(from, int(s.n))
 	}
-	if from > (int(s.n)-int(sub.n)) {
+	if from > (int(s.n) - int(sub.n)) {
 		return -1
 	}
 	if s.kind == strRope {

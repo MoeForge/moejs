@@ -17,6 +17,14 @@ func BenchmarkStringSearch(b *testing.B) {
 		{"prefix-miss", strings.Repeat("\u4e00", 32<<10), strings.Repeat("\u4e00", 1023) + "\u4e01"},
 		{"suffix-miss", strings.Repeat("\u4e00", 32<<10), "\u4e01" + strings.Repeat("\u4e00", 1023)},
 		{"periodic-miss", strings.Repeat("\u4e00\u4e01", 16<<10), "\u4e02" + strings.Repeat("\u4e00\u4e01", 511) + "\u4e00"},
+		// The first unit is common and the rest fails at once: a direct
+		// scan is linear here, and keeps the search.
+		{"common-first-miss", "\u4e00" + strings.Repeat("ab", 20000), "ac" + strings.Repeat("x", 20)},
+		// Words, with a long pattern that fails on its last unit.
+		{"sentence-miss", "\u4e00" + strings.Repeat("the cat sat on the mat. ", 2000), "the cat sat on the mat! "},
+		{"rare-first-miss", "\u4e00" + strings.Repeat("the cat sat on the mat. ", 2000), "Qthe cat sat on the mat."},
+		// A CJK text whose period shares a long prefix with the pattern.
+		{"cjk-prefix-miss", strings.Repeat("\u6211\u4eec\u7684", 5000), strings.Repeat("\u6211\u4eec\u7684", 5) + "\u6211\u4eec\u4e0d"},
 	} {
 		for _, reverse := range []bool{false, true} {
 			direction := "forward"
