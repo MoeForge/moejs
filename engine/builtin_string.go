@@ -276,10 +276,30 @@ func lastIndexOfString(s, sub *String, start int) int {
 	if a.kind == strASCII && b.kind == strASCII {
 		return strings.LastIndex(a.s[:start+m], b.s)
 	}
+	if a.kind == strASCII {
+		return -1 // a UTF-16 sub has a unit no ASCII string has
+	}
+	if m == 0 {
+		return start
+	}
+	// The direct scan of flatIndexOf, backwards (string_walk.go).
+	u, first := a.units(), b.at(0)
+	hits := 0
+outer:
 	for i := start; i >= 0; i-- {
-		if substringAt(a, b, i) {
-			return i
+		if u[i] != first {
+			continue
 		}
+		for j := 1; j < m; j++ {
+			if u[i+j] != b.at(j) {
+				hits += j
+				if directScanSwitch(m, hits, start-i, i) {
+					return searchFlatUnits(a, b, i-1, true)
+				}
+				continue outer
+			}
+		}
+		return i
 	}
 	return -1
 }
