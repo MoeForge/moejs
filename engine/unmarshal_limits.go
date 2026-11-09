@@ -201,7 +201,7 @@ func (m *decodeMeasure) object(o *Object, depth int) bool {
 	if !m.r.lacksToJSON(o, &m.plainEpoch) {
 		return false
 	}
-	if o.flags&flagHasLazy != 0 {
+	if o.hasLazy() {
 		src := o.hostSrc()
 		t, raw := src.(rawText)
 		if !raw {
@@ -219,7 +219,7 @@ func (m *decodeMeasure) object(o *Object, depth int) bool {
 	if o.class == ClassArray {
 		return m.elements(o, depth)
 	}
-	if len(o.elements) != 0 || o.dict != nil && o.dict.sparse != nil {
+	if o.elemLen() != 0 || o.dictTable() != nil && o.dictTable().sparse != nil {
 		return false
 	}
 	if !m.add(2, 1) {
@@ -244,14 +244,14 @@ func (m *decodeMeasure) object(o *Object, depth int) bool {
 
 // elements counts the elements of the dense array a; false for a hole.
 func (m *decodeMeasure) elements(a *Object, depth int) bool {
-	n := int(a.internal.(*ArrayData).length)
-	if n != len(a.elements) || a.dict != nil && len(a.dict.sparse) != 0 {
+	n := int(a.arrayLen())
+	if n != a.elemLen() || a.dictTable() != nil && len(a.dictTable().sparse) != 0 {
 		return false
 	}
 	if !m.add(int64(2+max(n-1, 0)), 1) {
 		return false
 	}
-	for _, e := range a.elements {
+	for _, e := range a.elemsReadOnly() {
 		if e.IsHole() || !m.js(e, depth+1) {
 			return false
 		}
@@ -267,12 +267,12 @@ func (m *decodeMeasure) togoObject(o *Object, depth int) bool {
 		return m.goJSON(o.hostSrc(), depth) // HostValue without its copy of a RawMessage
 	}
 	switch {
-	case o.flags&flagHasLazy != 0:
+	case o.hasLazy():
 		return false
 	case o.class == ClassArray:
 		return m.elements(o, depth)
-	case o.class != ClassObject || o.internal != nil && o.flags&flagHostNode == 0 ||
-		len(o.elements) != 0 || o.dict != nil && o.dict.sparse != nil:
+	case o.class != ClassObject || o.pkind != 0 && o.flags&flagHostNode == 0 ||
+		o.elemLen() != 0 || o.dictTable() != nil && o.dictTable().sparse != nil:
 		return false
 	}
 	if !m.add(2, 1) {

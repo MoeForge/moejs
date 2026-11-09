@@ -1,0 +1,4 @@
+go test fuzz v1
+string("function* g(n) { try{ for (i = 0; i < n;i++)yield } finally { yield 70}2} [...g(2)].join()")
+bool(false)
+[]byte("b\xee\x008c")

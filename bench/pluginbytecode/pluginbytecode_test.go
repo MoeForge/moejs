@@ -92,10 +92,12 @@ func count(fn *bytecode.Function) (funcs, words int) {
 	return funcs, words
 }
 
-// dumper writes every field of a value that is not zero, with its path, in
-// declaration order, following each pointer once. A zero field writes
-// nothing, so a field added to the bytecode changes no record until the
-// compiler sets it.
+// dumper writes every exported field of a value that is not zero, with its
+// path, in declaration order, following each pointer once. A zero field
+// writes nothing, so a field added to the bytecode changes no record until
+// the compiler sets it. An unexported field is what package bytecode keeps
+// of the compiler's output (Function's sum of the calls it proved overlap,
+// seeded per process), not the output.
 type dumper struct {
 	w    io.Writer
 	seen map[uintptr]bool
@@ -122,7 +124,9 @@ func (d *dumper) value(path string, v reflect.Value) {
 	case reflect.Struct:
 		t := v.Type()
 		for i := range t.NumField() {
-			d.value(path+"."+t.Field(i).Name, v.Field(i))
+			if t.Field(i).IsExported() {
+				d.value(path+"."+t.Field(i).Name, v.Field(i))
+			}
 		}
 	case reflect.Slice, reflect.Array:
 		if v.Len() == 0 {

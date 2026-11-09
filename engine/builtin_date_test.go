@@ -224,7 +224,8 @@ func TestDatePrototypeDeferred(t *testing.T) {
 func TestDateProtoSlabFilled(t *testing.T) {
 	r := NewRealm()
 	p := r.DatePrototype
-	p.internal, p.flags = nil, p.flags&^flagHasLazy
+	p.setPayload(nil)
+	p.flags &^= flagHasLazy
 	b := &bootstrapSlabs{
 		funcs:  make([]nativeFuncObject, 0, 100),
 		shapes: make([]Shape, 0, 100),

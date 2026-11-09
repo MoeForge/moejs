@@ -327,7 +327,7 @@ func (f *funcState) loadRaw(b *syntax.Binding) int {
 	depth := f.envDepthOf(loc.env)
 	f.checkDepth(depth)
 	if loc.slot <= bytecode.MaxRegister {
-		f.emitABC(bytecode.GetEnv, t, depth, loc.slot)
+		f.emitABC(getEnvOp(depth), t, depth, loc.slot)
 	} else {
 		f.emitAB(bytecode.GetEnvW, t, depth)
 		f.emitExtra(uint32(loc.slot))
@@ -519,6 +519,10 @@ func (f *funcState) loadThis(g *funcState, dst int) {
 		f.loadLoc(fn.ThisBinding, dst)
 		return
 	}
+	if f.thisReg >= 0 {
+		f.emitMove(dst, f.thisReg)
+		return
+	}
 	f.emitA(bytecode.LoadThis, dst)
 }
 
@@ -604,8 +608,7 @@ func (f *funcState) superUpdate(e *syntax.UpdateExpr, m *syntax.MemberExpr, op b
 	if !want {
 		old = f.alloc()
 	}
-	f.emitAB(bytecode.ToNumeric, old, cur)
-	f.emitAB(op, cur, old)
+	f.emitPostUpdate(op, old, cur)
 	f.emitABC(f.setSuperOp(), b, k, cur)
 }
 

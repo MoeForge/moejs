@@ -99,7 +99,7 @@ func intlArg(args []Value, i int) Value {
 // be an object of class with an internal of type T.
 func thisIntl[T any](r *Realm, this Value, class Class, method string) (T, error) {
 	if this.IsObject() && this.AsObject().class == class {
-		if d, ok := this.AsObject().internal.(T); ok {
+		if d, ok := this.AsObject().payload().(T); ok {
 			return d, nil
 		}
 	}
@@ -214,7 +214,7 @@ func (r *Realm) canonicalizeLocaleList(locales Value) ([]string, error) {
 // with ToString) that is a well-formed language tag.
 func (r *Realm) intlLocaleListElement(v Value) (string, error) {
 	if v.IsObject() {
-		if l, ok := v.AsObject().internal.(*intlLocale); ok && v.AsObject().class == ClassIntlLocale {
+		if l, ok := extDataOk(v.AsObject(), kindIntlLocale); ok && v.AsObject().class == ClassIntlLocale {
 			return l.str.GoString(), nil
 		}
 	}

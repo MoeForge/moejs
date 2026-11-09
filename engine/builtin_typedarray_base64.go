@@ -9,8 +9,9 @@ package engine
 // the decoded bytes afterwards would leave there.
 
 import (
-	"encoding/base64"
 	"encoding/hex"
+
+	"github.com/MoeForge/moego/base64"
 )
 
 // base64Handling is the lastChunkHandling option of the base64 decoder.
@@ -322,12 +323,72 @@ func fromHex[C codeUnit](r *Realm, dst []byte, s []C) (read, written int, ok boo
 	return read, written, true, nil
 }
 
-// decodeBase64 runs fromBase64 over the code units of s.
-func (r *Realm) decodeBase64(dst []byte, s *String, url bool, h base64Handling) (read, written int, ok bool, err error) {
+// decodeBase64 runs fromBase64 over the code units of s. The whole chunks
+// of alphabet characters an ASCII string starts with go to moego first
+// (decodeBase64Bulk), and fromBase64 goes on from the chunk boundary where
+// that stops, which is where it would be after decoding them itself.
+// shared says dst is a typed array's bytes, which must not change past
+// what is decoded.
+func (r *Realm) decodeBase64(dst []byte, s *String, url bool, h base64Handling, shared bool) (read, written int, ok bool, err error) {
 	if a, ok := s.ASCII(); ok {
-		return fromBase64(r, dst, asciiBytes(a), url, h)
+		src := asciiBytes(a)
+		read, written, err = r.decodeBase64Bulk(dst, src, url, shared)
+		if err != nil {
+			return 0, 0, false, err
+		}
+		n, m, ok, err := fromBase64(r, dst[written:], src[read:], url, h)
+		return read + n, written + m, ok, err
 	}
 	return fromBase64(r, dst, s.UTF16(), url, h)
+}
+
+// decodeBase64Bulk decodes whole 4-character chunks of src with moego, in
+// blocks that start at 4 KiB of input and double up to copyBytesChunk, as
+// long as dst has room for them, and returns the characters read and the
+// bytes written. It stops before the block that holds anything but
+// alphabet characters (whitespace, padding, a character of neither), which
+// the unpadded decoder either refuses or, for CR and LF, skips and so
+// writes fewer bytes than the block's chunks, and before the last chunk,
+// which may be partial or padded. Every option decodes these chunks
+// alike. A shared dst gets each block through buf, as the decoder may
+// write past the bytes it decodes. It honours the interrupt flag between
+// blocks.
+func (r *Realm) decodeBase64Bulk(dst, src []byte, url, shared bool) (read, written int, err error) {
+	enc := base64.RawStdEncoding
+	if url {
+		enc = base64.RawURLEncoding
+	}
+	var buf [3 << 10]byte
+	end := (len(src) - 1) &^ 3
+	block := 4 << 10
+	next := copyBytesChunk
+	for {
+		k := min(end-read, block, (len(dst)-written)/3*4)
+		if shared {
+			k = min(k, len(buf)/3*4)
+		}
+		if k < 4 {
+			return read, written, nil
+		}
+		out := dst[written : written+k/4*3]
+		if shared {
+			out = buf[:len(out)]
+		}
+		if n, err := enc.Decode(out, src[read:read+k]); err != nil || n != len(out) {
+			return read, written, nil
+		}
+		if shared {
+			copy(dst[written:], out)
+		}
+		read, written = read+k, written+len(out)
+		if read >= next {
+			if err := r.CheckInterrupt(); err != nil {
+				return 0, 0, err
+			}
+			next = read + copyBytesChunk
+		}
+		block = min(2*block, copyBytesChunk)
+	}
 }
 
 // decodeHex implements FromHex(s, len(dst)) over the code units of s.
@@ -361,7 +422,7 @@ func uint8ArrayFromBase64(r *Realm, this Value, args []Value) (Value, error) {
 	// limit never stops it.
 	size := (s.Len() + 3) / 4 * 3
 	dst := r.newBytes(size, size)
-	_, written, ok, err := r.decodeBase64(dst, s, url, h)
+	_, written, ok, err := r.decodeBase64(dst, s, url, h, false)
 	if err != nil {
 		return Undefined(), err
 	}
@@ -415,7 +476,7 @@ func uint8ArraySetFromBase64(r *Realm, this Value, args []Value) (Value, error) 
 	if err != nil {
 		return Undefined(), err
 	}
-	read, written, ok, err := r.decodeBase64(dst, s, url, h)
+	read, written, ok, err := r.decodeBase64(dst, s, url, h, true)
 	if err != nil {
 		return Undefined(), err
 	}

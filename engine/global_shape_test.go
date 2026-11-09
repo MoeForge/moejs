@@ -20,10 +20,10 @@ func globalCached(r *Realm, name string) bool {
 
 // TestGlobalShapeOwned gives the global object more properties than
 // maxShapeProps: it stays in shape mode, where any other object moves to
-// dictionary mode, so its globals keep their inline caches, through adds
-// and deletions of the last property, in mutable and shared realms. Any
-// other change moves it to dictionary mode, as before. Each step checks
-// what a script sees.
+// dictionary mode, so its globals keep their inline caches, through adds,
+// deletions of the last property and a deletion near the end, in mutable
+// and shared realms. A new attribute moves it to dictionary mode, as
+// before. Each step checks what a script sees.
 func TestGlobalShapeOwned(t *testing.T) {
 	for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
 		t.Run(fmt.Sprint(opts.SharedIntrinsics), func(t *testing.T) {
@@ -58,14 +58,14 @@ function writeK60(v) { k60 = v }`)
 				{"(() => { try { return readK99() } catch (e) { return e.name } })()", "ReferenceError", false},
 				{"globalThis.k99 = 'again', globalThis.k100 = 100, [readK99(), k100, Object.keys(globalThis).slice(-2).join()].join()", "again,100,k99,k100", false},
 				{"delete globalThis.k100, delete globalThis.k99, globalThis.k99 = 3, [readK99(), typeof k100].join()", "3,undefined", false},
-				// A deletion in the middle keeps the order of the rest, and
+				// A deletion before the end keeps the order of the rest, and
 				// the caches filled before it miss.
-				{"delete globalThis.k50", "true", true},
+				{"delete globalThis.k50", "true", false},
 				{"[typeof k50, 'k50' in globalThis, Object.keys(globalThis).indexOf('k51') - Object.keys(globalThis).indexOf('k49'), readK99()].join()", "undefined,false,1,3", false},
 				{"(() => { try { return readK50() } catch (e) { return e.name } })()", "ReferenceError", false},
 				{"globalThis.k50 = 'again', [readK50(), Object.keys(globalThis).slice(-2).join()].join()", "again,k99,k50", false},
 				// Redefinitions.
-				{"Object.defineProperty(globalThis, 'k10', {writable: false}), (() => { 'use strict'; try { k10 = 1 } catch (e) { return e.name + k10 } })()", "TypeError10", false},
+				{"Object.defineProperty(globalThis, 'k10', {writable: false}), (() => { 'use strict'; try { k10 = 1 } catch (e) { return e.name + k10 } })()", "TypeError10", true},
 				{"k10 = 2, k10", "10", false},
 				{"Object.defineProperty(globalThis, 'k20', {get() { return 'g' }, set(v) { this.k21 = v }, configurable: true}), k20 = 5, k20 + k21", "g5", false},
 				{"Object.defineProperty(globalThis, 'k20', {value: 'v'}), k20", "v", false},
@@ -85,8 +85,9 @@ function writeK60(v) { k60 = v }`)
 }
 
 // TestGlobalShapeFallback checks that each change of an owned global
-// object other than at its end moves it to dictionary mode, with what a
-// script sees unchanged.
+// object other than at its end or a deletion near it moves it to
+// dictionary mode, with what a script sees unchanged: k5 has 94 globals
+// after it, more than globalRebuildTail.
 func TestGlobalShapeFallback(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{"delete globalThis.k5, [typeof k5, k6, Object.keys(globalThis).length].join()", "undefined,6,100"},
@@ -169,9 +170,9 @@ func TestShapeIndexRemove(t *testing.T) {
 }
 
 // TestGlobalShapeDelete deletes a global that is not the last property:
-// the global object moves to dictionary mode, as any object does, with
-// what a script sees unchanged. A script's many top-level declarations
-// keep it in shape mode.
+// the global object stays in shape mode, with what a script sees
+// unchanged. A script's many top-level declarations keep it in shape mode
+// too.
 func TestGlobalShapeDelete(t *testing.T) {
 	for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
 		r := NewRealmWith(opts)
@@ -181,7 +182,8 @@ function readB() { return b }
 readB();
 delete globalThis.a;
 [typeof a, readB(), Object.keys(globalThis).join()].join()`))
-		assert.NotZero(t, r.Global.flags&flagDict)
+		assert.Zero(t, r.Global.flags&flagDict)
+		assert.True(t, globalCached(r, "b"))
 		r = NewRealmWith(opts)
 		var b strings.Builder
 		for i := range 200 {
@@ -192,4 +194,85 @@ delete globalThis.a;
 		assert.Zero(t, r.Global.flags&flagDict)
 		assert.True(t, globalCached(r, "f150"))
 	}
+}
+
+// TestGlobalShapeRebuild deletes globals before the end of the global
+// object's properties, as a bundle with a fetch polyfill does: the object
+// stays in shape mode for the first maxGlobalRebuilds deletions that leave
+// at most globalRebuildTail properties after the key, below maxShapeProps
+// and in an owned chain, and its globals keep their inline caches with
+// their new slots. Past the bounds it moves to dictionary mode, so many
+// deletions cost little more than in dictionary mode: at most eight
+// rebuilds, each adding again at most globalRebuildTail properties. One in
+// an owned chain also copies the props before the key and builds a lookup
+// table, as long as the object's properties, as toDictionary copies them.
+func TestGlobalShapeRebuild(t *testing.T) {
+	for _, extra := range []int{0, 100} {
+		for _, opts := range []RealmOptions{{}, {SharedIntrinsics: true}} {
+			t.Run(fmt.Sprint(extra, "/", opts.SharedIntrinsics), func(t *testing.T) {
+				r := NewRealmWith(opts)
+				g := r.Global
+				runScriptsIn(t, r, fmt.Sprintf(`for (var i = 0; i < %d; i++) globalThis['k' + i] = i;
+globalThis.fetch = 'f', globalThis.Headers = 'h', globalThis.Request = 'q', globalThis.Response = 'p';
+function readH() { return Headers } function readP() { return Response } readH(), readP();`, extra))
+				require.Equal(t, extra > 0, g.shape.owned)
+				assert.Equal(t, "true,true,undefined,undefined,h,p", runScriptsIn(t, r,
+					"[Reflect.deleteProperty(globalThis, 'fetch'), Reflect.deleteProperty(globalThis, 'Request'), typeof fetch, typeof Request, readH(), readP()].join()"))
+				require.Zero(t, g.flags&flagDict)
+				assert.Equal(t, uint8(2), r.globalRebuilds())
+				assert.True(t, globalCached(r, "Headers"))
+				assert.True(t, globalCached(r, "Response"))
+				assert.Equal(t, "Headers,Response", runScriptsIn(t, r, "Object.keys(globalThis).filter(k => /^[A-Z]/.test(k) && k.length > 6).join()"))
+				// The two are next to each other, their slots one and two
+				// lower (a global defined on first use, Reflect, follows).
+				var slots [2]uint32
+				for i, k := range []string{"Headers", "Response"} {
+					slot, _, ok := g.shape.Lookup(r.KeyFromGoString(k))
+					require.True(t, ok)
+					slots[i] = slot
+					assert.Equal(t, []string{"h", "p"}[i], g.slots[slot].String())
+				}
+				assert.Equal(t, slots[0]+1, slots[1])
+				// Adds after the rebuild, and a shape the chain never had
+				// before when it is owned.
+				assert.Equal(t, "n,h", runScriptsIn(t, r, "globalThis.fetch = 'n', [fetch, readH()].join()"))
+				// Six more deletions near the end rebuild; the ninth moves
+				// the object to dictionary mode.
+				runScriptsIn(t, r, "for (var j = 0; j < 8; j++) globalThis['t' + j] = j")
+				for j := range 7 {
+					runScriptsIn(t, r, fmt.Sprintf("delete globalThis.t%d", j))
+					assert.Equal(t, j == 6, g.flags&flagDict != 0, "deletion %d", j)
+				}
+				assert.Equal(t, uint8(maxGlobalRebuilds), r.globalRebuilds())
+				assert.Zero(t, g.aux, "aux is zero without inline elements (IterNext)")
+				assert.Equal(t, "n,h,p,7,undefined", runScriptsIn(t, r, "[fetch, readH(), readP(), t7, typeof t6].join()"))
+			})
+		}
+	}
+
+	// A deletion with more than globalRebuildTail properties after it.
+	r := NewRealm()
+	runScriptsIn(t, r, "globalThis.first = 1; for (var i = 0; i < 65; i++) globalThis['k' + i] = i")
+	runScriptsIn(t, r, "delete globalThis.first")
+	assert.NotZero(t, r.Global.flags&flagDict)
+	assert.Zero(t, r.globalRebuilds())
+
+	// Many deletions near the end of 10,000 globals: eight rebuilds, then
+	// dictionary mode.
+	r = NewRealm()
+	runScriptsIn(t, r, "for (var i = 0; i < 10000; i++) globalThis['k' + i] = i")
+	for i := 9998; i >= 9998-2*20; i -= 2 {
+		runScriptsIn(t, r, fmt.Sprintf("delete globalThis.k%d", i))
+		assert.Equal(t, i <= 9998-2*maxGlobalRebuilds, r.Global.flags&flagDict != 0, "k%d", i)
+	}
+	assert.Equal(t, uint8(maxGlobalRebuilds), r.globalRebuilds())
+	assert.Equal(t, "9997,undefined,9999,undefined,9957", runScriptsIn(t, r, "[k9997, typeof k9998, k9999, typeof k9958, k9957].join()"))
+
+	// A rebuild in an owned chain charges its props and lookup table.
+	r = NewRealmWith(RealmOptions{MemoryLimit: 1 << 40})
+	runScriptsIn(t, r, "for (var i = 0; i < 10000; i++) globalThis['k' + i] = i")
+	before := r.Stats().RequestAllocatedBytes
+	runScriptsIn(t, r, "delete globalThis.k9998")
+	require.Zero(t, r.Global.flags&flagDict)
+	assert.GreaterOrEqual(t, r.Stats().RequestAllocatedBytes-before, int64(10000*(shapePropSize+2*4)))
 }

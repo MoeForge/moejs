@@ -88,7 +88,9 @@ export const rvk = rv.proxy;`)
 	}
 	require.False(t, a.r.IsForeign(nativeFn(b.r, func(Value, []Value) (Value, error) { return Undefined(), nil })))
 	require.False(t, a.r.IsForeign(IntValue(1)))
-	require.False(t, a.r.IsForeign(ObjectValue(&Object{class: ClassProxy, internal: &moduleNamespace{}})))
+	px := &Object{class: ClassProxy}
+	px.setPayload(&moduleNamespace{})
+	require.False(t, a.r.IsForeign(ObjectValue(px)))
 	own, _ := a.env.GetBindingValue("f")
 	require.False(t, a.r.IsForeign(own))
 }
@@ -175,13 +177,13 @@ func checkUniqueKeys(t *testing.T, o *Object, name string) {
 	t.Helper()
 	seen := map[PropertyKey]bool{}
 	if o.flags&flagDict != 0 {
-		for _, e := range o.dict.entries {
-			if e.live {
+		for _, e := range o.dictTable().entries {
+			if e.live() {
 				require.False(t, seen[e.key], "%s: %s twice", name, e.key.GoString())
 				seen[e.key] = true
 			}
 		}
-		require.Len(t, o.dict.index, len(seen), name)
+		require.Equal(t, len(seen), o.dictTable().namedCount(), name)
 		return
 	}
 	shadowed := false
@@ -322,11 +324,15 @@ func TestJSONParseAllocs(t *testing.T) {
 
 // JSON nesting is bounded at jsonMaxDepth on every path, with a RangeError,
 // and the depth an error leaves behind is restored. Stringify and the
-// reviver walk count jsonCallLevels levels as a call, so a walk that starts
-// another walk at its bottom (toJSON calling JSON.stringify, a reviver
-// calling JSON.parse) runs out of call depth at the second instead of
-// holding hundreds of megabytes of Go stack. A hole is checked against the
-// length limit when written, not up to 4096 holes later.
+// reviver walk take walk units of the call depth, so a walk that starts
+// another walk at its bottom (toJSON calling JSON.stringify or a host
+// function that calls JSONStringify, a reviver calling JSON.parse) runs out
+// of call depth at the second walk of 9,000 levels instead of holding
+// hundreds of megabytes of Go stack. A walk's root takes jsonRootUnits, so
+// walks at each one's last uncounted level stop at 228 (MaxCallDepth over
+// the root's 16 calls and the two of toJSON and JSON.stringify), under 5 MB
+// of Go stack. A hole is checked against the length limit when written, not
+// up to 4096 holes later.
 func TestJSONDepth(t *testing.T) {
 	f := evalModuleWith(t, `function wrap(v, n) { for (let i = 0; i < n; i++) v = [v]; return v; }
 export function deep(n) { return wrap(0, n); }
@@ -334,6 +340,11 @@ export function nestedStringify(n) {
 	let count = 0;
 	const leaf = { toJSON() { count++; return JSON.stringify(wrap(leaf, n)); } };
 	try { JSON.stringify(leaf); return "ok"; } catch (e) { return e.name + "," + count; }
+}
+export function nestedHost(n, str) {
+	let count = 0;
+	const leaf = { toJSON() { count++; return str(wrap(leaf, n)); } };
+	try { str(leaf); return "ok"; } catch (e) { return e.name + "," + count; }
 }
 export function nestedRevive(n) {
 	let count = 0;
@@ -377,6 +388,22 @@ export function holes(depth) {
 	}
 	require.Equal(t, "RangeError,2", call("nestedStringify", 9000))
 	require.Equal(t, "RangeError,1", call("nestedRevive", 9000))
+	require.Equal(t, "RangeError,228", call("nestedStringify", jsonScanDepth-1))
+	require.Equal(t, "RangeError,227", call("nestedRevive", jsonCallLevels-1))
+	str := nativeFn(r, func(_ Value, args []Value) (Value, error) {
+		s, err := r.JSONStringify(args[0])
+		if err != nil {
+			return Undefined(), err
+		}
+		return StringValue(s), nil
+	})
+	nestedHost, _ := f.env.GetBindingValue("nestedHost")
+	for n, want := range map[int]string{9000: "RangeError,2", jsonScanDepth - 1: "RangeError,228"} {
+		res, err := r.Call(nestedHost, Undefined(), []Value{IntValue(n), str})
+		require.NoError(t, err)
+		require.Zero(t, r.CallDepth())
+		require.Equal(t, want, res.AsString().GoString(), "host, %d levels", n)
+	}
 
 	lowerMaxStringLength(t, 100000)
 	// Each hole writes a line indented 10*depth bytes: about 100 fit.

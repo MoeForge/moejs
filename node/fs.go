@@ -275,6 +275,13 @@ func (e *env) fileURLPath(v engine.Value, name string) (string, bool, error) {
 	if perr != nil {
 		return "", true, e.throwCoded(engine.KindTypeError, "ERR_INVALID_URL", "Invalid URL")
 	}
+	if e.fsys != nil && e.fsys.win32 {
+		p, msg := fileURLPathWin32(u)
+		if msg != "" {
+			return "", true, e.throwCoded(engine.KindTypeError, "ERR_INVALID_FILE_URL_PATH", msg)
+		}
+		return p, true, nil
+	}
 	if u.Host != "" && u.Host != "localhost" {
 		return "", true, e.throwCoded(engine.KindTypeError, "ERR_INVALID_FILE_URL_HOST",
 			`File URL host must be "localhost" or empty on `+platform())

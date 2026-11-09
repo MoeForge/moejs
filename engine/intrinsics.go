@@ -80,6 +80,6 @@ func stringConstruct(r *Realm, args []Value, newTarget *Object) (Value, error) {
 	if err != nil {
 		return Undefined(), err
 	}
-	o.internal = s
+	setExtData(o, kindString, s)
 	return ObjectValue(o), nil
 }

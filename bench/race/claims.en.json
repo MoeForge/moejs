@@ -1,0 +1,395 @@
+{
+ "duration_s": 110.769,
+ "frames": 6646,
+ "builds": {
+  "targets": 47,
+  "goos": [
+   "aix",
+   "android",
+   "darwin",
+   "dragonfly",
+   "freebsd",
+   "illumos",
+   "ios",
+   "js",
+   "linux",
+   "netbsd",
+   "openbsd",
+   "plan9",
+   "solaris",
+   "wasip1",
+   "windows"
+  ],
+  "goarch": [
+   "386",
+   "amd64",
+   "arm",
+   "arm64",
+   "loong64",
+   "mips",
+   "mips64",
+   "mips64le",
+   "mipsle",
+   "ppc64",
+   "ppc64le",
+   "riscv64",
+   "s390x",
+   "wasm"
+  ],
+  "default_and_purego": "all 0"
+ },
+ "scenes": [
+  {
+   "name": "Hook",
+   "start": 0.0,
+   "dur": 5.4,
+   "rate": null
+  },
+  {
+   "name": "PureGo",
+   "start": 5.4,
+   "dur": 13.69,
+   "rate": null
+  },
+  {
+   "name": "GenTitle",
+   "start": 19.09,
+   "dur": 5.1,
+   "rate": null
+  },
+  {
+   "name": "V8Relay",
+   "start": 24.19,
+   "dur": 25.46,
+   "rate": 0.8
+  },
+  {
+   "name": "V8Score",
+   "start": 49.65,
+   "dur": 7.2,
+   "rate": null
+  },
+  {
+   "name": "Gateway",
+   "start": 56.85,
+   "dur": 6.0,
+   "rate": null
+  },
+  {
+   "name": "PluginTitle",
+   "start": 62.85,
+   "dur": 7.01,
+   "rate": null
+  },
+  {
+   "name": "PluginRelay",
+   "start": 69.86,
+   "dur": 19.06,
+   "rate": 1.0
+  },
+  {
+   "name": "StationTiles",
+   "start": 88.92,
+   "dur": 6.4,
+   "rate": null
+  },
+  {
+   "name": "Method",
+   "start": 95.32,
+   "dur": 9.05,
+   "rate": null
+  },
+  {
+   "name": "End",
+   "start": 104.37,
+   "dur": 6.4,
+   "rate": null
+  }
+ ],
+ "v8": {
+  "rate": 0.8,
+  "rate_segments": [
+   [
+    2.2,
+    0.8
+   ],
+   [
+    20.061249999999998,
+    0.0
+   ]
+  ],
+  "finish_s": {
+   "moejs": 14.289,
+   "go-quickjs": 20.261,
+   "goant": 94.126,
+   "modernc": 67.167,
+   "goja": 142.343,
+   "sobek": 147.175,
+   "qjs": 21.983,
+   "moejs-old": 41.547
+  },
+  "leg_screen_s": [
+   2.32,
+   2.05,
+   2.29,
+   2.26,
+   2.34,
+   2.61,
+   1.8,
+   2.2
+  ],
+  "lanes": 8,
+  "previous": "v0.1.0-alpha.11",
+  "speedup": 2.908,
+  "moejs_place": 1
+ },
+ "scores": {
+  "goja": 163.0,
+  "sobek": 160.0,
+  "goant": 222.0,
+  "modernc": 323.0,
+  "qjs": 1058.0,
+  "go-quickjs": 999.0,
+  "moejs": 1429.0
+ },
+ "score_vs_qjs": 1.351,
+ "score_lanes": 8,
+ "methods": [
+  "General JS: V8 benchmark suite v7, 8 programs, 1/8 of the track each",
+  "The general relay plays at 0.8× speed; the clock shows measured seconds",
+  "Score: the suite's own run.js, measured apart; last release: v0.1.0-alpha.11",
+  "moejs: latest source, -tags purego, CGO_ENABLED=0, Go 1.27.2",
+  "All 47 GOOS/GOARCH targets of Go 1.27.2 compile with CGO_ENABLED=0",
+  "Plugins: new-api's task plugins; result SHA-256 matches C QuickJS",
+  "Plugin relay: 5 legs of 1/5 track each, each leg timed in its own run",
+  "Requests: small 100,000, agent100k 1,600, big8m 160, multi8x1m 160",
+  "Legs 1-4: 1 vCPU, one request at a time",
+  "Leg 5: agent100k, 8 processes on 1 vCPU each, up to 7,000 requests in total",
+  "Leg 5 ratio: requests the 8 processes finished, each timed for 10 s",
+  "General JS and leg 2: several tests ran at once, 1 core each",
+  "Median of 3 rounds per race; places count only the engines shown"
+ ],
+ "plugin_relay": {
+  "rate": 1.0,
+  "rate_segments": [
+   [
+    2.2,
+    1.0
+   ],
+   [
+    14.058095999999999,
+    0.0
+   ]
+  ],
+  "legs": [
+   "Small requests",
+   "AI agent chat",
+   "Big image",
+   "Many images",
+   "8 cores at once"
+  ],
+  "total_s": {
+   "moejs": 11.858,
+   "go-quickjs": 61.173,
+   "goant": 53.393,
+   "modernc": 170.476,
+   "goja": 152.065,
+   "sobek": 154.387,
+   "qjs": 54.842
+  },
+  "moejs_place": 1,
+  "close_ratio": 1.0577,
+  "close_caption": true
+ },
+ "gateway": [
+  {
+   "name": "Small requests",
+   "scenario": "small",
+   "leg_s": {
+    "moejs": 3.351,
+    "go-quickjs": 5.467,
+    "goant": 13.041,
+    "modernc": 11.677,
+    "goja": 25.374,
+    "sobek": 25.592,
+    "qjs": 3.544
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 3.351,
+    "go-quickjs": 5.467,
+    "goant": 13.041,
+    "modernc": 11.677,
+    "goja": 25.374,
+    "sobek": 25.592,
+    "qjs": 3.544
+   },
+   "requests": 100000,
+   "check": "949933c64ca61dacd4348b022227180c63bd87b03030689b0ddf2286734e152c",
+   "lanes": 1
+  },
+  {
+   "name": "AI agent chat",
+   "scenario": "agent100k",
+   "leg_s": {
+    "moejs": 2.143,
+    "go-quickjs": 10.019,
+    "goant": 11.079,
+    "modernc": 18.012,
+    "goja": 16.745,
+    "sobek": 17.541,
+    "qjs": 6.243
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.143,
+    "go-quickjs": 10.019,
+    "goant": 11.079,
+    "modernc": 18.012,
+    "goja": 16.745,
+    "sobek": 17.541,
+    "qjs": 6.243
+   },
+   "requests": 1600,
+   "check": "359020ec7233d589748f09211e2b1466114f733796c5ee7ea4c86b149b97343b",
+   "lanes": 4
+  },
+  {
+   "name": "Big image",
+   "scenario": "big8m",
+   "leg_s": {
+    "moejs": 2.559,
+    "go-quickjs": 19.735,
+    "goant": 12.599,
+    "modernc": 64.572,
+    "goja": 52.014,
+    "sobek": 52.415,
+    "qjs": 20.533
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.559,
+    "go-quickjs": 19.735,
+    "goant": 12.599,
+    "modernc": 64.572,
+    "goja": 52.014,
+    "sobek": 52.415,
+    "qjs": 20.533
+   },
+   "requests": 160,
+   "check": "439b247997cf18362c0a3449ae47821a76d8cbf230ccae19dde16d310cecdc4b",
+   "lanes": 1
+  },
+  {
+   "name": "Many images",
+   "scenario": "multi8x1m",
+   "leg_s": {
+    "moejs": 2.578,
+    "go-quickjs": 20.148,
+    "goant": 10.564,
+    "modernc": 66.362,
+    "goja": 48.676,
+    "sobek": 49.059,
+    "qjs": 21.111
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.578,
+    "go-quickjs": 20.148,
+    "goant": 10.564,
+    "modernc": 66.362,
+    "goja": 48.676,
+    "sobek": 49.059,
+    "qjs": 21.111
+   },
+   "requests": 160,
+   "check": "17fd1f965a5a698abdb01f16be819b6ea303ad6a28bce16e2ccbbe1687781dd2",
+   "lanes": 1
+  },
+  {
+   "name": "8 cores at once",
+   "scenario": "agent100k",
+   "leg_s": {
+    "moejs": 1.228,
+    "go-quickjs": 5.804,
+    "goant": 6.11,
+    "modernc": 9.853,
+    "goja": 9.255,
+    "sobek": 9.779,
+    "qjs": 3.41
+   },
+   "place": 1,
+   "workers": 8,
+   "window_s": 10.0,
+   "done": {
+    "moejs": 56892,
+    "go-quickjs": 12051,
+    "goant": 11487,
+    "modernc": 7102,
+    "goja": 7557,
+    "sobek": 7158,
+    "qjs": 20540
+   },
+   "leg_requests": 7000,
+   "per_worker_requests": {
+    "moejs": 12000,
+    "go-quickjs": 2600,
+    "goant": 2400,
+    "modernc": 1500,
+    "goja": 1600,
+    "sobek": 1500,
+    "qjs": 4200
+   },
+   "start_skew_s": {
+    "moejs": 0.114,
+    "go-quickjs": 0.012,
+    "goant": 0.012,
+    "modernc": 0.053,
+    "goja": 0.016,
+    "sobek": 0.01,
+    "qjs": 0.014
+   },
+   "check": "359020ec7233d589748f09211e2b1466114f733796c5ee7ea4c86b149b97343b"
+  }
+ ],
+ "tiles": {
+  "Small requests": 1.058,
+  "AI agent chat": 2.914,
+  "Big image": 8.023,
+  "Many images": 8.19,
+  "8 cores at once": 2.77
+ },
+ "headlines": {
+  "general": "General JS: not behind",
+  "plugin": "Plugins: far ahead",
+  "end": [
+   "Plugins: far ahead",
+   "General JS: not behind"
+  ]
+ },
+ "beats": {
+  "hook": 3.7,
+  "zero": 12.12,
+  "os": 18.49,
+  "gen": 23.59,
+  "v8_lights": 25.49,
+  "v8_go": 26.99,
+  "v8_leg3": 31.76,
+  "v8_leg6": 38.64,
+  "v8_first": 44.85,
+  "v8_old": 46.65,
+  "v8_times": 49.25,
+  "score": 56.05,
+  "gateway": 62.25,
+  "plugins": 69.26,
+  "plug_go": 73.06,
+  "plug_leg3": 78.55,
+  "plug_leg5": 83.29,
+  "plug_first": 84.72,
+  "plug_times": 88.52,
+  "plug_close": 76.11,
+  "tiles": 94.72,
+  "method": 102.97,
+  "end": 109.57
+ }
+}

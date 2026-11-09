@@ -15,7 +15,7 @@ import "unsafe"
 // the engine allocates always is aligned (newBytes), and a view's offset is
 // a multiple of its element size.
 func (o *Object) TypedArrayElements() (elems any, ok bool) {
-	ta, ok := o.internal.(*typedArray)
+	ta, ok := dataOk(o, kindTypedArray)
 	if !ok {
 		return nil, false
 	}

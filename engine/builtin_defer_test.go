@@ -173,7 +173,7 @@ func TestColdGlobalsShared(t *testing.T) {
 	}
 	assert.ElementsMatch(t, append(names(NewRealm()), "utils"), names(r))
 	assert.Zero(t, g.flags&flagHasLazy)
-	assert.Nil(t, g.internal)
+	assert.Nil(t, g.payload())
 
 	for src, res := range map[string]any{
 		"[typeof Symbol, typeof WeakRef, typeof structuredClone]":                                                                                      "function,function,function",
@@ -254,7 +254,7 @@ func TestLateGlobalsMutable(t *testing.T) {
 	r.ensureLate(StringKey(AtomIntl))
 	assert.Zero(t, r.coldGlobals, "and so is Intl")
 	assert.Zero(t, g.flags&flagHasLazy)
-	assert.Nil(t, g.internal)
+	assert.Nil(t, g.payload())
 
 	for src, res := range map[string]any{
 		"typeof structuredClone":            "function",
@@ -300,7 +300,7 @@ func TestLateGroupsShared(t *testing.T) {
 	assert.Equal(t, ObjectValue(p.ctor), v)
 	assert.Same(t, p, NewRealmWith(shared).promiseIntr(), "built once per process")
 	hp, _, _ := NewRealmWith(shared).NewPromiseWithResolvers()
-	assert.Same(t, p.proto, hp.proto, "the host API defines the group too")
+	assert.Same(t, p.proto, hp.Proto(), "the host API defines the group too")
 	// Each group joins a copy of the template's intrinsics.
 	assert.Nil(t, tpl.BigIntPrototype)
 	assert.Nil(t, tpl.promise)
@@ -356,7 +356,7 @@ export const DV = DataView;
 	b := NewRealmWith(shared)
 	res, err := b.Call(get("slice"), get("buf"), []Value{IntValue(2)})
 	require.NoError(t, err)
-	assert.Equal(t, a.r.binary.ArrayBufferPrototype, res.AsObject().proto)
+	assert.Equal(t, a.r.binary.ArrayBufferPrototype, res.AsObject().Proto())
 	assert.Zero(t, b.coldGlobals&(1<<lateArrayBuffer))
 	assert.NotZero(t, b.coldGlobals&(1<<latePromise))
 	_, err = b.Call(get("then"), get("p"), nil)
@@ -364,7 +364,7 @@ export const DV = DataView;
 	assert.Zero(t, b.coldGlobals&(1<<latePromise))
 	res, err = b.Construct(get("DV"), []Value{get("buf")}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, a.r.binary.DataViewPrototype, res.AsObject().proto)
+	assert.Equal(t, a.r.binary.DataViewPrototype, res.AsObject().Proto())
 }
 
 // TestLateGroupsConcurrent has the shared realms of many goroutines use the
@@ -523,7 +523,7 @@ func TestLazyGlobalsKeepCold(t *testing.T) {
 			assert.Equal(t, want, names[len(names)-len(want):])
 			assert.Equal(t, 30, calls)
 			assert.Zero(t, g.flags&flagHasLazy)
-			assert.Nil(t, g.internal)
+			assert.Nil(t, g.payload())
 			assert.Zero(t, r.coldGlobals)
 			assert.Equal(t, "function,29", runScriptsIn(t, r, "[typeof Intl.NumberFormat, lazy29].join()"))
 		})

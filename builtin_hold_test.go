@@ -41,11 +41,11 @@ func TestMemoryLimitCountsWhatBuiltinsHold(t *testing.T) {
 	for _, c := range []struct{ name, src string }{
 		{"Function.prototype.apply, getters of an array-like", `
 const al = {length: 192};
-for (let i = 0; i < 192; i++) Object.defineProperty(al, i, {get() { garbage(3000); return ` + big + `; }});
+for (let i = 0; i < 192; i++) Object.defineProperty(al, i, {get() { garbage(4000); return ` + big + `; }});
 (function (...a) { return a.length; }).apply(null, al);`},
 		{"Reflect.apply, getters of an array-like (control)", `
 const al = {length: 192};
-for (let i = 0; i < 192; i++) Object.defineProperty(al, i, {get() { garbage(3000); return ` + big + `; }});
+for (let i = 0; i < 192; i++) Object.defineProperty(al, i, {get() { garbage(4000); return ` + big + `; }});
 Reflect.apply(function (...a) { return a.length; }, null, al);`},
 		{"Promise.prototype.finally, the settled value", `
 globalThis.k = [];
@@ -53,11 +53,11 @@ Promise.resolve().then(() => { const a = []; for (let i = 0; i < 80; i++) a.push
 	.finally(() => { for (let i = 0; i < 64; i++) { k.push(` + big + `); garbage(2000); } });`},
 		{"Array.from of a fresh iterator holding data (control)", `
 const it = {*[Symbol.iterator]() { const keep = []; for (let i = 0; i < 192; i++) { keep.push(` + big + `); yield i; } }};
-Array.from(it, (x) => garbage(3000));`},
-		{"map building its result (control)", `Array.from({length: 192}, (_, i) => i).map((i) => { garbage(3000); return ` + big + `; });`},
-		{"replace with a function, its builder (control)", `"ab".repeat(192).replace(/b/g, (m, i) => { garbage(3000); return "w".repeat(256 * 1024); });`},
-		{"JSON.stringify with a replacer (control)", `JSON.stringify(Array.from({length: 192}, (_, i) => i), (k, v) => { garbage(3000); return k === "" ? v : "w".repeat(256 * 1024) + v; });`},
-		{"new Map of a generator (control)", `function* g() { for (let i = 0; i < 192; i++) { garbage(3000); yield [i, ` + big + `]; } } new Map(g());`},
+Array.from(it, (x) => garbage(4000));`},
+		{"map building its result (control)", `Array.from({length: 192}, (_, i) => i).map((i) => { garbage(4000); return ` + big + `; });`},
+		{"replace with a function, its builder (control)", `"ab".repeat(192).replace(/b/g, (m, i) => { garbage(4000); return "w".repeat(256 * 1024); });`},
+		{"JSON.stringify with a replacer (control)", `JSON.stringify(Array.from({length: 192}, (_, i) => i), (k, v) => { garbage(4000); return k === "" ? v : "w".repeat(256 * 1024) + v; });`},
+		{"new Map of a generator (control)", `function* g() { for (let i = 0; i < 192; i++) { garbage(4000); yield [i, ` + big + `]; } } new Map(g());`},
 	} {
 		err, st := runAfterMeasure(t, c.src)
 		var mle *moejs.MemoryLimitError

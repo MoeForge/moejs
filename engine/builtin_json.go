@@ -28,11 +28,12 @@ func installJSON(r *Realm) {
 // deep as ToGo exports: past it each is a RangeError. The parser runs no
 // user code, so its recursion, a few hundred bytes of Go stack a level, is
 // held by one parse at a time. Stringify and the reviver walk run user code
-// that can start another walk, so each jsonCallLevels levels of theirs also
-// count as one call against MaxCallDepth, which bounds the Go stack all the
-// walks hold together. Stringify counts only past jsonScanDepth, so that a
-// shallow value pays nothing: the walks that fit in MaxCallDepth when a
-// toJSON at each one's last uncounted level starts the next hold under 8 MB.
+// that can start another walk, so each jsonCallLevels levels of a walk take
+// a walk unit of the call depth (enterJSONUnits), which bounds the Go stack
+// all the walks hold together. A walk takes jsonRootUnits at its root, and
+// stringify counts levels only past jsonScanDepth, so that a shallow value
+// pays one counter update: the walks that fit when a toJSON or a reviver at
+// each one's last uncounted level starts the next hold under 5 MB.
 const jsonMaxDepth = MaxToGoDepth
 
 // jsonTooDeep is the RangeError of a value nested deeper than jsonMaxDepth
@@ -41,9 +42,32 @@ func (r *Realm) jsonTooDeep() error {
 	return r.tooDeep("JSON nesting is too deep (more than %d levels)")
 }
 
-// jsonCallLevels is how many levels of a stringify or reviver walk count as
-// one call.
+// jsonCallLevels is how many levels of a stringify or reviver walk take one
+// walk unit.
 const jsonCallLevels = 32
+
+// jsonWalkUnits is how many walk units fit in the call depth when nothing
+// else is on it. A unit takes jsonUnitCalls calls, so the walks' bound does
+// not move with MaxCallDepth; the calls a walk's user code makes take one
+// each, as anywhere. A walk's root takes jsonRootUnits, the units of the
+// jsonScanDepth levels stringify does not count.
+const (
+	jsonWalkUnits = 512
+	jsonUnitCalls = MaxCallDepth / jsonWalkUnits
+	jsonRootUnits = jsonScanDepth / jsonCallLevels
+)
+
+// enterJSONUnits takes n walk units of the call depth; exitJSONUnits
+// releases them.
+func (r *Realm) enterJSONUnits(n int32) error {
+	if r.callDepth > MaxCallDepth-n*jsonUnitCalls {
+		return r.RangeError("Maximum call stack size exceeded")
+	}
+	r.callDepth += n * jsonUnitCalls
+	return nil
+}
+
+func (r *Realm) exitJSONUnits(n int32) { r.callDepth -= n * jsonUnitCalls }
 
 // --- parse -------------------------------------------------------------------------------
 
@@ -88,11 +112,15 @@ func (r *Realm) internalizeJSONProperty(holder *Object, name PropertyKey, revive
 	if depth > jsonMaxDepth {
 		return Undefined(), r.jsonTooDeep()
 	}
-	if depth > 0 && depth%jsonCallLevels == 0 {
-		if err := r.EnterCall(); err != nil {
+	if depth%jsonCallLevels == 0 {
+		n := int32(1)
+		if depth == 0 {
+			n = jsonRootUnits
+		}
+		if err := r.enterJSONUnits(n); err != nil {
 			return Undefined(), err
 		}
-		defer r.ExitCall()
+		defer r.exitJSONUnits(n)
 	}
 	val, err := holder.Get(r, name, ObjectValue(holder))
 	if err != nil {
@@ -953,9 +981,9 @@ func (r *Realm) buildJSONObject(keys []PropertyKey, vals []Value, shape *Shape, 
 	return initObject(o, ClassObject, shape)
 }
 
-// A parsed object or array of up to eight entries is one allocation of the
-// bytes its two used to be: the even sizes are the literals' buckets
-// (object.go, array.go), the odd ones these.
+// A parsed object of up to eight entries is one allocation of the bytes
+// its two used to be: the even sizes are the literals' buckets (object.go),
+// the odd ones these. A parsed array is one too (newArrayCopy).
 type (
 	object1 struct {
 		Object
@@ -973,59 +1001,7 @@ type (
 		Object
 		buf [7]Value
 	}
-	arrayObject1 struct {
-		arrayObject
-		buf [1]Value
-	}
-	arrayObject3 struct {
-		arrayObject
-		buf [3]Value
-	}
-	arrayObject5 struct {
-		arrayObject
-		buf [5]Value
-	}
-	arrayObject7 struct {
-		arrayObject
-		buf [7]Value
-	}
 )
-
-// newJSONArray creates a dense array holding a copy of vals.
-func (r *Realm) newJSONArray(vals []Value) *Object {
-	var ao *arrayObject
-	var items []Value
-	switch len(vals) {
-	case 1:
-		x := &arrayObject1{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 2:
-		x := &arrayObject2{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 3:
-		x := &arrayObject3{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 4:
-		x := &arrayObject4{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 5:
-		x := &arrayObject5{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 6:
-		x := &arrayObject6{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 7:
-		x := &arrayObject7{}
-		ao, items = &x.arrayObject, x.buf[:]
-	case 8:
-		x := &arrayObject8{}
-		ao, items = &x.arrayObject, x.buf[:]
-	default:
-		ao, items = &arrayObject{}, make([]Value, len(vals))
-	}
-	copy(items, vals)
-	return r.initArray(ao, items, uint32(len(vals)))
-}
 
 func (p *jsonParser) array() (Value, error) {
 	if err := p.enter(); err != nil {
@@ -1059,7 +1035,7 @@ func (p *jsonParser) array() (Value, error) {
 		}
 		return Undefined(), p.unexpected()
 	}
-	a := p.r.newJSONArray(p.stack[base:])
+	a := p.r.newArrayCopy(p.stack[base:])
 	p.closed()
 	p.stack = p.stack[:base]
 	p.depth--
@@ -1071,8 +1047,9 @@ func (p *jsonParser) array() (Value, error) {
 // JSONStringify serializes v with no replacer and no indentation
 // (Go-callable entry point). The result is nil when v is not serializable
 // (undefined, functions, symbols). Nesting deeper than MaxToGoDepth arrays
-// and objects is a RangeError, as is running out of call depth: each 32
-// levels count as a call, since a toJSON method can start another stringify.
+// and objects is a RangeError, as is running out of call depth: the walk's
+// root and each 32 levels of it take walk units (jsonWalkUnits), since a
+// toJSON method can start another stringify.
 func (r *Realm) JSONStringify(v Value) (*String, error) {
 	js := jsonStringifier{r: r}
 	js.sb.Grow(max(256, int(r.jsonSizeHint)+int(r.jsonSizeHint)/8))
@@ -1122,7 +1099,19 @@ func jsonStringify(r *Realm, this Value, args []Value) (Value, error) {
 			js.gap = s.Substring(0, min(10, s.Len()))
 		}
 	}
-	js.sb.Grow(max(256, int(r.jsonSizeHint)+int(r.jsonSizeHint)/8))
+	// A string's output is sized by its quoting (quoteString), and leaves
+	// the size hint to the outputs it is for: a large text's would make
+	// the next small call's buffer as large.
+	str := value.IsString() && !js.replacerFn.IsObject()
+	if str {
+		if q, ok, err := r.quoteString(&js.sb, value.AsString()); err != nil {
+			return Undefined(), err
+		} else if ok {
+			return StringValue(q), nil
+		}
+	} else {
+		js.sb.Grow(max(256, int(r.jsonSizeHint)+int(r.jsonSizeHint)/8))
+	}
 	var root *Object
 	if js.replacerFn.IsObject() {
 		root = r.NewObject()
@@ -1133,9 +1122,12 @@ func jsonStringify(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), err
 	}
 	depth := r.callDepth
+	if err := r.enterJSONUnits(jsonRootUnits); err != nil {
+		return Undefined(), err
+	}
 	ok, err := js.write(rv)
+	r.callDepth = depth // the walk's root units, and the levels an error leaves entered (push)
 	if err != nil {
-		r.callDepth = depth // the levels an error leaves entered (push)
 		return Undefined(), err
 	}
 	if !ok {
@@ -1144,7 +1136,9 @@ func jsonStringify(r *Realm, this Value, args []Value) (Value, error) {
 	if err := js.sb.checkLength(r); err != nil {
 		return Undefined(), err
 	}
-	r.jsonSizeHint = int32(js.sb.Len())
+	if !str {
+		r.jsonSizeHint = int32(js.sb.Len())
+	}
 	return StringValue(r.builtString(&js.sb)), nil
 }
 
@@ -1381,6 +1375,54 @@ func writeASCIIBytes(sb *StringBuilder, b []byte) {
 
 const lowerHex = "0123456789abcdef"
 
+// jsonQuote is the quotation mark quoteString puts around a string, the
+// shared one-character string, whose hash is computed: a slice of the
+// quoting returns it.
+var jsonQuote = singleCharStrings['"']
+
+// quoteString returns JSON.stringify of the string s without copying it,
+// '"' + s + '"' as a rope, when s is long enough for a rope (ropeThreshold)
+// and ASCII with no unit JSON quoting escapes. Otherwise ok is false and
+// sb, empty, is grown to the length of the quoting (jsonQuotedLen), which
+// then fills it without another buffer: an output of up to smallASCIIMax
+// bytes stays in the builder's own bytes and String makes it one
+// allocation, a longer one takes its bytes or units and the header.
+//
+// A slice of the rope that is s, as a serializer escaping a text into a
+// script takes (JSON.stringify(s).slice(1, -1)), is s itself
+// (ropeSubstring). A lazy s known plain (plainLazyJSON) is neither scanned
+// again nor decoded: the rope holds a view of its source (plainView).
+func (r *Realm) quoteString(sb *StringBuilder, s *String) (q *String, ok bool, err error) {
+	f := s
+	var (
+		n     int64
+		plain bool
+	)
+	if s.isLazy() && s.plainLazyJSON() {
+		s = s.plainView()
+		n, plain = int64(s.n)+2, true
+	} else {
+		if s.needsFlat() {
+			f = s.flat(new(String))
+		}
+		n, plain = jsonQuotedLen(f)
+	}
+	switch {
+	case plain && s.n >= ropeThreshold:
+		if q, err = r.Concat(jsonQuote, s); err == nil {
+			q, err = r.Concat(q, jsonQuote)
+		}
+		return q, true, err
+	case n > int64(maxStringLength):
+		return nil, false, r.invalidStringLength()
+	case f.kind == strUTF16:
+		sb.growUnits(int(n))
+	case n > smallASCIIMax:
+		sb.Grow(int(n))
+	}
+	return nil, false, nil
+}
+
 // quote implements QuoteJSONString (well-formed: lone surrogates as \uXXXX);
 // the interrupt flag is checked every interruptStride units of a long string.
 func (js *jsonStringifier) quote(s *String) error {
@@ -1465,7 +1507,7 @@ func (js *jsonStringifier) quoteRope(s *String) error {
 const jsonScanDepth = 64
 
 // push enters o, a container being serialized, or reports the cycle it
-// closes. Past jsonScanDepth every jsonCallLevels-th level counts as a call
+// closes. Past jsonScanDepth every jsonCallLevels-th level takes a walk unit
 // (jsonMaxDepth): pop releases it, and on an error the entry point restores
 // the depth. A value shallower than jsonScanDepth, the common case, pays
 // one compare for the bookkeeping.
@@ -1491,7 +1533,7 @@ func (js *jsonStringifier) push(o *Object) error {
 			return js.r.jsonTooDeep()
 		}
 		if n%jsonCallLevels == 0 {
-			if err := js.r.EnterCall(); err != nil {
+			if err := js.r.enterJSONUnits(1); err != nil {
 				return err
 			}
 		}
@@ -1516,7 +1558,7 @@ func (js *jsonStringifier) pop() {
 		if n >= jsonScanDepth {
 			delete(js.deep, js.deeper[i])
 			if n%jsonCallLevels == 0 {
-				js.r.ExitCall()
+				js.r.exitJSONUnits(1)
 			}
 		}
 		js.deeper = js.deeper[:i]
@@ -1549,7 +1591,7 @@ func (js *jsonStringifier) object(o *Object) error {
 	if o.flags&flagHasLazy != 0 {
 		o.materializeHost()
 	}
-	if !js.hasList && o.flags&(flagDict|flagHasLazy) == 0 && len(o.elements) == 0 && (o.dict == nil || o.dict.sparse == nil) && o.class != ClassString && o.class != ClassProxy && o.class != ClassTypedArray {
+	if !js.hasList && o.flags&(flagDict|flagHasLazy) == 0 && o.elemLen() == 0 && (o.dictTable() == nil || o.dictTable().sparse == nil) && o.class != ClassString && o.class != ClassProxy && o.class != ClassTypedArray {
 		// Fast path: plain shape-mode object without indexed properties.
 		// The shape's property list is the spec's key snapshot; slots are
 		// read directly while the shape is unchanged and through [[Get]]
@@ -1704,6 +1746,12 @@ func (js *jsonStringifier) array(o *Object) error {
 	if err != nil {
 		return err
 	}
+	// An array's dense elements, read again at each index: a getter or a
+	// toJSON may change them. A proxy has none.
+	var el *elemStore
+	if o.bits&bitInlineElems != 0 {
+		el = o.inlineElems()
+	}
 	js.sb.WriteASCII('[')
 	for i := range n {
 		if i > 0 {
@@ -1713,8 +1761,8 @@ func (js *jsonStringifier) array(o *Object) error {
 			js.newline(level)
 		}
 		var v Value
-		if i < int64(len(o.elements)) && !o.elements[i].IsHole() {
-			v = o.elements[i]
+		if el != nil && i < int64(el.n) && !el.at(int(i)).IsHole() {
+			v = *el.at(int(i))
 		} else {
 			js.own() // a getter, of the element or a prototype's, a proxy's trap
 			if v, err = o.Get(r, IndexKey(uint32(i)), ObjectValue(o)); err != nil {

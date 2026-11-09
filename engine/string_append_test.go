@@ -186,7 +186,9 @@ func TestAppendBlockSizes(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 		// The runtime allocates a little of its own meanwhile.
 		got := float64(m1.TotalAlloc-m0.TotalAlloc) / n
-		assert.True(t, got >= float64(classes[i]) && got < float64(classes[i])*1.02, "block of %d bytes: %.0f bytes an allocation, want %d", b.bytes, got, classes[i])
+		if is64 { // a 64-bit layout
+			assert.True(t, got >= float64(classes[i]) && got < float64(classes[i])*1.02, "block of %d bytes: %.0f bytes an allocation, want %d", b.bytes, got, classes[i])
+		}
 	}
 	assert.Equal(t, appendBlockMax, strBlocks[len(strBlocks)-1].bytes)
 }

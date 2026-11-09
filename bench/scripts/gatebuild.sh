@@ -21,8 +21,14 @@
 # (2026-10)"). gateab.sh PADS=... runs its rounds over several such
 # placements. The pad comes in through go build -overlay; the checkout is
 # not touched.
+#
+# The engine binary then goes through dispatchscreen.sh, which fails the
+# build when the interpreter loop's dispatch does more work than it should
+# or (*Realm).run grows past the inliner's limit; its header says how to
+# read a failure. SCREEN=0 skips it, for a base older than the screen.
 set -e
 T=$1 O=$2 N=$3
+SD=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$O"
 O=$(cd "$O" && pwd)
 T=$(cd "$T" && pwd)
@@ -42,5 +48,6 @@ if [ -n "${PAD:-}" ]; then
 fi
 cd "$T"
 go test -c $OV -ldflags=-funcalign=64 -o "$O/engine-$N.test" ./engine
+[ "${SCREEN:-1}" = 0 ] || sh "$SD/dispatchscreen.sh" "$O/engine-$N.test" "$T"
 go test -c $OV -ldflags=-funcalign=64 -o "$O/root-$N.test" .
 cd bench && go test -c $OV -ldflags=-funcalign=64 -o "$O/bench-$N.test" .

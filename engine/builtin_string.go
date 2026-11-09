@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"encoding/binary"
+	"hash/maphash"
 	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf16"
+	"unsafe"
 )
 
 // String builtins. Every method coerces `this` in spec order,
@@ -82,7 +85,7 @@ func thisStringPrimitive(r *Realm, this Value, method string) (Value, error) {
 		return this, nil
 	}
 	if this.IsObject() && this.AsObject().class == ClassString {
-		return StringValue(this.AsObject().internal.(*String)), nil
+		return StringValue(extDataOf(this.AsObject(), kindString)), nil
 	}
 	return Undefined(), r.TypeError("String.prototype.%s requires that 'this' be a String", method)
 }
@@ -221,16 +224,22 @@ func hasSubstringAt(s, sub *String, at int) bool {
 }
 
 // ropeSubstringAt is hasSubstringAt with a rope or lazy string, out of line
-// so that the views (flat) do not grow hasSubstringAt's frame.
+// so that the views (flat) do not grow hasSubstringAt's frame. A rope s is
+// compared in its leaves (ropeHasAt), or else flattened.
 //
 //go:noinline
 func ropeSubstringAt(s, sub *String, at int) bool {
 	a, b := s, sub
-	if s.needsFlat() {
-		a = s.flat(new(String))
-	}
 	if sub.needsFlat() {
 		b = sub.flat(new(String))
+	}
+	if s.needsFlat() {
+		if s.kind == strRope {
+			if match, ok := ropeHasAt(s, b, at); ok {
+				return match
+			}
+		}
+		a = s.flat(new(String))
 	}
 	return substringAt(a, b, at)
 }
@@ -584,21 +593,26 @@ func stringToLower(r *Realm, s *String) (*String, error) {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
-		i := 0
-		for i < len(f.s) && (f.s[i] < 'A' || f.s[i] > 'Z') {
-			i++
-		}
+		i := asciiCaseIndex(f.s, 'A')
 		if i == len(f.s) {
 			return s, nil
+		}
+		if len(f.s) == 1 {
+			c := f.s[0]
+			return singleCharStrings[c+'a'-'A'], nil
+		}
+		var set *caseMemoSet
+		if len(f.s) <= caseMemoMax {
+			set = r.caseSet(f.s, false)
+			if out := set.get(f.s, false); out != nil {
+				return out, nil
+			}
 		}
 		out, b := newASCIIBuf(len(f.s))
 		r.chargeString(len(b))
 		copy(b, f.s)
-		for ; i < len(b); i++ {
-			if c := b[i]; c >= 'A' && c <= 'Z' {
-				b[i] = c + 'a' - 'A'
-			}
-		}
+		asciiToCase(b[i:], 'A')
+		r.putCase(set, out)
 		return out, nil
 	}
 	u := f.units()
@@ -644,21 +658,26 @@ func stringToUpper(r *Realm, s *String) (*String, error) {
 		f = s.flat(new(String))
 	}
 	if f.kind == strASCII {
-		i := 0
-		for i < len(f.s) && (f.s[i] < 'a' || f.s[i] > 'z') {
-			i++
-		}
+		i := asciiCaseIndex(f.s, 'a')
 		if i == len(f.s) {
 			return s, nil
+		}
+		if len(f.s) == 1 {
+			c := f.s[0]
+			return singleCharStrings[c-('a'-'A')], nil
+		}
+		var set *caseMemoSet
+		if len(f.s) <= caseMemoMax {
+			set = r.caseSet(f.s, true)
+			if out := set.get(f.s, true); out != nil {
+				return out, nil
+			}
 		}
 		out, b := newASCIIBuf(len(f.s))
 		r.chargeString(len(b))
 		copy(b, f.s)
-		for ; i < len(b); i++ {
-			if c := b[i]; c >= 'a' && c <= 'z' {
-				b[i] = c - ('a' - 'A')
-			}
-		}
+		asciiToCase(b[i:], 'a')
+		r.putCase(set, out)
 		return out, nil
 	}
 	u := f.units()
@@ -685,6 +704,128 @@ func stringToUpper(r *Realm, s *String) (*String, error) {
 		i += w - 1
 	}
 	return r.builtString(&sb), nil
+}
+
+// caseMemo maps short ASCII strings to their conversions to lower and to
+// upper case, by content: a component library converts the same few
+// hundred names at every render (style properties, event names, tags),
+// each into a new string. A conversion of 2 to caseMemoMax units that
+// changes the string looks in one set of caseMemoWays results, chosen by a
+// hash of the units and the direction, for one whose units are those of
+// the conversion, which it checks unit by unit, and returns it: a string
+// whose conversion is in the set allocates nothing. A new result goes in
+// the way the count of the results put in picks (caseNext).
+//
+// It holds only results, strings the conversions made (newASCIIBuf), each
+// keeping nothing alive but its own 80 bytes at most: the memo keeps at
+// most caseMemoSets*caseMemoWays of them, 40 KiB, besides its own 4 KiB
+// (memo.go).
+type caseMemo [caseMemoSets]caseMemoSet
+
+type caseMemoSet [caseMemoWays]*String
+
+// caseMemoSets sets of caseMemoWays results take 4 KiB (memo.go). At 512
+// results 96 % of the bytes the case conversions of two server-side
+// rendering workloads allocate are saved, at 1024 98 to 99 %.
+const (
+	caseMemoBits = 6
+	caseMemoSets = 1 << caseMemoBits
+	caseMemoWays = 8
+	caseMemoMax  = 32
+)
+
+// caseSeed seeds the memo's hash, so that no input can pick the sets of
+// its strings.
+var caseSeed = maphash.MakeSeed()
+
+// caseSet returns the set of the realm's case memo that may hold the
+// conversion of the ASCII string a, of 2 to caseMemoMax units, to upper
+// case or to lower case; nil when the realm has no memo yet, counting the
+// conversion then.
+func (r *Realm) caseSet(a string, upper bool) *caseMemoSet {
+	lz := r.lazy
+	if lz == nil {
+		return nil
+	}
+	ms := lz.memos
+	if ms == nil {
+		if ms = r.newMemos(); ms == nil {
+			return nil
+		}
+	}
+	c := ms.cases
+	if c == nil {
+		c = new(caseMemo)
+		ms.cases = c
+		r.charge(int(unsafe.Sizeof(caseMemo{})))
+	}
+	h := maphash.String(caseSeed, a) >> (64 - caseMemoBits)
+	if upper {
+		h ^= 1 // a string's two conversions are in different sets
+	}
+	return &c[h]
+}
+
+// get returns the conversion of a the set c holds, nil if c is nil or
+// holds none.
+func (c *caseMemoSet) get(a string, upper bool) *String {
+	if c == nil {
+		return nil
+	}
+	for _, out := range c {
+		if out != nil && len(out.s) == len(a) && isCaseOf(out.s, a, upper) {
+			return out
+		}
+	}
+	return nil
+}
+
+// isCaseOf reports whether the ASCII o is the ASCII a, of the same length,
+// converted to upper case or to lower case.
+func isCaseOf(o, a string, upper bool) bool {
+	from := byte('A')
+	if upper {
+		from = 'a'
+	}
+	o = o[:len(a)]
+	for i := range len(a) {
+		c := a[i]
+		if c-from < 26 {
+			c ^= 'a' - 'A'
+		}
+		if c != o[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// putCase puts the conversion out in the set c, unless c is nil, in the
+// way the count of the memo's insertions picks.
+func (r *Realm) putCase(c *caseMemoSet, out *String) {
+	if c == nil {
+		return
+	}
+	ms := r.lazy.memos
+	c[ms.caseNext%caseMemoWays] = out
+	ms.caseNext++
+}
+
+// asciiToCase converts the ASCII bytes b in place to lower case, when from
+// is 'A', or to upper case, when from is 'a': a byte from to from+25 has
+// bit 0x20 flipped. Eight bytes at a time, with no branch on a byte, whose
+// cost would depend on where the assembler pads the loop (caseLetters).
+func asciiToCase(b []byte, from byte) {
+	i := 0
+	for ; i+8 <= len(b); i += 8 {
+		x := binary.LittleEndian.Uint64(b[i:])
+		binary.LittleEndian.PutUint64(b[i:], x^caseLetters(x, from)>>2)
+	}
+	for ; i < len(b); i++ {
+		if b[i]-from < 26 {
+			b[i] ^= 'a' - 'A'
+		}
+	}
 }
 
 // decodeUnitAt returns the code point at u[i] (a lone surrogate is returned
@@ -1147,15 +1288,15 @@ func stringProtoSplit(r *Realm, this Value, args []Value) (Value, error) {
 		return ObjectValue(r.NewArrayLen(0)), nil
 	}
 	if sep.Len() == 0 {
-		count := min(n, int(lim))
+		count := int(min(uint64(n), uint64(lim))) // lim may be past an int on 32-bit systems
 		if r.overBudget(count * valueSize) {
 			return Undefined(), r.RangeError("Invalid array length")
 		}
-		items := make([]Value, count)
+		ao, items := r.newArrayExact(count)
 		for i := range items {
 			items[i] = StringValue(charString(s.At(i)))
 		}
-		return ObjectValue(r.NewArrayFromSlice(items)), nil
+		return ObjectValue(r.initArray(ao, items, uint32(count))), nil
 	}
 	a, err := splitByString(r, s, sep, lim)
 	if err != nil {
@@ -1186,34 +1327,30 @@ func splitByString(r *Realm, s, sep *String, lim uint32) (*Object, error) {
 		if r.overBudget(count * (valueSize + stringHeaderSize)) {
 			return nil, r.RangeError("Invalid array length")
 		}
-		items := make([]Value, count)
-		pieces := make([]String, count) // one allocation for every piece
-		root := s                       // the string the pieces share (shareRoot)
+		ao, items := r.newArrayExact(count)
+		root := s // the string the pieces share (shareRoot)
 		if !s.needsFlat() {
 			root = s.shareRoot()
 		}
+		items = items[:count]           // len(items) == count for the loop's bounds checks
+		pieces := make([]String, count) // one allocation for every piece
 		start := 0
-		for i := range count {
+		for i := range count - 1 { // the pieces before the last separator found
 			if err := interruptEvery(r, int64(i)); err != nil {
 				return nil, err
 			}
-			end := len(str)
-			if i < count-1 {
-				end = start + strings.Index(str[start:], sp)
-			} else if i == count-1 && uint32(count) == lim {
-				if j := strings.Index(str[start:], sp); j >= 0 {
-					end = start + j
-				}
-			}
-			if end == start {
-				items[i] = StringValue(emptyString)
-			} else {
-				pieces[i] = String{s: str[start:end], n: int32(end - start), kind: strASCII, right: root}
-				items[i] = StringValue(&pieces[i])
-			}
+			end := start + strings.Index(str[start:], sp)
+			items[i] = splitPiece(&pieces[i], str, start, end, root)
 			start = end + len(sp)
 		}
-		return r.NewArrayFromSlice(items), nil
+		end := len(str)
+		if uint32(count) == lim { // the last piece stops at the next separator
+			if j := strings.Index(str[start:], sp); j >= 0 {
+				end = start + j
+			}
+		}
+		items[count-1] = splitPiece(&pieces[count-1], str, start, end, root)
+		return r.initArray(ao, items, uint32(count)), nil
 	}
 	var items []Value
 	p := 0
@@ -1233,6 +1370,15 @@ func splitByString(r *Realm, s, sep *String, lim uint32) (*Object, error) {
 	}
 	items = append(items, StringValue(r.substring(s, p, s.Len())))
 	return r.NewArrayFromSlice(items), nil
+}
+
+// splitPiece is the value of str[start:end], a piece of root kept in p.
+func splitPiece(p *String, str string, start, end int, root *String) Value {
+	if end == start {
+		return StringValue(emptyString)
+	}
+	*p = String{s: str[start:end], n: int32(end - start), kind: strASCII, right: root}
+	return StringValue(p)
 }
 
 // --- replace -----------------------------------------------------------------------------

@@ -102,8 +102,10 @@ func TestBootstrapSlabsFilled(t *testing.T) {
 	assert.Equal(t, cap(b.funcs), len(b.funcs))
 	assert.Equal(t, cap(b.shapes), len(b.shapes))
 	assert.Equal(t, cap(b.trans), len(b.trans))
-	assert.Equal(t, uintptr(224), unsafe.Sizeof(nativeFuncObject{}), "bootstrapFuncs assumes the 224-byte class")
-	assert.Equal(t, uintptr(120), unsafe.Sizeof(Shape{}), "bootstrapShapes assumes 120-byte shapes")
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(176), unsafe.Sizeof(nativeFuncObject{}), "bootstrapFuncs assumes 176-byte functions")
+		assert.Equal(t, uintptr(120), unsafe.Sizeof(Shape{}), "bootstrapShapes assumes 120-byte shapes")
+	}
 }
 
 // TestRealmSizeClass pins the realm structs to their size classes: a shared
@@ -111,7 +113,12 @@ func TestBootstrapSlabsFilled(t *testing.T) {
 // belongs in realmLazy), a mutable one the Realm with its Intrinsics
 // (640-byte class with the 8-byte malloc header).
 func TestRealmSizeClass(t *testing.T) {
-	assert.Equal(t, uintptr(288), unsafe.Sizeof(Realm{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(288), unsafe.Sizeof(Realm{}))
+	}
+	// realmLazy keeps to the 160-byte class (a field past it goes behind a
+	// pointer, as lazyShapes).
+	assert.LessOrEqual(t, unsafe.Sizeof(realmLazy{}), uintptr(160))
 	// extIntrinsics (with its malloc header) keeps to the 1152-byte class.
 	assert.LessOrEqual(t, unsafe.Sizeof(extIntrinsics{})+8, uintptr(1152))
 	assert.LessOrEqual(t, unsafe.Sizeof(ownRealm{})+8, uintptr(640))
@@ -448,11 +455,60 @@ func TestCallAndConstructDispatch(t *testing.T) {
 	assert.Nil(t, fd.BoundTarget())
 	assert.Nil(t, c.FunctionData().HomeObject())
 	assert.Nil(t, c.FunctionData().Data())
-	c.FunctionData().SetConstructor(nil)
+	c.FunctionData().setConstructor(nil)
 	assert.False(t, IsConstructor(ObjectValue(c)))
 	assert.True(t, IsCallable(ObjectValue(c)))
 	noCtor := r.NewNativeConstructor(AtomEmpty, 0, nil, nil)
 	assert.False(t, IsConstructor(ObjectValue(noCtor)))
+}
+
+// TestClosureLayouts checks which closures take the two-slot layout, that a
+// method's home object, kept in its thisValue, reaches neither its this nor
+// ThisValue, and that the setters of the native kinds leave a closure, whose
+// slots follow its payload, alone.
+func TestClosureLayouts(t *testing.T) {
+	f := evalModule(t, `
+const base = { who() { return "base"; } };
+const o = { __proto__: base, m() { return super.who(); }, *g() {}, async a() {}, async *ag() {} };
+class C {}
+const outer = function () { return () => this; };
+export const fns = [function () {}, outer.call("T"), o.m, o.g, o.a, o.ag, C, async () => 1];
+export const home = o;
+export function callM() { return o.m(); }
+`)
+	r := f.r
+	v, _ := f.env.GetBindingValue("fns")
+	for i, slots := range []int{3, 2, 2, 3, 2, 3, 3, 2} {
+		el, err := v.AsObject().GetIndex(r, uint32(i))
+		require.NoError(t, err)
+		o := el.AsObject()
+		assert.Equal(t, slots, len(o.slots), "closure %d", i)
+		assert.Equal(t, slots, cap(o.slots), "closure %d", i)
+		assert.Equal(t, unsafe.Add(unsafe.Pointer(o), unsafe.Sizeof(Object{})+unsafe.Sizeof(FunctionData{})), unsafe.Pointer(&o.slots[0]), "closure %d: slots inline", i)
+	}
+	arrowV, _ := v.AsObject().GetIndex(r, 1)
+	mV, _ := v.AsObject().GetIndex(r, 2)
+	homeV, _ := f.env.GetBindingValue("home")
+	arrow, m := arrowV.AsObject().FunctionData(), mV.AsObject().FunctionData()
+	assert.Same(t, homeV.AsObject(), m.HomeObject())
+	assert.True(t, m.ThisValue().IsUndefined())
+	assert.Equal(t, "base", f.call("callM"))
+	assert.Equal(t, "T", arrow.ThisValue().AsString().GoString())
+	assert.Nil(t, arrow.HomeObject())
+	arrow.SetHomeObject(r.NewObject()) // an arrow function has none
+	assert.Nil(t, arrow.HomeObject())
+	res, err := r.Call(arrowV, Undefined(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "T", res.AsString().GoString())
+	m.setNative(func(*Realm, Value, []Value) (Value, error) { return Undefined(), nil })
+	m.setConstructor(func(*Realm, []Value, *Object) (Value, error) { return Undefined(), nil })
+	assert.Nil(t, m.Native())
+	assert.Nil(t, m.Data())
+	assert.Nil(t, m.BoundTarget())
+	assert.False(t, IsConstructor(mV))
+	nv, _ := mV.AsObject().GetProp(r, StringKey(AtomName))
+	assert.Equal(t, "m", nv.AsString().GoString())
+	assert.Equal(t, "base", f.call("callM"))
 }
 
 func TestBoundFunctions(t *testing.T) {
@@ -506,6 +562,26 @@ func TestBoundFunctions(t *testing.T) {
 	assert.Equal(t, IntValue(0), lv)
 }
 
+// TestZeroFunctionData checks that a FunctionData no function object
+// initialized (new or a zero value) has no kind whose state its accessors
+// would read after it.
+func TestZeroFunctionData(t *testing.T) {
+	var zero FunctionData
+	for _, fd := range []*FunctionData{new(FunctionData), &zero} {
+		assert.Equal(t, funcNone, fd.Kind())
+		assert.False(t, fd.IsConstructor())
+		assert.Nil(t, fd.Native())
+		assert.Nil(t, fd.Data())
+		assert.Nil(t, fd.BoundTarget())
+		assert.False(t, fd.isNative())
+		assert.False(t, fd.isMeasurable())
+		fd.setNative(func(*Realm, Value, []Value) (Value, error) { return Undefined(), nil })
+		fd.setConstructor(func(*Realm, []Value, *Object) (Value, error) { return Undefined(), nil })
+		assert.Nil(t, fd.Native())
+		assert.False(t, fd.IsConstructor())
+	}
+}
+
 func TestNativeDataFunctions(t *testing.T) {
 	// One adapter, per-function payloads.
 	adapter := func(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
@@ -522,9 +598,14 @@ func TestNativeDataFunctions(t *testing.T) {
 	assert.Equal(t, 1, one.FunctionData().Data())
 	assert.Nil(t, one.FunctionData().Native())
 	// The payload fields fit the function objects' size classes.
-	assert.Equal(t, uintptr(240), unsafe.Sizeof(funcObject{}))
-	assert.Equal(t, uintptr(224), unsafe.Sizeof(nativeFuncObject{}))
-	assert.Equal(t, uintptr(256), unsafe.Sizeof(boundFuncObject{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(64), unsafe.Sizeof(FunctionData{}))
+		assert.Equal(t, uintptr(160), unsafe.Sizeof(funcObject{}))
+		assert.Equal(t, uintptr(144), unsafe.Sizeof(closureObject{}))
+		assert.Equal(t, uintptr(176), unsafe.Sizeof(nativeFuncObject{}))
+		assert.Equal(t, uintptr(192), unsafe.Sizeof(nativeCtorObject{}))
+		assert.Equal(t, uintptr(176), unsafe.Sizeof(boundFuncObject{}))
+	}
 	assert.Nil(t, one.FunctionData().BoundTarget())
 	bone, err := r.NewBoundFunction(one, Undefined(), []Value{IntValue(5)})
 	require.NoError(t, err)
@@ -678,7 +759,7 @@ func TestInstallersAndICAlloc(t *testing.T) {
 	res, _ := r.Call(fv, Undefined(), nil)
 	assert.Equal(t, IntValue(2), res)
 	// Stub constructors can be completed in place.
-	r.RegExpCtor.FunctionData().SetConstructor(func(r *Realm, args []Value, newTarget *Object) (Value, error) {
+	r.RegExpCtor.FunctionData().setConstructor(func(r *Realm, args []Value, newTarget *Object) (Value, error) {
 		return ObjectValue(r.NewObject()), nil
 	})
 	_, err := r.Construct(ObjectValue(r.RegExpCtor), nil, nil)
@@ -689,10 +770,13 @@ func TestInstallersAndICAlloc(t *testing.T) {
 		require.NoError(t, err)
 		return base
 	}
-	base := allocIC(&bytecodeStubFunction, 3)
+	three := bytecodeStubFunction
+	three.ICCount = 3
+	base := allocIC(&three, 3)
 	assert.Equal(t, uint32(0), base)
-	assert.Equal(t, base, allocIC(&bytecodeStubFunction, 3))
+	assert.Equal(t, base, allocIC(&three, 3))
 	assert.Len(t, r.ICSlots(), 3)
 	other := bytecodeStubFunction
+	other.ICCount = 1
 	assert.Equal(t, uint32(3), allocIC(&other, 1))
 }

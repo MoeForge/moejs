@@ -59,7 +59,7 @@ func (ta *typedArray) get(i int) Value {
 func thisTypedArray(r *Realm, this Value, method string) (*typedArray, error) {
 	if this.IsObject() {
 		if o := this.AsObject(); o.class == ClassTypedArray {
-			return o.internal.(*typedArray), nil
+			return dataOf(o, kindTypedArray), nil
 		}
 	}
 	return nil, r.TypeError("Method %s called on incompatible receiver %s", method, r.DisplayString(this))
@@ -339,7 +339,7 @@ func typedArraySetMethod(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), r.RangeError("offset is out of bounds")
 	}
 	if src := Arg(args, 0); src.IsObject() && src.AsObject().class == ClassTypedArray {
-		return Undefined(), r.setFromTypedArray(ta, off, src.AsObject().internal.(*typedArray), method)
+		return Undefined(), r.setFromTypedArray(ta, off, dataOf(src.AsObject(), kindTypedArray), method)
 	}
 	return Undefined(), r.setFromArrayLike(ta, off, Arg(args, 0), method)
 }

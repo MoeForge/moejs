@@ -344,11 +344,11 @@ func hostShapeFor[V any](hh *hostHeap, h uint64, named []hostPair[V]) *hostShape
 	}
 	if r.hostShapes == nil {
 		r.hostShapes = make(map[uint64]*hostShapeEntry)
-	} else if len(r.hostShapes) >= hostShapesMax || hh.shapeKeys+len(keys) > hostShapeKeysMax {
+	} else if len(r.hostShapes) >= hostShapesMax || int(hh.shapeKeys)+len(keys) > hostShapeKeysMax {
 		clear(r.hostShapes)
 		hh.shapeKeys = 0
 	}
-	hh.shapeKeys += len(keys)
+	hh.shapeKeys += int32(len(keys))
 	e := &hostShapeEntry{keys: keys, shape: shape, next: r.hostShapes[h]}
 	r.hostShapes[h] = e
 	return e
@@ -567,7 +567,7 @@ func (r *Realm) toGoContainer(o *Object, v Value, st *toGoState) (any, error) {
 		}
 		return out, nil
 	}
-	if c, ok := o.internal.(*collection); ok {
+	if c, ok := dataOk(o, kindCollection); ok {
 		return r.collectionToGo(o, c, st)
 	}
 	if o.class == ClassProxy {

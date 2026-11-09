@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/MoeForge/moego/base64"
+
 	"github.com/MoeForge/moejs/engine"
 )
 
@@ -94,8 +96,14 @@ func decode(enc encoding, b []byte, owned bool) *engine.String {
 		}
 		return engine.FromUTF16(u)
 	case encBase64:
+		if len(b) >= moegoEncodeMin {
+			return engine.FromGoString(base64.StdEncoding.EncodeToString(b))
+		}
 		return asciiString(encodeBase64(b, &stdPairs, true), true)
 	case encBase64URL:
+		if len(b) >= moegoEncodeMin {
+			return engine.FromGoString(base64.RawURLEncoding.EncodeToString(b))
+		}
 		return asciiString(encodeBase64(b, &urlPairs, false), true)
 	case encHex:
 		return asciiString(encodeHex(b), true)
@@ -223,7 +231,7 @@ func encode(enc encoding, s *engine.String) []byte {
 		}
 		return out
 	case encBase64, encBase64URL:
-		return decodeBase64(s)
+		return decodeBase64(s, enc == encBase64URL)
 	case encHex:
 		return decodeHex(s)
 	}
@@ -382,14 +390,58 @@ var base64Values = func() (t [256]byte) {
 
 // decodeBase64 decodes s as Node does: either alphabet, the characters of
 // neither skipped, up to the first '='; a final lone character is
-// dropped.
-func decodeBase64(s *engine.String) []byte {
+// dropped. moego decodes it from the length where its vector kernels
+// start (moegoDecodeMin), trying url's alphabet first.
+func decodeBase64(s *engine.String, url bool) []byte {
 	if a, ok := s.ASCII(); ok {
+		if len(a) >= moegoDecodeMin {
+			if out, ok := decodeBase64Moego(a, url); ok {
+				return out
+			}
+		}
 		if out, ok := decodeBase64Fast(a); ok {
 			return out
 		}
 	}
 	return decodeBase64Lenient(s)
+}
+
+// base64Raw are moego's unpadded decoders, standard then URL alphabet.
+var base64Raw = [2]*base64.Encoding{base64.RawStdEncoding, base64.RawURLEncoding}
+
+// decodeBase64Moego decodes a, without up to two '=' at its end, with
+// moego's unpadded decoder of one alphabet, url's first, and of the other
+// when the first stopped at one of the other's characters. ok is false
+// when neither takes all of it as plain base64: a character of neither
+// alphabet, characters of both, an '=' left, or a CR or LF, which the
+// decoder skips, so that it writes fewer bytes than the length promises. What it
+// takes, decodeBase64Fast takes too and decodes to the same bytes.
+func decodeBase64Moego(a string, url bool) ([]byte, bool) {
+	n := len(a)
+	if n > 0 && a[n-1] == '=' {
+		n--
+		if n > 0 && a[n-1] == '=' {
+			n--
+		}
+	}
+	if n%4 == 1 {
+		return nil, false
+	}
+	size := n/4*3 + max(n%4-1, 0)
+	first := 0
+	if url {
+		first = 1
+	}
+	out, err := base64Raw[first].DecodeString(a[:n])
+	if err == nil && len(out) == size {
+		return out, true
+	}
+	if at, ok := err.(base64.CorruptInputError); ok && int(at) < n && strings.IndexByte("+/-_", a[at]) >= 0 {
+		if out, err = base64Raw[1-first].DecodeString(a[:n]); err == nil && len(out) == size {
+			return out, true
+		}
+	}
+	return nil, false
 }
 
 // decodeBase64Lenient is decodeBase64 one character at a time.

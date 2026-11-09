@@ -257,6 +257,77 @@ func jsonASCII(g string) (ascii, plain bool) {
 	return g[i] < 0x80 && isASCII(g[i:]), false
 }
 
+// jsonEscapes returns the top bit of each byte of x (little-endian) that
+// JSON quoting escapes, a control character, '"' or '\\', in all, and of
+// each control character in ctl. Unlike jsonSpecial's, every flag is
+// exact, as no byte carries into the next (its low seven bits plus at most
+// 0x7F), so the flags can be counted.
+func jsonEscapes(x uint64) (all, ctl uint64) {
+	const low = 0x7F7F7F7F7F7F7F7F
+	q := x ^ '"'*swarLSB
+	b := x ^ '\\'*swarLSB
+	ctl = ^(x&low + 0x60*swarLSB | x) & swarMSB
+	all = ctl | ^((q&low+low|q)&(b&low+low|b))&swarMSB
+	return all, ctl
+}
+
+// jsonQuotedLen returns the length in code units of JSON quoting of the
+// flat string f, the quotation marks included, and whether f is ASCII
+// with nothing to escape.
+//
+// GC safety: as in isASCII, the []byte view of f's bytes is read-only and
+// local.
+func jsonQuotedLen(f *String) (n int64, plain bool) {
+	if f.kind != strASCII {
+		return jsonQuotedLenUTF16(f.units()), false
+	}
+	g := f.s
+	n = int64(len(g)) + 2
+	if f.json == jsonPlain {
+		return n, true
+	}
+	b := unsafe.Slice(unsafe.StringData(g), len(g))
+	for ; len(b) >= 8; b = b[8:] {
+		all, ctl := jsonEscapes(binary.LittleEndian.Uint64(b))
+		n += int64(bits.OnesCount64(all))
+		for ; ctl != 0; ctl &= ctl - 1 {
+			if jsonEscape[b[bits.TrailingZeros64(ctl)>>3]] == 0 {
+				n += 4 // \u00XX
+			}
+		}
+	}
+	for _, c := range b {
+		if c < 0x20 || c == '"' || c == '\\' {
+			n++
+			if jsonEscape[c] == 0 {
+				n += 4
+			}
+		}
+	}
+	return n, n == int64(len(g))+2
+}
+
+// jsonQuotedLenUTF16 is jsonQuotedLen of the UTF-16 units u: a surrogate
+// pair stays, a lone surrogate takes six units.
+func jsonQuotedLenUTF16(u []uint16) int64 {
+	n := int64(len(u)) + 2
+	for i := 0; i < len(u); i++ {
+		switch c := u[i]; {
+		case c >= 0x20 && c != '"' && c != '\\' && (c < 0xD800 || c >= 0xE000):
+		case c < 0x80:
+			n++
+			if jsonEscape[c] == 0 {
+				n += 4
+			}
+		case c < 0xDC00 && i+1 < len(u) && u[i+1] >= 0xDC00 && u[i+1] < 0xE000:
+			i++
+		default:
+			n += 5
+		}
+	}
+	return n
+}
+
 // jsonShortMax is the longest literal JSON.parse shares between repeats.
 const jsonShortMax = 16
 
@@ -270,7 +341,7 @@ func (p *jsonParser) plain(lit string) *String {
 		if lz := p.r.lazy; lz != nil && lz.mem != nil {
 			return p.r.sharedPlain(lit)
 		}
-		return &String{s: lit, n: int32(len(lit)), kind: strASCII, json: jsonPlain}
+		return &String{s: lit, n: int32(len(lit)), kind: strASCII, flags: strSlice, json: jsonPlain}
 	}
 	slot := strSlot(lit)
 	if s := p.short[slot]; s != nil && s.s == lit {
@@ -280,7 +351,7 @@ func (p *jsonParser) plain(lit string) *String {
 	if lz := p.r.lazy; lz != nil && lz.mem != nil {
 		s = p.r.sharedPlain(lit)
 	} else {
-		s = &String{s: lit, n: int32(len(lit)), kind: strASCII, json: jsonPlain}
+		s = &String{s: lit, n: int32(len(lit)), kind: strASCII, flags: strSlice, json: jsonPlain}
 	}
 	p.short[slot] = s
 	return s
@@ -440,8 +511,12 @@ func (js *jsonStringifier) serialize(v Value) (ok bool, err error) {
 		return false, err
 	}
 	depth := js.r.callDepth
-	if ok, err = js.write(rv); err != nil || !ok {
-		js.r.callDepth = depth // the levels an error leaves entered (push)
+	if err := js.r.enterJSONUnits(jsonRootUnits); err != nil {
+		return false, err
+	}
+	ok, err = js.write(rv)
+	js.r.callDepth = depth // the walk's root units, and the levels an error leaves entered (push)
+	if err != nil || !ok {
 		if !ok && err == nil && js.strict {
 			err = newJSONLoss(rv)
 		}

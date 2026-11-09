@@ -3,10 +3,12 @@ package engine
 import (
 	"math"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStringToNumberGrammar(t *testing.T) {
@@ -133,6 +135,35 @@ func TestNumberToString(t *testing.T) {
 			assert.Equal(t, c.want, NumberToString(c.in).GoString())
 			assert.Equal(t, c.want, NumberToGoString(c.in))
 		})
+	}
+}
+
+// TestIntStrings checks that the strings of the integers intStrings holds
+// are made once, with their hash, and shared: converting one again, in
+// another realm or as a property key, allocates nothing.
+func TestIntStrings(t *testing.T) {
+	for _, i := range []int{intStringMin - 1, intStringMin, -3, -1, 0, 9, 10, 24, 255, intStringMax - 1, intStringMax} {
+		s := NumberToString(float64(i))
+		assert.Equal(t, strconv.Itoa(i), s.GoString())
+		held := i >= intStringMin && i < intStringMax
+		assert.Equal(t, held, s == NumberToString(float64(i)), "%d", i)
+		if held {
+			assert.NotZero(t, s.hash, "%d", i)
+			assert.Equal(t, s.contentHash(), s.hash, "%d", i)
+			assert.NotZero(t, s.flags&strConst, "%d", i)
+		}
+	}
+	assert.Same(t, NumberToString(0), NumberToString(math.Copysign(0, -1)))
+	assert.Zero(t, testing.AllocsPerRun(100, func() { _ = NumberToString(24) }))
+	for _, shared := range []bool{false, true} {
+		r := NewRealmWith(RealmOptions{SharedIntrinsics: shared})
+		k, err := r.ToPropertyKey(NumberValue(-3))
+		require.NoError(t, err)
+		assert.Equal(t, "-3", k.String().GoString())
+		assert.Zero(t, testing.AllocsPerRun(100, func() { _, _ = r.ToPropertyKey(NumberValue(-3)) }), "shared %v", shared)
+		assert.Zero(t, testing.AllocsPerRun(100, func() { _, _ = r.ToString(NumberValue(1000)) }), "shared %v", shared)
+		runScriptsIn(t, r, `globalThis.ks = [String(24), 24 + "", `+"`${-1}`"+`, (1023).toString(), (1024).toString(), String(-0)].join();`)
+		assert.Equal(t, "24,24,-1,1023,1024,0", jsGlobal(t, r, "ks").String())
 	}
 }
 

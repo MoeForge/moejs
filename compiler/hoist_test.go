@@ -429,7 +429,7 @@ func TestHoistedRegistersOnlyRead(t *testing.T) {
 // TestHoistRegisterLimitEntryPoints runs TestHoistRegisterLimit's
 // near-limit function through every compile entry point: each retries
 // without hoisting in g, keeps hoisting in k, compiles the same bytecode
-// twice, and fails as on dev one argument further.
+// twice; one argument further it spills s (spill.go), and one more fails.
 func TestHoistRegisterLimitEntryPoints(t *testing.T) {
 	src := func(nargs int) string {
 		args := strings.TrimSuffix(strings.Repeat("i, ", nargs), ", ")
@@ -485,7 +485,10 @@ function k(n) { let s = 0; for (let i = 0; i < n; i++) s = (s + i * 3000) % 7919
 		again, err := e.compile(src(250))
 		require.NoError(t, err, e.name)
 		assert.Equal(t, bytecode.Disassemble(fn), bytecode.Disassemble(again), "%s: deterministic", e.name)
-		_, err = e.compile(src(251))
+		fn, err = e.compile(src(251))
+		require.NoError(t, err, e.name)
+		assert.Equal(t, 1, len(find(fn, "g").CaptureLayout), "%s: g spills s", e.name)
+		_, err = e.compile(src(252))
 		assert.ErrorContains(t, err, "more than 256 registers", e.name)
 	}
 }

@@ -73,6 +73,66 @@
 // loop that sleeps. A rejection no handler catches is the host's business,
 // through Runtime.SetPromiseRejectionTracker.
 //
+// # Idle and wake
+//
+// A host that bounds the CPU time of a run, or shares a few execution
+// slots among many runtimes, learns from Options.OnIdle and Options.OnWake
+// when the loop waits instead of running JavaScript. The loop calls OnIdle
+// when nothing is to run now (no task, no immediate, no timer due) and
+// something keeps it alive, right before it blocks, and OnWake once it
+// woke with something to run, before it runs it. No JavaScript runs on the
+// loop between the two. A loop that never has to wait, because work is
+// pending or a timer is due whenever it looks, calls neither. A wake that
+// finds nothing to run, such as a Hold released while another is still
+// held, blocks again without a call. A wake that ends the loop, a stop,
+// Terminate, an interrupt or, for Run, nothing left that keeps it alive,
+// ends the run without OnWake, and Run returns what it would return
+// without the hooks. So the calls alternate, OnIdle first, and a run may
+// end after an OnIdle with no OnWake: the host knows which state it is in
+// from the hook it saw last. The hooks run on the loop, so they are done
+// when Run returns, or Stop for a loop started with Start.
+//
+// An error from OnWake stops the loop as an interrupt does, before it takes
+// anything off its queues, which keep it all for the next Run or Start: Run
+// returns the error unchanged, or Stop for a loop started with Start. The
+// run ends idle, with OnIdle the last hook, and the runtime is not
+// interrupted, since no JavaScript was running. OnWake may block, to wait
+// for a slot for example. Stop and Terminate wait for the loop, and so for
+// OnWake: a host whose OnWake waits ends that wait when it stops the loop,
+// through a context it cancels before it calls Stop or Terminate for
+// example. When OnWake returns nil, a stop, Terminate or interrupt that
+// came meanwhile ends the run before the loop runs anything, and the run
+// ends awake. The time OnWake takes counts as time passed for the timers,
+// so a timer that fell due meanwhile runs late. A panic in a hook is not
+// recovered, as one in a host task is not, and the hooks must not call
+// Stop or Terminate.
+//
+// A host with a fixed number of slots takes one, and starts its watchdog,
+// before Run, and after Run gives them back unless the run ended idle:
+//
+//	awake := false
+//	loop, err := eventloop.New(rt, eventloop.Options{
+//		OnIdle: func() { awake = false; watchdog.Pause(); <-slots },
+//		OnWake: func() error {
+//			select {
+//			case slots <- struct{}{}:
+//			case <-ctx.Done(): // cancelled before Stop or Terminate
+//				return ctx.Err()
+//			}
+//			awake = true
+//			watchdog.Resume()
+//			return nil
+//		},
+//	})
+//	slots <- struct{}{}
+//	awake = true
+//	watchdog.Resume()
+//	err = loop.Run(fn)
+//	if awake {
+//		watchdog.Pause()
+//		<-slots
+//	}
+//
 // # Memory limit
 //
 // Options.MemoryLimit of the runtime bounds what the program keeps plus
@@ -152,21 +212,44 @@ type Options struct {
 	// bounds what the program keeps plus what it allocates (see Memory
 	// limit in the package documentation).
 	ResetMemoryPerTask bool
+	// OnIdle is called when the loop has nothing to run and is about to
+	// block, waiting for a timer, a task or a stop: no JavaScript runs on
+	// the loop after it until OnWake. A host pauses its watchdog there, or
+	// releases an execution slot. It runs on the loop, without the loop's
+	// lock, and may call RunOnLoop, Post, Hold, Interrupt and StopNoWait,
+	// but not Stop or Terminate. A panic in it is not recovered. See Idle
+	// and wake in the package documentation.
+	OnIdle func()
+	// OnWake is called after the loop woke from the block OnIdle
+	// announced, once it has something to run and before it runs it. It
+	// may block, to take an execution slot for example. A non-nil error
+	// stops the loop as an interrupt does, before it takes anything off
+	// its queues, which keep it all: Run returns the error, or Stop for a
+	// loop started with Start. A wake that ends the loop (Stop,
+	// StopNoWait, Terminate, an interrupt, or nothing left that keeps Run
+	// alive) does not call OnWake. It runs on the loop, without the loop's
+	// lock, as OnIdle does.
+	OnWake func() error
 }
 
 // Loop is an event loop that owns one Runtime while it runs. Its methods
 // may be called from any goroutine, except NewPromise, which a host
 // function calls on the loop, and Stop and Terminate, which must not be
 // called on the loop: they wait for it. On the loop means from Run's fn, a
-// callback, a task, a host function JavaScript calls there, or OnError. A
-// runtime has at most one Loop.
+// callback, a task, a host function JavaScript calls there, OnError,
+// OnIdle or OnWake. A runtime has at most one Loop.
 type Loop struct {
-	// The fields the loop reads for every callback and task, never written
-	// after New, come first; the mutex, which goroutines posting tasks
-	// write all the time, starts at least a cache line after them (pad),
-	// so that it does not share one with them wherever the Loop lands.
+	// The fields the loop reads for every callback and task, and the
+	// hooks, never written after New, come first; the mutex, which
+	// goroutines posting tasks write all the time, starts at least a cache
+	// line after them (pad), so that it does not share one with them
+	// wherever the Loop lands.
 	rt      *moejs.Runtime
 	onError func(error)
+	// onIdle and onWake are Options.OnIdle and Options.OnWake, which wait
+	// reads where the loop would block.
+	onIdle func()
+	onWake func() error
 	// resetPerTask is Options.ResetMemoryPerTask.
 	resetPerTask bool
 	epoch        time.Time
@@ -232,7 +315,7 @@ type run struct {
 // setInterval, clearInterval, setImmediate and clearImmediate as globals
 // of rt, as the package documentation describes. The error is SetGlobal's.
 func New(rt *moejs.Runtime, opts Options) (*Loop, error) {
-	l := &Loop{rt: rt, onError: opts.OnError, resetPerTask: opts.ResetMemoryPerTask, epoch: time.Now(), wake: make(chan struct{}, 1)}
+	l := &Loop{rt: rt, onError: opts.OnError, resetPerTask: opts.ResetMemoryPerTask, epoch: time.Now(), wake: make(chan struct{}, 1), onIdle: opts.OnIdle, onWake: opts.OnWake}
 	if err := l.install(); err != nil {
 		return nil, err
 	}
@@ -263,11 +346,11 @@ func (l *Loop) Runtime() *moejs.Runtime { return l.rt }
 // when it ends.
 //
 // A panic in fn or in a host task (the functions of RunOnLoop, of done and
-// of settle, and OnError) is not recovered: it unwinds through Run, or
-// ends the program for a loop started with Start. The loop is marked
-// stopped first, and the tasks and immediates its phase had not run yet
-// stay queued; the task that panicked is gone, and a promise whose settle
-// function panicked stays pending.
+// of settle, OnError, OnIdle and OnWake) is not recovered: it unwinds
+// through Run, or ends the program for a loop started with Start. The loop
+// is marked stopped first, and the tasks and immediates its phase had not
+// run yet stay queued; the task that panicked is gone, and a promise whose
+// settle function panicked stays pending.
 func (l *Loop) Run(fn func(*moejs.Runtime) error) (err error) {
 	if err := l.enter(false); err != nil {
 		return err
@@ -994,10 +1077,11 @@ func (l *Loop) requeueImmediates(rest []*immediate) {
 // was asked to, an error stopped it, or nothing keeps a loop started by Run
 // alive, so that an unref'd timer or immediate does not run then.
 // Otherwise it returns at once when tasks or immediates are pending, else
-// when the next timer is due or a task is posted.
+// when the next timer is due or a task is posted, or, with Options.OnIdle
+// or OnWake set, once something is to run (idle).
 func (l *Loop) wait(sleep *time.Timer) bool {
 	l.mu.Lock()
-	if l.halted() || !(l.background || l.refs > 0 || l.holds > 0 || len(l.tasks) > 0) {
+	if l.halted() || !l.alive() {
 		l.mu.Unlock()
 		return false
 	}
@@ -1012,6 +1096,8 @@ func (l *Loop) wait(sleep *time.Timer) bool {
 	l.mu.Unlock()
 	switch {
 	case d == 0:
+	case l.onIdle != nil || l.onWake != nil:
+		return l.idle(sleep)
 	case d < 0:
 		<-l.wake
 	default:
@@ -1020,6 +1106,61 @@ func (l *Loop) wait(sleep *time.Timer) bool {
 		case <-l.wake:
 			sleep.Stop()
 		case <-sleep.C:
+		}
+	}
+	return true
+}
+
+// alive reports whether something keeps the running loop alive: a start
+// by Start, a ref'd timer or immediate, a hold or a task. l.mu is held.
+func (l *Loop) alive() bool {
+	return l.background || l.refs > 0 || l.holds > 0 || len(l.tasks) > 0
+}
+
+// idle is the block of wait with Options.OnIdle or OnWake set: it calls
+// OnIdle, then blocks until something is to run, checking under l.mu after
+// each wake, and calls OnWake then. A wake that finds nothing to run, such
+// as a signal of a task an earlier phase ran or a Hold released while
+// another is pending, blocks again without a call. A wake that ends the
+// loop, as wait would end it, returns false without calling OnWake, and an
+// error of OnWake stops the loop as an interrupt does, before anything is
+// taken off its queues. The hooks run without l.mu.
+func (l *Loop) idle(sleep *time.Timer) bool {
+	if l.onIdle != nil {
+		l.onIdle()
+	}
+	for {
+		l.mu.Lock()
+		if l.halted() || !l.alive() {
+			l.mu.Unlock()
+			return false
+		}
+		d := time.Duration(0)
+		if len(l.tasks) == 0 && len(l.immediates) == 0 {
+			d = -1
+			if len(l.timers) > 0 {
+				d = max(time.Duration(l.timers[0].when-l.now()), 0)
+			}
+		}
+		l.mu.Unlock()
+		if d == 0 {
+			break
+		}
+		if d < 0 {
+			<-l.wake
+			continue
+		}
+		sleep.Reset(d)
+		select {
+		case <-l.wake:
+			sleep.Stop()
+		case <-sleep.C:
+		}
+	}
+	if l.onWake != nil {
+		if err := l.onWake(); err != nil {
+			l.err = err
+			return false
 		}
 	}
 	return true

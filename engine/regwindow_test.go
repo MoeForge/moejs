@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MoeForge/moejs/compiler"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRegisterWindowMoves runs frames whose register window moves while
@@ -38,4 +40,47 @@ func TestRegisterWindowMoves(t *testing.T) {
 			assert.GreaterOrEqual(t, cap(r.interp.stack), 16*initialStackSize, "the stack moved")
 		})
 	}
+}
+
+// TestStackSpareRegister checks the register past the stack's length that
+// growStack keeps whenever the stack has storage: window takes a frame's
+// registers from its base, up to the length, without a bounds check, and
+// the start must lie inside the allocation. A frame of no registers at the
+// top of a full stack would start one past it.
+func TestStackSpareRegister(t *testing.T) {
+	r := NewRealm()
+	st := &r.interp
+	for _, top := range []int{0, 1, initialStackSize - 1, initialStackSize, initialStackSize + 1, 2*initialStackSize - 1, 2 * initialStackSize, 1000, 1023, 1024, 4096} {
+		r.growStack(top)
+		assert.GreaterOrEqual(t, len(st.stack), top)
+		assert.Less(t, len(st.stack), cap(st.stack), "growStack(%d)", top)
+		st.stack = st.stack[:cap(st.stack)-1] // the length growStack may leave
+		r.growStack(cap(st.stack))
+		assert.Less(t, len(st.stack), cap(st.stack), "growStack to the capacity")
+	}
+	r.ReleaseCallData()
+	runScriptsIn(t, r, `function deep(n) { return n === 0 ? 0 : 1 + deep(n - 1); } function z() {} deep(700); z()`)
+	assert.Less(t, len(st.stack), cap(st.stack), "after the calls")
+}
+
+// TestForeignCachesOutside calls, from a fresh realm, a function whose
+// inline caches another realm bound past the fresh realm's table. run
+// reads a frame's entries without bounds checks (frameEnv.ic), so the
+// frame of a function of another realm fails with a TypeError before it
+// starts (errForeignFrame) instead of reading past the table, and run's
+// range check (errICOutside) is not reached; Realm.IsForeign tells a host
+// of such a function.
+func TestForeignCachesOutside(t *testing.T) {
+	// The module's own caches come first, so that f's lie past them.
+	b, err := auditAModule(t, strings.Repeat("Math.PI; ", 100)+"export function f(o) { return o.p + o.q; } f({p: 1, q: 2});")
+	require.NoError(t, err)
+	f, _ := b.env.GetBindingValue("f")
+	fd := f.AsObject().FunctionData()
+	a := NewRealm()
+	require.True(t, a.IsForeign(f))
+	require.Less(t, len(a.ic), int(fd.icBase)+int(fd.code.ICCount))
+	assert.NotPanics(t, func() {
+		_, err = a.Call(f, Undefined(), nil)
+	})
+	assert.Equal(t, "TypeError: a function or generator of another realm runs only in its own realm", errorString(err))
 }

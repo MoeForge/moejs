@@ -859,7 +859,7 @@ func TestAuditCompilerLimits(t *testing.T) {
 		require.Empty(t, errStr)
 		assert.Equal(t, `[60000,"s59999"]`, got)
 	})
-	t.Run("registers-300-clean-error", func(t *testing.T) {
+	t.Run("registers-300-spill", func(t *testing.T) {
 		var b strings.Builder
 		b.WriteString("function f() { let ")
 		for i := range 300 {
@@ -868,7 +868,22 @@ func TestAuditCompilerLimits(t *testing.T) {
 			}
 			b.WriteString("v" + strconv.Itoa(i) + " = " + strconv.Itoa(i))
 		}
-		b.WriteString("; return v299 } export const r = f();")
+		b.WriteString("; return v0 + v299 } export const r = f();")
+		got, errStr := auditCompilerRun(t, b.String())
+		require.Empty(t, errStr)
+		assert.Equal(t, int64(299), got)
+	})
+	t.Run("registers-300-params-clean-error", func(t *testing.T) {
+		// Parameters arrive in registers and are never spilled.
+		var b strings.Builder
+		b.WriteString("function f(")
+		for i := range 300 {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString("p" + strconv.Itoa(i))
+		}
+		b.WriteString(") { return p0 } export const r = f();")
 		err := auditCompilerCompile(auditCompilerPrelude + b.String())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "SyntaxError: function needs more than 256 registers")

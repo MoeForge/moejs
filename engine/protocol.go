@@ -15,7 +15,7 @@ package engine
 // method of %RegExp.prototype% or static of %RegExp% is not such a key
 // (onlyLegacyPending).
 func (r *Realm) lacksWellKnown(o *Object, key PropertyKey) bool {
-	for p := o; p != nil; p = p.proto {
+	for p := o; p != nil; p = p.Proto() {
 		if p == r.ObjectPrototype && r.sharedIntrinsics {
 			return true
 		}
@@ -39,7 +39,7 @@ func (r *Realm) lacksWellKnown(o *Object, key PropertyKey) bool {
 // and that has no own @@hasInstance always inherits the original.
 func (r *Realm) hasInstanceMethod(c *Object) (*Object, error) {
 	key := SymbolKey(SymHasInstance)
-	if c.proto == r.FunctionPrototype && (c.flags&(flagDict|flagHasLazy) == 0 || c.onlyLegacyPending()) {
+	if c.Proto() == r.FunctionPrototype && (c.flags&(flagDict|flagHasLazy) == 0 || c.onlyLegacyPending()) {
 		if _, _, ok := c.shape.Lookup(key); !ok {
 			return nil, nil
 		}
@@ -164,7 +164,7 @@ func installSpecies(r *Realm) {
 // Object.prototype lack @@isConcatSpreadable and form the usual chain.
 func (r *Realm) spreadableProtosClean() bool {
 	ap, op := r.ArrayPrototype, r.ObjectPrototype
-	return r.sharedIntrinsics || ap.proto == op && op.proto == nil &&
+	return r.sharedIntrinsics || ap.Proto() == op && op.Proto() == nil &&
 		r.absentHolds(&r.absentGuards[absentArraySpreadable]) && r.absentHolds(&r.absentGuards[absentObjectSpreadable])
 }
 
@@ -172,7 +172,7 @@ func (r *Realm) spreadableProtosClean() bool {
 // answer for Array.prototype and Object.prototype cached; clean is
 // spreadableProtosClean(), which concat computes once for all its items.
 func (r *Realm) lacksSpreadable(o *Object, clean bool) bool {
-	if o.flags&(flagDict|flagHasLazy) != 0 && o.shape.key != hostSentinelKey || o.class == ClassProxy {
+	if o.lazyOrDict() && o.shape.key != hostSentinelKey || o.class == ClassProxy {
 		return false
 	}
 	if o.shape.count != 0 {
@@ -180,10 +180,10 @@ func (r *Realm) lacksSpreadable(o *Object, clean bool) bool {
 			return false
 		}
 	}
-	if clean && (o.proto == r.ArrayPrototype || o.proto == r.ObjectPrototype) {
+	if clean && (o.Proto() == r.ArrayPrototype || o.Proto() == r.ObjectPrototype) {
 		return true
 	}
-	return o.proto == nil || r.lacksWellKnown(o.proto, spreadableKey)
+	return o.Proto() == nil || r.lacksWellKnown(o.Proto(), spreadableKey)
 }
 
 // arraySpeciesCtor implements the constructor lookup of
@@ -207,8 +207,8 @@ func (r *Realm) arraySpeciesCtor(o *Object) (*Object, error) {
 		}
 		return nil, nil
 	}
-	if o.proto == r.ArrayPrototype && r.speciesIntact() {
-		if o.flags&(flagDict|flagHasLazy) == 0 {
+	if o.Proto() == r.ArrayPrototype && r.speciesIntact() {
+		if !o.lazyOrDict() {
 			if o.shape.count == 0 {
 				return nil, nil
 			}

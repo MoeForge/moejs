@@ -70,6 +70,7 @@ type globCompile struct {
 	expanded int // the bytes the braces of the call's patterns expanded to
 	charge   func(n int) error
 	halt     func() error
+	win32    bool // the patterns may start with a drive or a share
 }
 
 // add counts an expression of n instructions.
@@ -115,15 +116,16 @@ func (cc *globCompile) check() error {
 
 // matchMeter counts the work of one call's matches, checks the runtime's
 // interrupt and Close every checkWork of it, and fails the call past
-// maxMatchWork.
+// maxMatchWork. The work is int64: maxMatchWork is past an int on 32-bit
+// systems, and so is a name's length times its instructions.
 type matchMeter struct {
-	work, checked int
+	work, checked int64
 	halt          func() error
 }
 
 var errMatchTooComplex = &globError{"The glob pattern is too complex to match: its expressions take too long over these names"}
 
-func (m *matchMeter) add(units int) error {
+func (m *matchMeter) add(units int64) error {
 	if m.work += units; m.work > maxMatchWork {
 		return errMatchTooComplex
 	}
@@ -170,6 +172,14 @@ func compileGlob(p string, cc *globCompile) ([]globPattern, error) {
 
 func compileOne(p string, cc *globCompile) (globPattern, error) {
 	var g globPattern
+	// On Windows, an absolute pattern may start with a volume: C:/ or
+	// //server/share/.
+	var vol string
+	if cc != nil && cc.win32 {
+		if v, n := win32Root(p); v != "" && (v[0] == '/' || strings.HasPrefix(p[n:], "/")) {
+			vol, p = v, p[n:]
+		}
+	}
 	abs := strings.HasPrefix(p, "/")
 	parts := strings.Split(p, "/")
 	if abs {
@@ -216,7 +226,7 @@ func compileOne(p string, cc *globCompile) (globPattern, error) {
 	}
 	g.prefix = strings.Join(prefix, "/")
 	if abs {
-		g.prefix = "/" + g.prefix
+		g.prefix = vol + "/" + g.prefix
 	}
 	return g, nil
 }
@@ -560,7 +570,7 @@ func parseSeq(body string) *braceSeq {
 	}
 	q := &braceSeq{step: 1}
 	if len(parts) == 3 {
-		s, err := strconv.Atoi(parts[2])
+		s, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil || s == 0 {
 			return nil
 		}
@@ -836,7 +846,7 @@ func (n *negMatcher) match(name string, meter *matchMeter) (bool, error) {
 		case n.rest:
 			insts = n.restInsts
 		}
-		if err := meter.add((len(s) + 1) * (insts + 1)); err != nil {
+		if err := meter.add((int64(len(s)) + 1) * (int64(insts) + 1)); err != nil {
 			return false, err
 		}
 		return re.MatchString(s), nil
@@ -1148,12 +1158,12 @@ func (m *segMatcher) match(name string, meter *matchMeter) (bool, error) {
 	case m.neg != nil:
 		return m.neg.match(name, meter)
 	case m.re != nil:
-		if err := meter.add((len(name) + 1) * (m.insts + 1)); err != nil {
+		if err := meter.add((int64(len(name)) + 1) * (int64(m.insts) + 1)); err != nil {
 			return false, err
 		}
 		return m.re.MatchString(name), nil
 	}
-	if err := meter.add(len(name) + len(m.toks)); err != nil {
+	if err := meter.add(int64(len(name)) + int64(len(m.toks))); err != nil {
 		return false, err
 	}
 	return matchSimple(m.toks, name), nil
@@ -1251,13 +1261,19 @@ func (f *fsys) glob(cwd string, patterns []globPattern, o globOptions) ([]globMa
 	for _, prefix := range order {
 		base := prefix
 		if base != "" {
-			if base = path.Clean(base); base == "." {
+			if f.win32 {
+				vol, n := win32Root(base)
+				base = vol + path.Clean(base[n:])
+			} else {
+				base = path.Clean(base)
+			}
+			if base == "." {
 				base = ""
 			}
 		}
 		var jsDir string
 		switch {
-		case strings.HasPrefix(prefix, "/"):
+		case strings.HasPrefix(prefix, "/"), f.win32 && win32IsAbs(prefix):
 			jsDir = prefix
 		case prefix == "":
 			jsDir = cwd
@@ -1430,11 +1446,12 @@ func (w *globWalk) test(m *segMatcher, name string) bool {
 // join joins a directory of the walk, as the pattern names it, and a
 // name.
 func joinGlob(dir, name string) string {
-	switch dir {
-	case "":
+	switch {
+	case dir == "":
 		return name
-	case "/":
-		return "/" + name
+	case strings.HasSuffix(dir, "/"):
+		// "/", or a volume's root on Windows (C:/).
+		return dir + name
 	}
 	return dir + "/" + name
 }
@@ -1666,7 +1683,7 @@ func (w *globWalk) child(rel, dir, name string, typ fs.FileMode, states []globSt
 // count counts n units of the walk's work on the meter of its matches.
 func (w *globWalk) count(n int) bool {
 	if w.err == nil {
-		w.err = w.meter.add(n)
+		w.err = w.meter.add(int64(n))
 	}
 	return w.err == nil
 }

@@ -76,18 +76,18 @@ func FuzzBytecode(f *testing.F) {
 	}
 	edits := [][]byte{
 		{},
-		{0, 2, 0, 4, 1},                        // a jump nudged by one, or a word's high bits
-		{0, 1, 0, 0, 0x2c},                     // another op
-		{0, 3, 0, 1, 200},                      // A past the window
-		{1, 4, 0, 2, 7, 1, 5, 0, 3, 9},         // B and C of a child
-		{0, 0, 0, 7, 1},                        // NumRegs
-		{1, 0, 0, 6, 0xff},                     // a handler moved back
-		{0, 0, 0, 0, byte(bytecode.GenFunc)},   // the first word, a module prologue's Closure, made GenFunc
-		{0, 1, 0, 0, byte(bytecode.AsyncFunc)}, // its GenFunc made AsyncFunc
-		{0, 0, 3, 6, 2},                        // a handler of kind 2, which run enters as a finally
-		{0, 0, 4, 6, 1},                        // a handler's register moved up by one
-		{0, 1, 0, 7, 44},                       // 300 registers
-		{0, 3, 0, 7, 0xff},                     // a module body's pc moved back by one
+		{0, 2, 0, 4, 1},                // a jump nudged by one, or a word's high bits
+		{0, 1, 0, 0, 0x2c},             // another op
+		{0, 3, 0, 1, 200},              // A past the window
+		{1, 4, 0, 2, 7, 1, 5, 0, 3, 9}, // B and C of a child
+		{0, 0, 0, 7, 1},                // NumRegs
+		{1, 0, 0, 6, 0xff},             // a handler moved back
+		{0, 0, 0, 0, fuzzOpIndex[bytecode.GenFunc]},   // the first word, a module prologue's Closure, made GenFunc
+		{0, 1, 0, 0, fuzzOpIndex[bytecode.AsyncFunc]}, // its GenFunc made AsyncFunc
+		{0, 0, 3, 6, 2},    // a handler of kind 2, which run enters as a finally
+		{0, 0, 4, 6, 1},    // a handler's register moved up by one
+		{0, 1, 0, 7, 44},   // 300 registers
+		{0, 3, 0, 7, 0xff}, // a module body's pc moved back by one
 	}
 	for _, s := range fuzzBytecodeSeeds {
 		module := strings.Contains(s, "export")
@@ -155,7 +155,8 @@ func fuzzTree(fn *bytecode.Function, out []*bytecode.Function) []*bytecode.Funct
 	return out
 }
 
-// fuzzEdit applies the five-byte edits of muts to fns.
+// fuzzEdit applies the five-byte edits of muts to fns. A value byte that
+// becomes an instruction's op, or that changes one, is an index in fuzzOps.
 func fuzzEdit(fns []*bytecode.Function, muts []byte) {
 	for ; len(muts) >= 5; muts = muts[5:] {
 		fn, what, v := fns[int(muts[0])%len(fns)], muts[3]%8, muts[4]
@@ -200,16 +201,38 @@ func fuzzEdit(fns []*bytecode.Function, muts []byte) {
 		w := &fn.Code[i]
 		switch what {
 		case 0: // another op, the same operands
-			*w = *w&^0xff | uint32(int(v)%bytecode.OpCount)
+			if v := byte(int(v) % len(fuzzOps)); fuzzIsOp(fn.Code, i) {
+				*w = *w&^0xff | uint32(fuzzOps[v])
+			} else {
+				*w = *w&^0xff | uint32(v)
+			}
 		case 1, 2, 3: // A, B or C
 			s := 8 * uint(what)
 			*w = *w&^(0xff<<s) | uint32(v)<<s
 		case 4: // the sBx (a jump's offset) moved by a signed byte
 			*w = *w&0xffff | uint32(uint16(int16(*w>>16)+int16(int8(v))))<<16
 		case 5: // bits of any byte
-			*w ^= uint32(v) << (8 * uint(i%4))
+			if i%4 == 0 && fuzzIsOp(fn.Code, i) {
+				*w = *w&^0xff | uint32(fuzzOp(fuzzOpIndex[byte(*w)]^v))
+			} else {
+				*w ^= uint32(v) << (8 * uint(i%4))
+			}
 		}
 	}
+}
+
+// fuzzIsOp reports whether word i of code is an instruction's first, not
+// an ExtraArg word.
+func fuzzIsOp(code []uint32, i int) bool {
+	pc := 0
+	for pc < i {
+		op := bytecode.DecodeOp(code[pc])
+		pc++
+		if int(op) < bytecode.OpCount {
+			pc += op.ExtraWords()
+		}
+	}
+	return pc == i
 }
 
 // fuzzEnds reports whether every backward transfer of fns reaches an

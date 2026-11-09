@@ -52,6 +52,32 @@ func TestOpTable(t *testing.T) {
 	assert.Equal(t, "unknown", Kind(99).String())
 }
 
+// TestOpOrderGroups pins the runs of ops whose numbers the code computes
+// from one another, which a change of the op order must keep together and
+// in their order: Lt .. Ge (CompareJump, Lt+k&3 in the interpreter),
+// JmpLt .. JmpStrictNe and their integer forms (Immediate), JmpStrictEq and
+// JmpStrictNe and their constant forms (Constant), and the async function
+// ops engine's coldOp tests as one range.
+func TestOpOrderGroups(t *testing.T) {
+	runs := [][]Op{
+		{Lt, Le, Gt, Ge},
+		{JmpLt, JmpLe, JmpGt, JmpGe, JmpNLt, JmpNLe, JmpNGt, JmpNGe, JmpStrictEq, JmpStrictNe},
+		{JmpLtI, JmpLeI, JmpGtI, JmpGeI, JmpNLtI, JmpNLeI, JmpNGtI, JmpNGeI, JmpStrictEqI, JmpStrictNeI},
+		{JmpStrictEqK, JmpStrictNeK},
+		{AsyncGenStart, Await, AsyncReturn, AsyncThrow},
+	}
+	for _, r := range runs {
+		for i, op := range r {
+			assert.Equal(t, r[0]+Op(i), op, "%s is not %d after %s", op, i, r[0])
+		}
+	}
+	for op := JmpLt; op <= JmpStrictNe; op++ {
+		assert.Equal(t, op.String()+"I", op.Immediate().String())
+	}
+	assert.Equal(t, JmpStrictEqK, JmpStrictEq.Constant())
+	assert.Equal(t, JmpStrictNeK, JmpStrictNe.Constant())
+}
+
 func TestTypeNames(t *testing.T) {
 	i, ok := TypeNameIndex("string")
 	assert.True(t, ok)

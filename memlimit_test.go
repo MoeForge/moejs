@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -338,7 +339,9 @@ func TestMemoryLimitHostTimeout(t *testing.T) {
 // host function does not reset, and a failed Load keeps the count and the
 // hit's error.
 func TestMemoryLimitSetup(t *testing.T) {
-	const limit = 1 << 20
+	// Values are smaller on 32-bit systems: the rows take most of half
+	// the limit there.
+	const limit = 1 << 20 * strconv.IntSize / 64
 	const big = `export const table = []; for (let i = 0; i < 3000; i++) table.push({i, s: "row" + i});
 export function grow(n) { const a = []; for (let i = 0; i < n; i++) a.push({i, s: "row" + i}); return a.length; }
 export function setInside() { const a = []; for (let i = 0; i < 1000; i++) a.push({i}); return setGlobal(); }`

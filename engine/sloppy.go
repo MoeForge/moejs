@@ -6,12 +6,25 @@ import "github.com/MoeForge/moejs/bytecode"
 // jump table (asyncOp's default case): only sloppy code, script top
 // levels and with statements emit them, so strict code and modules pay
 // for their dispatch only in the assignment of an undeclared name from a
-// value that may run code (ResolveGlobal and SetGlobalRef).
+// value that may run code (ResolveGlobal and SetGlobalRef). Property
+// writes are the exception: sloppy code writes properties as often as
+// strict code does, so the compiler emits SetProp's sloppy form for named
+// ones (bytecode.SetPropSloppyFlag), which run executes in SetProp's case
+// (setPropSlow), and no SetPropSloppy, which coldOp still executes for
+// bytecode that has it. Computed ones are SetElem, whose slow path reads
+// the function's strictness (setElemSlow), and SetElemSloppy is
+// executed here for bytecode that has it. Identifier writes resolved
+// against the global environment are SetGlobal, whose slow path reads it
+// too (setGlobalSlow), and SetGlobalSloppy is executed here for bytecode
+// that has it. run also executes CoerceThis when this is an object
+// already.
 
 // frameOpMarker is the error sloppyOp returns for the ops that need the run
-// loop's own state (this, and the environment and callee MapArguments and
-// CallEval read): the unwinding code recognizes it and applies the op
-// (frameOp), so the loop's hot path has no case for them.
+// loop's own state (this, and the environment CallEval reads): the
+// unwinding code recognizes it and applies the op (frameOp), so the loop's
+// hot path has no case for them but CoerceThis's test of a this that needs
+// no coercion. coldOp executes MapArguments, whose callee is the frame
+// record's function.
 type frameOpMarker struct{}
 
 func (frameOpMarker) Error() string { return "engine: frame op" }
@@ -29,6 +42,7 @@ func (r *Realm) sloppyOp(fd *FunctionData, base int, w uint32, pc int) (int, err
 	keys := fd.meta.keys
 	switch bytecode.Op(w) {
 	case bytecode.SetGlobalSloppy:
+		// Not emitted by the compiler, whose sloppy code has SetGlobal.
 		x := code.Code[pc]
 		g := r.Global
 		e := &r.ic[fd.icBase+x>>16]
@@ -85,20 +99,8 @@ func (r *Realm) sloppyOp(fd *FunctionData, base int, w uint32, pc int) (int, err
 		}
 		st.stack[base+a] = Bool(res)
 		return pc + 1, nil
-	case bytecode.SetPropSloppy:
-		x := code.Code[pc]
-		t, v := regs[a], regs[b]
-		if !t.IsObject() {
-			return pc + 1, r.setVSloppy(t, keys[uint16(x)], v)
-		}
-		o := t.AsObject()
-		e := &r.ic[fd.icBase+x>>16]
-		if o.shape == e.Shape && r.protoEpoch == e.Epoch {
-			o.slots[e.Slot()] = v
-			return pc + 1, nil
-		}
-		return pc + 1, r.setNamedSloppy(o, keys[uint16(x)], v, e)
 	case bytecode.SetElemSloppy:
+		// Not emitted by the compiler, whose sloppy code has SetElem.
 		return pc, r.setElemSloppy(regs[a], regs[b], regs[uint8(w>>24)])
 	case bytecode.DelPropSloppy:
 		res, err := r.deleteSloppy(regs[b], keys[code.Code[pc]].Value())
@@ -144,7 +146,7 @@ func (r *Realm) sloppyOp(fd *FunctionData, base int, w uint32, pc int) (int, err
 			return pc + 1, err
 		}
 		return pc + 1, r.withSet(o, keys[uint16(x)], regs[b], x>>16 != 0)
-	case bytecode.CoerceThis, bytecode.MapArguments:
+	case bytecode.CoerceThis:
 		return pc, errFrameOp
 	case bytecode.CallEval:
 		return pc + 1, errFrameOp
@@ -153,9 +155,8 @@ func (r *Realm) sloppyOp(fd *FunctionData, base int, w uint32, pc int) (int, err
 	}
 }
 
-// frameOp applies the CoerceThis, MapArguments or CallEval op w of the
-// running frame of code whose registers are regs, environment env, this
-// this and callee callee. It returns errFrameOp and the frame's this when
+// frameOp applies the CoerceThis or CallEval op w of the running frame of
+// code whose registers are regs, environment env and this this. It returns errFrameOp and the frame's this when
 // the frame must rerun from the next instruction: CoerceThis changed this,
 // or a direct eval grew the register stack or the frame records, which the
 // loop's regs and frame pointer still point into (both only grow, so this
@@ -163,15 +164,8 @@ func (r *Realm) sloppyOp(fd *FunctionData, base int, w uint32, pc int) (int, err
 // direct eval. The frame is the innermost one, whose record holds its
 // register base and the pc of w (the run loop passes no more, so that its
 // register allocation does not change for a cold op).
-func (r *Realm) frameOp(w uint32, code *bytecode.Function, regs []Value, env *Env, this Value, callee *Object) (Value, error) {
+func (r *Realm) frameOp(w uint32, code *bytecode.Function, regs []Value, env *Env, this Value) (Value, error) {
 	switch bytecode.Op(w) {
-	case bytecode.MapArguments:
-		v := regs[uint8(w>>8)]
-		if !v.IsObject() || v.AsObject().class != ClassArguments {
-			return this, r.wrongKind(w, "an arguments object")
-		}
-		r.mapArguments(v.AsObject(), code, env, callee)
-		return this, nil
 	case bytecode.CallEval:
 		st := &r.interp
 		fr, nstack, nframes := st.frames[st.nframes-1], cap(st.stack), len(st.frames)
@@ -183,14 +177,18 @@ func (r *Realm) frameOp(w uint32, code *bytecode.Function, regs []Value, env *En
 	}
 	// OrdinaryCallBindThis for a sloppy function: the global this value
 	// for undefined and null, a wrapper object for another primitive.
+	// CoerceThis's R[A] takes it, as LoadThis's register.
+	res, err := this, error(nil)
 	switch {
 	case this.IsObject():
-		return this, nil
 	case this.IsNullish():
-		return ObjectValue(r.Global), errFrameOp
+		res, err = ObjectValue(r.Global), errFrameOp
+	default:
+		o, _ := r.ToObject(this)
+		res, err = ObjectValue(o), errFrameOp
 	}
-	o, _ := r.ToObject(this)
-	return ObjectValue(o), errFrameOp
+	regs[bytecode.DecodeA(w)] = res
+	return res, err
 }
 
 // --- the global declarative environment -------------------------------------------
@@ -293,7 +291,7 @@ func (r *Realm) setGlobalSloppy(key PropertyKey, v Value, e *ICEntry) error {
 		return err
 	}
 	if has {
-		for p := g.proto; p != nil; p = p.proto {
+		for p := g.Proto(); p != nil; p = p.Proto() {
 			if p.class == ClassProxy {
 				if _, err := r.hasProperty(g, key); err != nil {
 					return err
@@ -482,6 +480,150 @@ func (r *Realm) setVSloppy(t Value, key PropertyKey, v Value) error {
 	}
 	_, err = proto.Set(r, key, v, t)
 	return err
+}
+
+// setPropSlow is setNamedSlow for SetProp and setNamedSloppy for its sloppy
+// form (bytecode.SetPropSloppyFlag). The case of run that calls it stores
+// the frame's pc first, so the flag is the frame's instruction's
+// (sloppyStore): an operand passed here, or a case of run for
+// SetPropSloppy, would change the code of run, whose hot blocks the uop
+// cache holds with callValue's only at some distances. The site may be
+// polymorphic (setPropPoly).
+//
+// A cached add, as a constructor's this.x = x has it, to an object with
+// room for the slot is made here (addIC's), without the call and the
+// spills of the other paths, which setPropMiss takes. It succeeds in
+// either mode and is no setter's. So is a store or an add through an
+// entry of the site's polyIC for o's shape, found as getPropSlow finds
+// it; the rest of a polymorphic miss is setPropPolyMiss's. The run loop
+// calls setPropSlow, which stays out of line so that its code does not
+// change run's.
+//
+//go:noinline
+func (r *Realm) setPropSlow(o *Object, key PropertyKey, v Value, e *ICEntry) error {
+	s, poly := e.Shape, false
+	if s == nil || s.parent != o.shape {
+		if !r.polyMiss(e, o.shape) {
+			return r.setPropMono(o, key, v, e)
+		}
+		var p *polyIC
+		if t := r.polyTable(); t != nil {
+			if site := r.icSite(e); site != 0 {
+				if s := t.slots[site&uint32(len(t.slots)-1)]; s.site == site {
+					p = &t.ways[s.way]
+				} else if s.site != 0 {
+					p = t.findNext(site)
+				}
+			}
+		}
+		if p == nil || p.mega {
+			return r.setPropPolyMiss(o, key, v, e, p)
+		}
+		i := 0
+		for ; i < polyWays; i++ {
+			if s = p.w[i].Shape; s == o.shape || s != nil && s.parent == o.shape {
+				break
+			}
+		}
+		if i == polyWays {
+			return r.setPropPoly(o, key, v, e, p)
+		}
+		w := &p.w[i]
+		*e, *w = *w, *e
+		p.hits++
+		if s == o.shape {
+			if e.Epoch == r.protoEpoch {
+				o.slots[e.Slot()] = v
+				return nil
+			}
+			return r.setPropMono(o, key, v, e)
+		}
+		poly = true
+	}
+	if e.Epoch == r.protoEpoch && e.HolderDepth() == icAdd && s.key == key && addsTo(o) {
+		if n := len(o.slots); n < cap(o.slots) {
+			o.shape = s
+			o.slots = o.slots[:n+1]
+			o.slots[n] = v
+			return nil
+		}
+	}
+	if poly {
+		return r.setPropAdd(o, key, v, e)
+	}
+	return r.setPropMiss(o, key, v, e)
+}
+
+// setPropMiss is setPropSlow at a site whose entry is an add to o's shape
+// that setPropSlow could not make itself.
+func (r *Realm) setPropMiss(o *Object, key PropertyKey, v Value, e *ICEntry) error {
+	if r.addIC(o, key, v, e) {
+		return nil
+	}
+	if r.polyMiss(e, o.shape) {
+		return r.setPropPolyMiss(o, key, v, e, r.polyTable().find(r.icSite(e)))
+	}
+	return r.setPropMono(o, key, v, e)
+}
+
+// setPropAdd is setPropMiss for an add that setPropSlow took from the
+// site's polyIC.
+func (r *Realm) setPropAdd(o *Object, key PropertyKey, v Value, e *ICEntry) error {
+	if r.addIC(o, key, v, e) {
+		return nil
+	}
+	return r.setPropMono(o, key, v, e)
+}
+
+// setPropPolyMiss is setPropSlow at a polymorphic site whose polyIC is p,
+// or nil.
+func (r *Realm) setPropPolyMiss(o *Object, key PropertyKey, v Value, e *ICEntry, p *polyIC) error {
+	if p != nil {
+		if p.mega {
+			return r.setPropMono(o, key, v, e)
+		}
+		for i := range p.w {
+			w := &p.w[i]
+			if s := w.Shape; s == o.shape || s != nil && s.parent == o.shape {
+				*e, *w = *w, *e
+				p.hits++
+				if s == o.shape && e.Epoch == r.protoEpoch {
+					o.slots[e.Slot()] = v
+					return nil
+				}
+				if s != o.shape && r.addIC(o, key, v, e) {
+					return nil
+				}
+				return r.setPropMono(o, key, v, e)
+			}
+		}
+	}
+	return r.setPropPoly(o, key, v, e, p)
+}
+
+// setPropMono is setPropSlow on the entry e for o's shape.
+func (r *Realm) setPropMono(o *Object, key PropertyKey, v Value, e *ICEntry) error {
+	if r.sloppyStore() {
+		return r.setNamedSloppy(o, key, v, e)
+	}
+	return r.setNamedSlow(o, key, v, e)
+}
+
+// setPropV is SetV for SetProp and setVSloppy for its sloppy form
+// (setPropSlow).
+func (r *Realm) setPropV(t Value, key PropertyKey, v Value) error {
+	if r.sloppyStore() {
+		return r.setVSloppy(t, key, v)
+	}
+	return r.SetV(t, key, v)
+}
+
+// sloppyStore reports whether the instruction of the innermost frame, at
+// the pc stored before the call, is a SetProp of sloppy code.
+func (r *Realm) sloppyStore() bool {
+	st := &r.interp
+	f := &st.frames[st.nframes-1]
+	return bytecode.DecodeC(f.fn.funcData().code.Code[f.pc]) == bytecode.SetPropSloppyFlag
 }
 
 // setNamedSloppy is setNamedSlow ignoring a rejected assignment.

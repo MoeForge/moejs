@@ -684,7 +684,7 @@ rt.SetGlobal("fetchJSON", moejs.NativeFunc(func(_ *moejs.Realm, _ moejs.Value, a
 `*InterruptedError`。`Loop.Interrupt(v)` 中断运行时并唤醒循环；单独调用 `Runtime.Interrupt` 时，睡眠中的循环要等到下一个定时器才醒。
 中断会保留，所以宿主再次运行循环之前要调用 `ClearInterrupt`。
 
-宿主任务（`RunOnLoop`、`Post`、`done` 和 `settle` 的函数，以及 `OnError`）里的 panic 不会被恢复。它从 `Run` 向外展开；
+宿主任务（`RunOnLoop`、`Post`、`done` 和 `settle` 的函数，以及 `OnError`、`OnIdle` 和 `OnWake`）里的 panic 不会被恢复。它从 `Run` 向外展开；
 `Start` 启动的循环则会让程序退出。当前阶段还没运行的任务和 immediate 留在队列里，等下一次 `Run`。发生 panic 的任务本身丢失，
 settle 函数 panic 的 promise 永远不会兑现。
 
@@ -702,6 +702,50 @@ settle 函数 panic 的 promise 永远不会兑现。
 `Terminate` 永久结束循环。它用 `ErrTerminated` 中断运行时，从而停止正在运行的 JavaScript，丢弃所有待运行的定时器、immediate
 和任务，并等到循环结束。之后 `Run` 返回 `ErrTerminated`，`RunOnLoop` 返回 false，定时器函数会抛出异常。即使当时没有 JavaScript
 在运行，中断也会保留，所以宿主再次使用运行时之前要调用 `ClearInterrupt`。再调用一次 `New` 可以给运行时一个新的循环。
+
+### 空闲和唤醒
+
+限制一次运行的 CPU 时间、或者让许多运行时共用少量执行槽位的宿主，需要知道循环什么时候在等待而不是在运行 JavaScript：
+等定时器、等其他 goroutine 投递的任务、等 `node:fs` 的结果或者 `fetch`。`Options.OnIdle` 和 `Options.OnWake` 告诉它这些：
+
+```go
+loop, err := eventloop.New(rt, eventloop.Options{
+	// 循环没有可运行的工作、即将阻塞时调用；之后直到 OnWake 都不会运行 JavaScript。
+	OnIdle: func() { /* 暂停看门狗，释放执行槽位 */ },
+	// 循环醒来后、运行任何东西之前调用；返回错误时循环像被中断一样停止。
+	OnWake: func() error { /* 获取执行槽位（可以等待），启动看门狗 */ return nil },
+})
+```
+
+当前没有可运行的东西（没有任务、immediate，也没有到期的定时器）而又有东西让循环继续时，循环在阻塞之前调用 `OnIdle`。
+醒来后有东西要运行时，循环在运行它之前调用 `OnWake`。从不需要等待的循环两个都不调用。醒来后发现没有东西可运行时
+（比如释放了一个 `Hold`，而另一个还没释放），循环不调用钩子，再次阻塞。醒来时循环要结束（`Stop`、`StopNoWait`、
+`Terminate`、中断，或者对 `Run` 来说已经没有东西让它继续），这次运行不调用 `OnWake` 就结束，`Run` 的返回值和没有钩子时一样。
+
+所以两个钩子交替调用，`OnIdle` 在先，一次运行可以在 `OnIdle` 之后结束而没有 `OnWake`。宿主根据最后看到的是哪个钩子知道自己处于哪种状态。
+钩子在循环上运行，所以 `Run` 返回时（`Start` 启动的循环则是 `Stop` 返回时）它们都已结束。有槽位的宿主在 `Run` 之前获取一个槽位，
+`Run` 之后除非最后一个钩子是 `OnIdle`，否则释放它：
+
+```go
+slots <- struct{}{} // 获取槽位
+awake = true        // OnIdle 设为 false，OnWake 设为 true
+watchdog.Resume()
+err = loop.Run(fn)
+if awake {
+	watchdog.Pause()
+	<-slots
+}
+```
+
+`OnWake` 返回的错误像中断一样停止循环，而且在循环从队列取出任何东西之前停止：`Run`（`Start` 启动的循环则是 `Stop`）原样返回这个错误，
+定时器、immediate 和任务留在队列里，等下一次运行。这次运行在空闲状态结束。运行时不会被中断，因为当时没有 JavaScript 在运行。
+
+`OnWake` 可以阻塞，比如等待槽位。`Stop` 和 `Terminate` 会等待循环，也就会等待 `OnWake`；`OnWake` 会等待的宿主在停止循环时要结束这个等待，
+比如在 `Stop` 或 `Terminate` 之前取消一个 context。如果在此期间来了停止、`Terminate` 或中断，`OnWake` 返回 nil 之后，循环在运行任何东西之前
+结束这次运行，这次运行在唤醒状态结束。`OnWake` 花的时间算作定时器经过的时间，所以在此期间到期的定时器会晚一些运行。
+
+钩子运行时不持有循环的锁，可以调用 `RunOnLoop`、`Post`、`Hold`、`Interrupt` 和 `StopNoWait`，但不能调用 `Stop` 或 `Terminate`。
+钩子里的 panic 和宿主任务里的一样不会被恢复。两个钩子都为 nil 时，循环的行为和没有它们时一样。
 
 ## Web API
 
@@ -949,7 +993,14 @@ type Loop interface {
   什么、能保证什么，见下一节。
 - 本包不创建链接：`cp` 复制链接指向的内容。
 - 限制是按路径的。宿主在根目录内为根目录外的文件建的硬链接是根目录内的一个路径，程序可以通过它读到那个文件。程序不能创建链接。
-- 在 Windows 上，`\` 和 `/` 都是路径分隔符，和 Node.js 一样。
+- 在 Windows 上，路径的形式和 Node.js 的 `path.win32` 读到的一样，`\` 和 `/` 都是分隔符：盘符（`C:\work`、`c:/work`）、共享
+  （`\\server\share\work`）、根路径（`\x`，在 `Cwd` 所在的卷上）、驱动器相对路径（`C:x`，同一盘符时相对 `Cwd`，其他盘符时相对该盘的根）
+  和相对路径。`Mount` 和 `Cwd` 接受同样的形式；没有卷的 `Mount`（如 `/workspace`）和 Linux 上一样。路径先按 Windows 的做法清理 `.`
+  和 `..`，再和 `Mount` 比较，比较不区分大小写。`\\?\` 或 `\\.\` 路径就是它指向的盘符或共享路径（`\\?\C:\x`、
+  `\\?\UNC\server\share\x`），其他设备路径以 `EACCES` 失败。本包生成的路径（`realpath`、`readlink`、递归 `readdir` 的名字、`Dirent` 的
+  `parentPath`、`glob` 的结果、`mkdir` 带 `recursive` 的返回值、钩子收到的路径）用 `\`，并保留 `Mount` 的写法；程序给出的路径原样保留。
+  带主机的 `file:` URL 指向共享，不带主机的必须有盘符。错误码是 libuv 给 Windows 错误的码：对文件 `rmdir` 是 `ENOENT`，对目录
+  `unlink` 和 `rename` 到目录上是 `EPERM`，`errno` 是 libuv 在 Windows 上的数值。
 - 在 Linux 上，对本包最近一毫秒内解析过的目录中的名字做 stat、打开或列目录，只需一次系统调用：本包保留该目录的描述符（在根目录之下
   打开），只用它访问这一个名字，且不跟随链接（名字本身是链接时，从根目录出发在根目录之下跟随）。本包自己的 `rename`、`rm`、`rmdir`
   和 `unlink` 在返回之前丢弃这些描述符，所以程序自己的改动（它们出不了根目录）立刻可见。缓存带来的是一个窗口：目录被解析后的至多一
@@ -1046,6 +1097,8 @@ promise 那样）、循环被 Terminate 而拒绝结算时，以及 `Close` 时�
 - 每个 Buffer 有自己的 `ArrayBuffer`：没有内存池，所以除切片外 `byteOffset` 都是 0，`allocUnsafe` 返回清零的内存。
   `buffer.kMaxLength` 是 moejs 最大的 `ArrayBuffer`，即 2 GiB - 1。
 - `fs.constants` 是 Linux 的值。
+- 在 Windows 和 macOS 上，`glob` 区分大小写，Node.js 不区分。
+- 在 Windows 上，`mkdir` 带 `recursive` 和 Node.js 一样返回 `\\?\C:\...`，但 `Mount` 没有卷时返回普通路径。
 - base64 的速度约为每秒 1 GB；Node.js 用 SIMD，大输入上约快四倍。
 
 ## 隔离

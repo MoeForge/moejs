@@ -109,6 +109,41 @@ func TestInternTableReleasesUnusedNames(t *testing.T) {
 	require.Same(t, again, globalInternASCII.lookup(name))
 }
 
+// TestInternTableDropsDeadEntries checks that a table does not keep the
+// entries of collected strings: names nothing references any more leave
+// it as their shards are rebuilt, so a stream of new names keeps it
+// bounded, while a name still in use keeps its one string throughout.
+func TestInternTableDropsDeadEntries(t *testing.T) {
+	tab := newInternTable()
+	add := func(name string) *String {
+		h := tab.hashASCII(name)
+		if a := tab.lookupASCII(name, h); a != nil {
+			return a
+		}
+		return tab.intern(h, asciiString(strings.Clone(name)))
+	}
+	held := add("held_name")
+	const rounds, names = 10, 20_000
+	for r := range rounds {
+		for i := range names {
+			add("dead_" + strconv.Itoa(r) + "_" + strconv.Itoa(i))
+		}
+		runtime.GC()
+	}
+	slots := 0
+	for i := range tab.shards {
+		if s := tab.shards[i].tab.Load(); s != nil {
+			slots += len(s.tag)
+		}
+	}
+	// Kept, the dead entries would need rounds*names/0.75 slots.
+	require.Less(t, slots, 8*names+internShards*internMinSlots, "the entries of collected names are dropped")
+	require.Same(t, held, add("held_name"))
+	require.Same(t, held, tab.lookup("held_name"))
+	require.NotZero(t, held.atom)
+	runtime.KeepAlive(held)
+}
+
 // TestAtomIDWrapSkipsStaticIDs checks that a wrapped atom counter resumes
 // above the static atoms rather than handing out their ids again.
 func TestAtomIDWrapSkipsStaticIDs(t *testing.T) {
@@ -167,7 +202,7 @@ func TestInternIdentityAcrossCopies(t *testing.T) {
 				if js.kind == strASCII {
 					return globalInternASCII.lookup(name)
 				}
-				return globalInternUTF16.lookup(utf16Key(js.units()))
+				return globalInternUTF16.lookupUnits(js.units(), globalInternUTF16.hashUnits(js.units()))
 			}
 			require.Nil(t, lookup(), "the name is new to the process")
 			big := name + strings.Repeat(tc.fill, 4096)
@@ -207,4 +242,40 @@ func TestInternIdentityAcrossCopies(t *testing.T) {
 			assert.False(t, contentIn(atom, bigJS), "the atom's content is its own")
 		})
 	}
+}
+
+// TestStringHashShort: the hash of ASCII content takes the short path up
+// to 16 bytes and maphash past that; either way String.Hash, the intern
+// table's hash folded, and an atom's hash agree, at every length around the
+// switches, and every byte of a short string counts: changing any one
+// changes the 64-bit hash. JSON keys of those lengths, which JSON.parse
+// looks up by their bytes (childNamed), read back through names made at
+// run time and through a Map.
+func TestStringHashShort(t *testing.T) {
+	for n := 0; n <= 40; n++ {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = byte('a' + (i*7+n)%26)
+		}
+		s := string(b)
+		str := asciiString(strings.Clone(s))
+		assert.Equal(t, strHash32(globalInternASCII.hashASCII(s)), str.Hash(), "%q", s)
+		assert.Equal(t, str.Hash(), globalASCIIAtom(s).Hash(), "%q", s)
+		if n > 16 {
+			continue
+		}
+		h := strHash64(s)
+		for i := range n {
+			c := []byte(s)
+			c[i] ^= 1
+			assert.NotEqual(t, h, strHash64(string(c)), "%q byte %d", s, i)
+		}
+		assert.NotEqual(t, h, strHash64(s+"a"), "%q and one more byte", s)
+	}
+	assert.Equal(t, "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20|20", runScripts(t, `
+var keys = [], src = {};
+for (var n = 1; n <= 20; n++) { var k = "k" + "xyzw".repeat(5).slice(0, n - 1); keys.push(k); src[k] = n; }
+var o = JSON.parse(JSON.stringify(src)), p = JSON.parse(JSON.stringify(src)), m = new Map();
+for (var k of Object.keys(p)) m.set(k, p[k]);
+keys.map(function (k) { return o[k.slice(0, 1) + k.slice(1)] === m.get(k) ? o[k] : -1; }).join() + "|" + m.size`))
 }

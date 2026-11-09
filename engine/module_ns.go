@@ -31,14 +31,14 @@ func newNamespace(layout *nsLayout) (*Object, *moduleNamespace) {
 	o := &no.obj
 	o.shape = proxyShape
 	o.class = ClassProxy
-	o.internal = &no.ns
+	setData(o, kindNamespace, &no.ns)
 	return o, &no.ns
 }
 
 // nsOf returns the state of o when it is a namespace, which the caller
 // knows is of class ClassProxy.
 func nsOf(o *Object) *moduleNamespace {
-	ns, _ := o.internal.(*moduleNamespace)
+	ns := dataOf(o, kindNamespace)
 	return ns
 }
 

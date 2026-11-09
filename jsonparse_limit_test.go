@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/MoeForge/moejs"
 	"github.com/stretchr/testify/assert"
@@ -123,7 +124,7 @@ func TestMemoryLimitJSONParseLargeArray(t *testing.T) {
 				if api == "JSON.parse" {
 					assert.Equal(t, strconv.Itoa(c.n), v.String(), name)
 				}
-				held := int64(c.n) * 16 // the array's elements
+				held := int64(c.n) * int64(unsafe.Sizeof(moejs.Value{})) // the array's elements
 				assert.GreaterOrEqual(t, charged, 2*held, "%s: charged less than the stack and the array hold", name)
 				assert.LessOrEqual(t, charged, 2*held+held/4+(8<<20), "%s: charged more than the stack and the array hold", name)
 			} else {

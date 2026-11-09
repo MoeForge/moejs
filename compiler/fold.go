@@ -35,8 +35,10 @@ func (f *funcState) fold(e syntax.Expr) (constant, bool) {
 	switch e := e.(type) {
 	case *syntax.NumberLit:
 		return constant{kind: kNumber, num: e.Value}, true
-	case *syntax.StringLit:
-		return constant{kind: kString, str: e.Value}, true
+	case *syntax.StringLit, *syntax.TemplateLit:
+		if v, ok := stringLit(e); ok {
+			return constant{kind: kString, str: v}, true
+		}
 	case *syntax.BoolLit:
 		return constant{kind: kBool, b: e.Value}, true
 	case *syntax.NullLit:
@@ -100,6 +102,21 @@ func (f *funcState) fold(e syntax.Expr) (constant, bool) {
 		return last, true
 	}
 	return constant{}, false
+}
+
+// stringLit returns the value of a string literal or of a template
+// without substitutions, which evaluates to its text as a string literal
+// does: bundlers write `div` for "div".
+func stringLit(e syntax.Expr) (string, bool) {
+	switch e := e.(type) {
+	case *syntax.StringLit:
+		return e.Value, true
+	case *syntax.TemplateLit:
+		if len(e.Exprs) == 0 {
+			return e.Quasis[0].Cooked, true
+		}
+	}
+	return "", false
 }
 
 // foldChain folds a binary or logical expression, walking the left spine of
@@ -346,6 +363,33 @@ func containsAssign(e syntax.Expr) bool {
 			return false
 		}
 		return true
+	})
+	return found
+}
+
+// assigns reports whether evaluating e may assign to the register local b:
+// an assignment or update outside nested functions names b in its target
+// (bindings assigned from nested functions are captured and never live in
+// registers). Nothing else writes a register local: a direct eval makes
+// every binding it can reach captured, and a sloppy function's mapped
+// arguments object its parameters (package syntax); a with statement's
+// object cannot alias one, and an assignment of b's name inside the
+// statement, which may write b, names b.
+func assigns(e syntax.Expr, b *syntax.Binding) bool {
+	found := false
+	syntax.Inspect(e, func(n syntax.Node) bool {
+		if found {
+			return false
+		}
+		switch n := n.(type) {
+		case *syntax.AssignExpr:
+			found = mentions(n.Target, b)
+		case *syntax.UpdateExpr:
+			found = mentions(n.X, b)
+		case *syntax.Function:
+			return false
+		}
+		return !found
 	})
 	return found
 }

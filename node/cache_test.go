@@ -100,6 +100,9 @@ func TestCacheSwapRace(t *testing.T) {
 			swaps++
 		}
 	}()
+	// A failing check stops the swaps too, which would make later tests'
+	// openat2 calls race renames.
+	t.Cleanup(func() { stop.Store(true); wg.Wait() })
 	res := h.run(`
 	const seen = {};
 	const note = (k) => { seen[k] = (seen[k] || 0) + 1 };
@@ -114,7 +117,10 @@ func TestCacheSwapRace(t *testing.T) {
 			for (const r of all) {
 				if (r.status === "rejected") { note(r.reason.code); continue }
 				const v = r.value;
-				check(typeof v === "string" ? v : Array.isArray(v) ? (v.includes("sub") ? "in" : "OUTSIDE-OUTSIDE") : v.size);
+				// A listing of the root itself is inside it: openat2 can
+				// resolve a name another process swaps to the directory
+				// the resolution started from. Only secretdir holds s.txt.
+				check(typeof v === "string" ? v : Array.isArray(v) ? (v.includes("s.txt") ? "OUTSIDE-OUTSIDE" : "in") : v.size);
 			}
 		}
 	}
@@ -126,4 +132,37 @@ func TestCacheSwapRace(t *testing.T) {
 	for _, code := range []string{"EIO", "EBADF", "UNKNOWN"} {
 		require.False(t, strings.Contains(res, `"`+code+`"`), res)
 	}
+}
+
+// TestOpenRetriesRenames reads through a link up the tree, with every
+// descriptor opened anew, while another goroutine renames a file outside
+// the root as fast as it can: openat2 fails a resolution of ".." that a
+// rename anywhere in the system ran during with EAGAIN, which the package
+// retries and then sends the os.Root way, so every read succeeds.
+func TestOpenRetriesRenames(t *testing.T) {
+	base, root := outside(t)
+	writeTree(t, root, map[string]string{"a/x.txt": "x", "a/b/up": "->.."})
+	h := newHarness(t, node.Options{FS: &node.FSOptions{Root: root, NoDescriptorCache: true}})
+	var stop atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		p, q := filepath.Join(base, "r1"), filepath.Join(base, "r2")
+		_ = os.WriteFile(p, nil, 0o644)
+		for !stop.Load() {
+			_ = os.Rename(p, q)
+			_ = os.Rename(q, p)
+		}
+	}()
+	t.Cleanup(func() { stop.Store(true); wg.Wait() })
+	res := h.run(`
+	const seen = {};
+	for (let i = 0; i < 20000; i++) {
+		let k;
+		try { k = fs.readFileSync("a/b/up/x.txt", "utf8") } catch (e) { k = e.code }
+		seen[k] = (seen[k] || 0) + 1;
+	}
+	return seen`)
+	require.Equal(t, `{"x":20000}`, res)
 }

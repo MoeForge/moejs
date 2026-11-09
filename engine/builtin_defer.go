@@ -143,7 +143,7 @@ func installLateGlobals(r *Realm) {
 		}
 	}
 	r.Global.flags |= flagHasLazy
-	r.Global.internal = r
+	setExtData(r.Global, kindRealm, r)
 }
 
 // ensureLate defines the late binding key if this realm has yet to, which
@@ -238,9 +238,9 @@ func (r *Realm) defineColdGlobal(i int) {
 	}
 	if r.coldGlobals == 0 {
 		// A host's lazy properties may still be pending (lazyProps).
-		if lp, ok := g.internal.(*lazyProps); !ok || len(lp.defs) == 0 {
+		if lp, ok := extDataOk(g, kindLazyProps); !ok || len(lp.defs) == 0 {
 			g.flags &^= flagHasLazy
-			g.internal = nil
+			g.clearPayload()
 		}
 	}
 	if r.sharedIntrinsics {
@@ -374,14 +374,14 @@ func (r *Realm) installKeys(o *Object, t *keyTable) {
 	if !r.buildingShared {
 		o.mustBeMutable()
 		if r.boot == nil {
-			o.shape = newRootShape(o.proto)
+			o.shape = newRootShape(o.Proto())
 		} else {
 			if r.boot.nsRoot == nil {
-				r.boot.nsRoot = newRootShape(o.proto)
+				r.boot.nsRoot = newRootShape(o.Proto())
 			}
 			o.shape = r.boot.nsRoot
 		}
-		o.internal = &lazyKeys{r: r, t: t, pending: 1<<len(t.defs) - 1}
+		setExtData(o, kindLazyKeys, &lazyKeys{r: r, t: t, pending: 1<<len(t.defs) - 1})
 		o.flags |= flagHasLazy
 		return
 	}
@@ -423,7 +423,7 @@ func (lk *lazyKeys) resolve(o *Object, key PropertyKey) {
 			if lk.pending&(1<<i) != 0 {
 				lk.pending &^= 1 << i
 				if lk.pending == 0 {
-					o.internal = nil
+					o.clearPayload()
 					o.flags &^= flagHasLazy
 				}
 				o.addNamed(lk.r, key, lk.t.defs[i].cell(lk.r))
@@ -453,7 +453,7 @@ func (lk *lazyKeys) resolveAll(o *Object) {
 		o.slots = o.slots[:0]
 		r.bumpEpoch(o)
 	}
-	o.internal = nil
+	o.clearPayload()
 	o.flags &^= flagHasLazy
 	o.ReserveSlots(r, len(defs))
 	for i := range defs {

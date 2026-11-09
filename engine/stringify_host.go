@@ -31,7 +31,7 @@ func (r *Realm) protosLackToJSON(epoch *uint32) bool {
 	if op.flags&ap.flags&flagShared != 0 {
 		return true
 	}
-	if ap.proto != op {
+	if ap.Proto() != op {
 		return false
 	}
 	if *epoch == r.protoEpoch+1 {
@@ -55,14 +55,14 @@ func (r *Realm) protosLackToJSON(epoch *uint32) bool {
 // (in its shape or dictionary, or in a placeholder's map: a "toJSON" of a
 // map of strings or of string lists is never callable).
 func (r *Realm) lacksToJSON(o *Object, epoch *uint32) bool {
-	if o.proto != r.ObjectPrototype && o.proto != r.ArrayPrototype {
+	if o.Proto() != r.ObjectPrototype && o.Proto() != r.ArrayPrototype {
 		return false
 	}
-	if o.flags&flagHasLazy != 0 {
+	if o.hasLazy() {
 		if o.shape.key != hostSentinelKey || !r.protosLackToJSON(epoch) {
 			return false
 		}
-		if m, ok := o.internal.(map[string]any); ok {
+		if m, ok := o.payload().(map[string]any); ok {
 			if _, has := m["toJSON"]; has {
 				return false
 			}
@@ -73,7 +73,7 @@ func (r *Realm) lacksToJSON(o *Object, epoch *uint32) bool {
 		return false
 	}
 	if o.flags&flagDict != 0 {
-		_, has := o.dict.lookup(StringKey(AtomToJSON))
+		_, has := o.dictTable().lookup(StringKey(AtomToJSON))
 		return !has
 	}
 	_, _, has := o.shape.Lookup(StringKey(AtomToJSON))

@@ -154,7 +154,7 @@ func textEncoderEncode(r *Realm, this Value, args []Value) (Value, error) {
 	if err != nil {
 		return Undefined(), err
 	}
-	if _, _, err := r.encodeUTF8(o.internal.(*typedArray).viewed(), s); err != nil {
+	if _, _, err := r.encodeUTF8(dataOf(o, kindTypedArray).viewed(), s); err != nil {
 		return Undefined(), err
 	}
 	return ObjectValue(o), nil
@@ -178,7 +178,7 @@ func textEncoderEncodeInto(r *Realm, this Value, args []Value) (Value, error) {
 	}
 	var ta *typedArray
 	if args[1].IsObject() {
-		ta, _ = args[1].AsObject().internal.(*typedArray)
+		ta = dataOf(args[1].AsObject(), kindTypedArray)
 	}
 	if ta == nil || ta.kind != elemUint8 {
 		return Undefined(), r.TypeError("%s: the destination is not a Uint8Array", method)
@@ -396,10 +396,9 @@ func textDecoderConstruct(r *Realm, args []Value, newTarget *Object) (Value, err
 	do.dec.resetSequence()
 	o := &do.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassTextDecoder
 	o.flags = flagExtensible
-	o.internal = &do.dec
+	setData(o, kindTextDecoder, &do.dec)
 	return ObjectValue(o), nil
 }
 
@@ -408,7 +407,7 @@ func thisTextDecoder(r *Realm, this Value, method string) (*textDecoder, error) 
 	if err != nil {
 		return nil, err
 	}
-	return o.internal.(*textDecoder), nil
+	return dataOf(o, kindTextDecoder), nil
 }
 
 func textDecoderEncoding(r *Realm, this Value, args []Value) (Value, error) {

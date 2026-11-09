@@ -94,10 +94,20 @@ func (r *Realm) enqueue(jb job) {
 // measurements made between the jobs, which endJob clears. It leaves no job
 // queued and no object kept, and so clears r.jobsPending (a Go panic out of
 // the call before it runs leaves the call's jobs queued, and one out of a
-// job the jobs after it, for DropJobs).
+// job the jobs after it, for DropJobs). Then the array literal sites
+// observe and drop the results they hold (allocsite.go).
 //
 //go:noinline
 func (r *Realm) endJob(err error) error {
+	err = r.drainJobs(err)
+	if t := r.lazy.sites; t != nil && len(t.held) != 0 && !r.lazy.jobs.draining {
+		t.flush()
+	}
+	return err
+}
+
+// drainJobs is endJob but for the sites.
+func (r *Realm) drainJobs(err error) error {
 	j := r.lazy.jobs
 	if j.draining {
 		return err
@@ -216,13 +226,18 @@ func (r *Realm) dropJobs(reaction *promiseReaction, err error) {
 // have continued fail with err. A no-op inside a call, where the jobs are
 // the outermost call's. It also clears what a JSON.parse the panic stopped
 // left on the realm's kept stack (jsonStack), and the state of an async
-// function call a job the panic stopped had resumed (jobState.af).
+// function call a job the panic stopped had resumed (jobState.af), and
+// drops the results the array literal sites hold, as endJob would have
+// (allocsite.go).
 func (r *Realm) DropJobs(err error) {
 	if r.callDepth != 0 || r.lazy == nil {
 		return
 	}
 	if s := r.lazy.json; s != nil {
 		s.keep(s.vals[:cap(s.vals)], s.keys[:cap(s.keys)], 0)
+	}
+	if t := r.lazy.sites; t != nil {
+		t.flush()
 	}
 	if r.lazy.jobs == nil {
 		return

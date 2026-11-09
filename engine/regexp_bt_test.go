@@ -220,7 +220,9 @@ func TestRegExpEngineSelection(t *testing.T) {
 }
 
 // Subject-dependent fallbacks: an RE2 pattern runs a subject on the VM when
-// the subject has a character for which RE2 differs from JavaScript.
+// the subject has a character for which RE2 differs from JavaScript. The
+// native matcher, which reads those characters itself, runs both subjects;
+// RE2 runs a subject past its cap, which the test stands for by dropping it.
 func TestRegExpBacktrackSubjectFallback(t *testing.T) {
 	cases := []struct {
 		pattern, flags string
@@ -236,7 +238,13 @@ func TestRegExpBacktrackSubjectFallback(t *testing.T) {
 	for _, c := range cases {
 		r, cr := compileForTest(t, c.pattern, c.flags)
 		require.NotNil(t, cr.re, "/%s/%s", c.pattern, c.flags)
+		require.NotNil(t, cr.fastPaths().nat, "/%s/%s", c.pattern, c.flags)
 		var sub reSubject
+		for _, s := range []string{c.plain, c.special} {
+			r.initRegExpSubject(&sub, FromGoString(s), cr)
+			assert.True(t, sub.nat, "/%s/%s on %q runs natively", c.pattern, c.flags, s)
+		}
+		cr, _ = natOracles(cr) // compiled regexps are shared: a copy without nat
 		r.initRegExpSubject(&sub, FromGoString(c.plain), cr)
 		assert.False(t, cr.useBT(&sub), "/%s/%s on %q stays on RE2", c.pattern, c.flags, c.plain)
 		r.initRegExpSubject(&sub, FromGoString(c.special), cr)
@@ -244,6 +252,7 @@ func TestRegExpBacktrackSubjectFallback(t *testing.T) {
 	}
 	// Without m, i+u or u those characters change nothing.
 	r, cr := compileForTest(t, `^b`, "")
+	cr, _ = natOracles(cr)
 	var sub reSubject
 	r.initRegExpSubject(&sub, FromGoString("a\rb"), cr)
 	assert.False(t, cr.useBT(&sub))

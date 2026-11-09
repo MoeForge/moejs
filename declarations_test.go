@@ -2,11 +2,14 @@ package moejs_test
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/compiler"
+	"github.com/MoeForge/moejs/syntax"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,6 +66,9 @@ func TestManyDeclarations(t *testing.T) {
 		{name: "property names", src: "(function (o) {" + repeatN(n, func(i string) string { return "o.p" + i + " = 1;" }) + "})({})", err: "SyntaxError: function needs more than 65536 constants"},
 		{name: "object literal", src: "Object.keys({" + repeatN(n, func(i string) string { return "p" + i + ": 0," }) + "}).length", err: "SyntaxError: function needs more than 65536 constants"},
 		{name: "object literal of 60000", src: "Object.keys({" + repeatN(60000, func(i string) string { return "p" + i + ": 0," }) + "}).length", want: "60000"},
+		// Room for the literals' names, a constant each, not for their
+		// key runs.
+		{name: "object literals after 65000 strings", src: "(function () { var s;" + repeatN(65000, func(i string) string { return "s = 's" + i + "';" }) + repeatN(200, func(i string) string { return "s = {a: 1, b: 2, k" + i + ": 3};" }) + "return Object.keys(s).join(); })()", want: "a,b,k199"},
 		{name: "switch", src: "(function (x) { switch (x) {" + repeatN(n, func(i string) string { return "case " + strconv.Itoa(len(i)) + ": x++;" }) + "} })(1)", err: "SyntaxError: jump offset out of range (a jump over more than 32767 instructions)"},
 		{name: "array literal", src: "[" + strings.Repeat("0,", n) + "].length", want: strconv.Itoa(n)},
 		{name: "array literal of numbers", src: "[" + repeatN(n, func(i string) string { return i + "," }) + "].length", err: "SyntaxError: function needs more than 65536 constants"},
@@ -161,4 +167,61 @@ func TestManyDeclarations(t *testing.T) {
 			assert.ErrorContains(t, err, c.err)
 		}
 	})
+}
+
+// TestObjectLiteralKeySets runs a generated data module: one function of
+// 15,000 object literals whose five keys are one of over 1,000 orders of
+// 30 names. Its literals share a run of key constants per order, so the
+// function takes a few thousand constants where a run per literal would
+// take 75,000; Object.keys and JSON.stringify give each object's keys in
+// its literal's order.
+func TestObjectLiteralKeySets(t *testing.T) {
+	names := strings.Fields("id name type value title label kind size width height color url path mode status code message count index key group role owner tags created updated version source target extra")
+	var src, keys, js strings.Builder
+	src.WriteString("var rows = [")
+	sets := map[string]bool{}
+	for i := range 15000 {
+		// Literal i's keys: five of the names, drawn from a seed of i % 1201.
+		x := uint32(i%1201)*2654435761 + 1
+		var ks []string
+		for len(ks) < 5 {
+			x = x*1103515245 + 12345
+			if k := names[(x>>16)%30]; !slices.Contains(ks, k) {
+				ks = append(ks, k)
+			}
+		}
+		sets[strings.Join(ks, ",")] = true
+		if i > 0 {
+			keys.WriteByte(';')
+			js.WriteByte(',')
+		}
+		src.WriteByte('{')
+		js.WriteByte('{')
+		for k, name := range ks {
+			v := strconv.Itoa(i + k)
+			if k > 0 {
+				src.WriteString(", ")
+				js.WriteByte(',')
+			}
+			src.WriteString(name + ": " + v)
+			js.WriteString(strconv.Quote(name) + ":" + v)
+		}
+		src.WriteString("},\n")
+		js.WriteByte('}')
+		keys.WriteString(strings.Join(ks, ","))
+	}
+	src.WriteString("]; rows.map(function (r) { return Object.keys(r).join(); }).join(';') + '|' + JSON.stringify(rows)")
+	require.Greater(t, len(sets), 1000)
+
+	sc, err := syntax.ParseScript("rows.js", src.String(), syntax.Options{})
+	require.NoError(t, err)
+	fn, err := compiler.CompileScript(sc)
+	require.NoError(t, err)
+	assert.Less(t, len(fn.Consts), 5*len(sets)+len(names)+100)
+
+	s, err := moejs.CompileScript("rows.js", src.String())
+	require.NoError(t, err)
+	v, err := moejs.NewRuntime(moejs.Options{}).RunScript(s)
+	require.NoError(t, err)
+	assert.True(t, v.String() == keys.String()+"|["+js.String()+"]", "Object.keys or JSON.stringify differs")
 }

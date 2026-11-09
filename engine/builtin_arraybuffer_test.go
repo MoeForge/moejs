@@ -253,16 +253,16 @@ export const src = new ArrayBuffer(M);
 export function move() { return src.transfer(); }`, RealmOptions{})
 	for name, want := range map[string]int{"a": 16, "b": 0, "c": 16, "d": 16} {
 		v, _ := fx.env.GetBindingValue(name)
-		data := v.AsObject().internal.(*arrayBuffer).data
+		data := extDataOf(v.AsObject(), kindArrayBuffer).data
 		assert.Equal(t, want, len(data), name)
 		assert.Equal(t, want, cap(data), name)
 	}
 	sv, _ := fx.env.GetBindingValue("src")
-	first := &sv.AsObject().internal.(*arrayBuffer).data[0]
+	first := &extDataOf(sv.AsObject(), kindArrayBuffer).data[0]
 	fn, _ := fx.env.GetBindingValue("move")
 	moved, err := fx.r.Call(fn, Undefined(), nil)
 	require.NoError(t, err)
-	assert.Same(t, first, &moved.AsObject().internal.(*arrayBuffer).data[0], "a same-length transfer moves the backing array")
+	assert.Same(t, first, &extDataOf(moved.AsObject(), kindArrayBuffer).data[0], "a same-length transfer moves the backing array")
 }
 
 // TestDetachArrayBuffer checks the host hook ($262.detachArrayBuffer): the

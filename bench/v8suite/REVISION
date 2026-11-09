@@ -1,0 +1,13 @@
+d2ddc6ce1ce4f8d90606864615543708d1cfa3fd
+# mozilla/arewefastyet, benchmarks/v8-v7: the V8 benchmark suite, version 7.
+# fetch.sh downloads these files at the commit above and checks them.
+ac383759c3cbf5f3a499ade526a4e296f7925733d8c3889b6d5840ce6867ff51  base.js
+11ef403ccc064bccf8230542510fdf2fce0bf09379e05badf5e01663b3d2a576  run.js
+d86eac4108343a54ba6e10621a77b46f82f554c3b0a46e8fb4032d5cf65a2a11  richards.js
+74b5a95f4877701073c6efef08e4ae306562747067e292925b69cbd629a511b9  deltablue.js
+d8b885eadc8be11c28f79543876beaa85bd70c71cfd5265c020005f43b59f48a  crypto.js
+d52183ca324cdb88d9ee3e78326433fe2ca28d6436f0a6c3ec013ab67cb798eb  raytrace.js
+7bfa888839dee0939798d0f5da251f0ecb30fc5ea2ee52747b4adc5b0386e6ad  earley-boyer.js
+f04a1b4817e5d687363e99d941cc78de9b29b722b46cc034d877f59a269bdfdf  regexp.js
+1f875cec579d03af40d256ceaeb6823f3ef16c883652650ca51d183472a8185d  splay.js
+ce241465ffeee77b5c4f7119f522aa971fe1fe92c3aed76f7514ea43e07fec84  navier-stokes.js

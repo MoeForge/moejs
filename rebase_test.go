@@ -3,6 +3,7 @@ package moejs_test
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -467,7 +468,9 @@ func TestMemoryLimitBuiltinResults(t *testing.T) {
 	const limit = 32 << 20
 	var b strings.Builder
 	b.WriteString("[")
-	for i := range 400000 {
+	// Values are smaller on 32-bit systems: twice the objects pass the
+	// limit there too.
+	for i := range 400000 * 64 / strconv.IntSize {
 		if i > 0 {
 			b.WriteString(",")
 		}
@@ -578,7 +581,8 @@ func TestMemoryLimitGarbageInBuiltinCallbacks(t *testing.T) {
 		}
 		before := rt.Stats().AllocatedBytes
 		require.NoError(t, rt.RebaseAllocation(nil))
-		_, err := rt.Call(mustHook(t, mod, "run"), moejs.String(kind), moejs.Int(3))
+		// Twice the calls on 32-bit systems, whose values are smaller.
+		_, err := rt.Call(mustHook(t, mod, "run"), moejs.String(kind), moejs.Int(3*64/strconv.IntSize))
 		st := rt.Stats()
 		t.Logf("%-15s %v: %d MiB allocated, live %d MiB", kind, err, (st.AllocatedBytes-before)>>20, st.LiveBytes>>20)
 		assert.NoError(t, err, "%s: garbage made in callbacks", kind)
@@ -628,7 +632,13 @@ func TestMemoryLimitBuildersPastLimit(t *testing.T) {
 			require.NoError(t, rt.SetGlobal("text", text))
 		}
 		require.NoError(t, rt.SetGlobal("build", moejs.NativeFunc(buildObjects)))
-		s, err := moejs.CompileScript("build.js", c.src)
+		src := c.src
+		if c.host {
+			// Twice the objects on 32-bit systems, whose values are
+			// smaller, so that the host's value comes back past the limit.
+			src = strings.ReplaceAll(src, "700000", strconv.Itoa(700000*64/strconv.IntSize))
+		}
+		s, err := moejs.CompileScript("build.js", src)
 		require.NoError(t, err)
 		_, err = rt.RunScript(s)
 		if c.host {

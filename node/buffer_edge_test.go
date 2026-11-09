@@ -3,6 +3,7 @@ package node_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -190,6 +191,50 @@ func TestBufferEdgeMemory(t *testing.T) {
 			}
 			t.Logf("out=%q err=%v | TotalAlloc +%d MiB, HeapSys %d MiB, memlimit=%v", out, err, (after.TotalAlloc-before.TotalAlloc)>>20, after.HeapSys>>20, errors.Is(err, moejs.ErrMemoryLimit))
 		})
+	}
+}
+
+// TestBufferBase64MemoryLimit: the bytes Buffer.from decodes from base64
+// and the strings toString encodes are charged, so 300 kept results of
+// about 1 MB do not fit a 32 MB limit.
+func TestBufferBase64MemoryLimit(t *testing.T) {
+	for _, c := range []struct{ input, result string }{
+		{`"QUFB".repeat(1 << 18)`, `Buffer.from(big, "base64")`},
+		{`"QUFB".repeat(1 << 18)`, `Buffer.from(big, "base64url")`},
+		{`"QUFB QUFB ".repeat(1 << 17)`, `Buffer.from(big, "base64")`},
+		{`Buffer.alloc(3 << 18, 0xe9)`, `big.toString("base64")`},
+		{`Buffer.alloc(3 << 18, 0xe9)`, `big.toString("base64url")`},
+	} {
+		t.Run(c.input+" "+c.result, func(t *testing.T) {
+			_, err := edgeEval(t, moejs.Options{MemoryLimit: 32 << 20}, `const big = `+c.input+`; const keep = [];
+for (let i = 0; i < 300; i++) keep.push(`+c.result+`)
+keep.length`)
+			require.True(t, errors.Is(err, moejs.ErrMemoryLimit), "300 results of about 1 MB fit a 32 MB limit: %v", err)
+		})
+	}
+}
+
+// TestBufferOffsetsPastInt32 checks offsets and lengths above 2**31,
+// past an int on 32-bit systems: they compare as Node.js's do, and those
+// past Number.MAX_SAFE_INTEGER fail with its RangeError, not a wrap.
+func TestBufferOffsetsPastInt32(t *testing.T) {
+	const safeErr = `RangeError ERR_OUT_OF_RANGE: The value of "%s" is out of range. It must be >= 0 && <= 9007199254740991. Received 9_007_199_254_740_992`
+	for _, c := range []struct{ src, want string }{
+		{`b.compare(b, 2**31)`, "1"},
+		{`b.compare(b, 2**32)`, "1"},
+		{`b.compare(b, 2**53 - 1)`, "1"},
+		{`b.compare(b, 0, 6, 2**32 + 1)`, "-1"},
+		{`b.compare(b, 2**32, 6, 2**32)`, "0"},
+		{`b.compare(b, 2**53)`, fmt.Sprintf(safeErr, "targetStart")},
+		{`b.compare(b, 0, 6, 2**53)`, fmt.Sprintf(safeErr, "sourceStart")},
+		{`Buffer.concat([b], 2**31).length`, "RangeError undefined: Array buffer allocation failed"},
+		{`Buffer.concat([b], 2**32).length`, "RangeError undefined: Array buffer allocation failed"},
+		{`Buffer.concat([b], 2**53).length`, fmt.Sprintf(safeErr, "length")},
+	} {
+		src := `(() => { const b = Buffer.from("abcdef"); try { return String(` + c.src + `) } catch (e) { return e.name + " " + e.code + ": " + e.message } })()`
+		out, err := edgeEval(t, moejs.Options{}, src)
+		require.NoError(t, err, c.src)
+		require.Equal(t, c.want, out, c.src)
 	}
 }
 

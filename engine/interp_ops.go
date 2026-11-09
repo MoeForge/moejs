@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"slices"
+	"unsafe"
+
 	"github.com/MoeForge/moejs/bytecode"
 )
 
@@ -13,8 +16,8 @@ import (
 // the name constant index.
 func (r *Realm) tdzError(meta *funcMeta, x uint32) error {
 	name := "binding"
-	if int(x) < len(meta.names) && meta.names[x] != nil {
-		name = meta.names[x].GoString()
+	if s := meta.constName(x); s != nil {
+		name = s.GoString()
 	}
 	if name == "%this" { // a derived constructor's `this` before super()
 		return r.ReferenceError(errSuperNotCalled)
@@ -30,6 +33,26 @@ func (r *Realm) tdzError(meta *funcMeta, x uint32) error {
 // key (or deferred install) on the holder and none on another object of
 // o's shape (noFill, refuseFill). An accessor gets an accessor entry (odd
 // Epoch).
+//
+// When no object on the chain has key, it records that (icAbsent), under
+// the same conditions on the whole chain and three more. The key is not
+// `length`, which an array or a String object answers outside its shape,
+// and either can come to have the shape of an ordinary object
+// (setPrototypeOf). Neither o nor a prototype is a proxy (a module
+// namespace is one too): a proxy has a shape of its own, but it answers
+// every key with its trap and ends a chain, as its prototype is nil. And o
+// defines nothing lazily: such an object keeps a shape no other object
+// has, and getNamedSlow checks it on every hit as well. A typed array, a
+// String object and a mapped arguments object answer only indices and
+// numeric strings outside their shapes, which no entry caches; the global
+// object's pending globals are lazy definitions, as are a host object's
+// properties. The entry stays valid while the realm's protoEpoch does:
+// an add, a deletion, a change of attributes or of the prototype, and a
+// lazy definition on any prototype advance it (bumpEpoch), and on o they
+// change its shape. An absent entry does not replace one that is valid for
+// another shape: a site that reads a key some of its receivers have and
+// others lack keeps the entry of the ones that have it, as before absent
+// entries, and does not refill at each change of shape.
 func (r *Realm) fillGetIC(e *ICEntry, o *Object, key PropertyKey) {
 	// typedArrayKey covers the indices and the numeric strings: a typed
 	// array answers those without its shape, and shares its root shapes with
@@ -41,8 +64,8 @@ func (r *Realm) fillGetIC(e *ICEntry, o *Object, key PropertyKey) {
 		return
 	}
 	depth := 0
-	for holder := o; holder != nil; holder = holder.proto {
-		if holder.flags&flagDict != 0 || depth > 255 {
+	for holder := o; holder != nil; holder = holder.Proto() {
+		if holder.flags&flagDict != 0 || holder.class == ClassProxy || depth > 255 {
 			return
 		}
 		if key == lengthKey && (holder.class == ClassArray || holder.class == ClassString) {
@@ -65,17 +88,44 @@ func (r *Realm) fillGetIC(e *ICEntry, o *Object, key PropertyKey) {
 		}
 		depth++
 	}
+	if key != lengthKey && o.flags&flagHasLazy == 0 && (e.Shape == nil || e.Shape == o.shape || e.Epoch|1 != r.protoEpoch|1) {
+		*e = ICEntry{Shape: o.shape, Epoch: r.protoEpoch | 1, loc: icAbsent}
+	}
 }
+
+// icAbsent is the location of an entry recording that no object on the
+// receiver's chain has the key, so that [[Get]] returns undefined. Its
+// epoch is odd, as an accessor entry's: it fails the data check on the
+// interpreter's hit path, and the slow paths answer it (oddIC). Slot and
+// depth are both out of range, so no path can take it for a set entry:
+// setNamedAdd wants an even epoch, accessorIC passes over it.
+const icAbsent = 0xFFFFFFFF
 
 // accessorIC returns the accessor e caches for receivers shaped like o, or
 // nil when e is not a valid accessor entry. The accessor is read from its
 // slot on every hit: redefining a getter or setter with the same attributes
 // replaces the slot value without changing any shape.
 func (r *Realm) accessorIC(e *ICEntry, o *Object) *Accessor {
-	if o.shape == e.Shape && r.protoEpoch|1 == e.Epoch {
+	if o.shape == e.Shape && r.protoEpoch|1 == e.Epoch && e.loc != icAbsent {
 		return e.Holder(o).slots[e.Slot()].asAccessor()
 	}
 	return nil
+}
+
+// oddIC answers a get through e, an entry with an odd epoch that is valid
+// for o: an accessor entry calls the getter its slot holds, an absent
+// entry gives undefined unless o defines properties lazily. ok is false
+// when the caller must take the generic path, as for a slot that holds no
+// accessor (accessorIC).
+func (r *Realm) oddIC(e *ICEntry, o *Object, receiver Value) (v Value, ok bool, err error) {
+	if e.loc != icAbsent {
+		if a := e.Holder(o).slots[e.Slot()].asAccessor(); a != nil {
+			v, err = r.callGetter(a, receiver)
+			return v, true, err
+		}
+		return Undefined(), false, nil
+	}
+	return Undefined(), o.flags&flagHasLazy == 0, nil
 }
 
 // callGetter calls the getter of a with receiver as this.
@@ -108,8 +158,13 @@ func (r *Realm) callSetter(a *Accessor, receiver Value, key PropertyKey, v Value
 
 // getNamedSlow is [[Get]] of an interned key on an object with IC fill.
 func (r *Realm) getNamedSlow(o *Object, receiver Value, key PropertyKey, e *ICEntry) (Value, error) {
-	if a := r.accessorIC(e, o); a != nil {
-		return r.callGetter(a, receiver)
+	if o.shape == e.Shape && r.protoEpoch|1 == e.Epoch {
+		if v, ok, err := r.oddIC(e, o, receiver); ok {
+			return v, err
+		}
+	}
+	if v, ok, err := r.getFillIC(e, o, receiver, key); ok {
+		return v, err
 	}
 	v, err := o.Get(r, key, receiver)
 	if err != nil {
@@ -119,19 +174,102 @@ func (r *Realm) getNamedSlow(o *Object, receiver Value, key PropertyKey, e *ICEn
 	return v, nil
 }
 
+// getFillIC is getNamedSlow's [[Get]] on a chain fillGetIC fills an entry
+// for: it finds the property once, fills e as fillGetIC does and reads the
+// property as a hit on e would, where [[Get]] and then fillGetIC walked the
+// chain twice, on every miss of a site that sees several shapes. ok is
+// false where fillGetIC might fill no entry, and the caller takes the
+// generic path.
+func (r *Realm) getFillIC(e *ICEntry, o *Object, receiver Value, key PropertyKey) (v Value, ok bool, err error) {
+	if o.flags&flagDict != 0 || o.shape.noFill != 0 || typedArrayKey(key) {
+		return Undefined(), false, nil
+	}
+	depth := 0
+	for holder := o; holder != nil; holder = holder.Proto() {
+		if holder.flags&flagDict != 0 || holder.class == ClassProxy || depth > 255 ||
+			key == lengthKey && (holder.class == ClassArray || holder.class == ClassString) {
+			return Undefined(), false, nil
+		}
+		if holder.flags&flagHasLazy != 0 && holder.lazyPending(key) {
+			// A property defined lazily is defined first, and the read goes
+			// on at holder, as [[Get]] does. The definition may have changed
+			// the chain (a prototype below holder, a property it added on
+			// the way), so the entry is filled from the chain as it is now.
+			if !holder.resolveLazy(key) {
+				return Undefined(), false, nil
+			}
+			if v, err = holder.Get(r, key, receiver); err == nil {
+				r.fillGetIC(e, o, key)
+			}
+			return v, true, err
+		}
+		slot, attrs, found := holder.shape.Lookup(key)
+		if !found {
+			depth++
+			continue
+		}
+		if attrs&attrLazy != 0 {
+			return Undefined(), false, nil
+		}
+		if attrs&attrAccessor == 0 {
+			*e = newICEntry(o.shape, r.protoEpoch, slot, uint8(depth))
+			return holder.slots[slot], true, nil
+		}
+		a := holder.slots[slot].asAccessor()
+		if a == nil {
+			return Undefined(), false, nil
+		}
+		*e = newICEntry(o.shape, r.protoEpoch|1, slot, uint8(depth))
+		v, err = r.callGetter(a, receiver)
+		return v, true, err
+	}
+	if key != lengthKey && o.flags&flagHasLazy == 0 && (e.Shape == nil || e.Shape == o.shape || e.Epoch|1 != r.protoEpoch|1) {
+		*e = ICEntry{Shape: o.shape, Epoch: r.protoEpoch | 1, loc: icAbsent}
+	}
+	return Undefined(), true, nil
+}
+
 // getStringProp reads a named property of a string primitive and caches the
 // String.prototype lookup. The entry is sound for object receivers too: a
 // receiver whose shape equals String.prototype's finds the property at the
 // same slot and depth.
 func (r *Realm) getStringProp(v Value, key PropertyKey, e *ICEntry) (Value, error) {
-	if a := r.accessorIC(e, r.StringPrototype); a != nil {
-		return r.callGetter(a, v)
+	if sp := r.StringPrototype; r.polyMiss(e, sp.shape) {
+		p := r.polyTable().find(r.icSite(e))
+		if p != nil {
+			if p.mega {
+				return r.getStringMono(v, key, e)
+			}
+			for i := range p.w {
+				if w := &p.w[i]; w.Shape == sp.shape {
+					*e, *w = *w, *e
+					p.hits++
+					if e.Epoch == r.protoEpoch {
+						return e.Holder(sp).slots[e.Slot()], nil
+					}
+					return r.getStringMono(v, key, e)
+				}
+			}
+		}
+		return r.getStringPoly(v, key, e, p)
+	}
+	return r.getStringMono(v, key, e)
+}
+
+// getStringMono is getStringProp on the entry e for String.prototype's
+// shape.
+func (r *Realm) getStringMono(v Value, key PropertyKey, e *ICEntry) (Value, error) {
+	sp := r.StringPrototype
+	if sp.shape == e.Shape && r.protoEpoch|1 == e.Epoch {
+		if res, ok, err := r.oddIC(e, sp, v); ok {
+			return res, err
+		}
 	}
 	res, err := r.GetV(v, key)
 	if err != nil {
 		return Undefined(), err
 	}
-	r.fillGetIC(e, r.StringPrototype, key)
+	r.fillGetIC(e, sp, key)
 	return res, nil
 }
 
@@ -169,23 +307,20 @@ const icAdd = 0xFF
 
 // setNamedAdd performs OrdinarySet of key on o when it adds key as a data
 // property of o, an ordinary extensible shape-mode object that is no
-// prototype: o has no property key, and nothing on the prototype chain has
-// it or could answer it (a proxy, a typed array, a pending lazy property).
-// It reports whether it did. The add from o's shape that e records skips the
-// checks: the epoch proves that no prototype changed since the add e
-// records, and the shape that o has the same prototype and lacks key.
+// prototype (addsTo): o has no property key, and the prototype chain
+// leaves the write to o (protoChainAdds). It reports whether it did. The
+// add from o's shape that e records skips the checks (addIC): the epoch
+// proves that no prototype changed since the add e records, and the shape
+// that o has the same prototype and lacks key.
 func (r *Realm) setNamedAdd(o *Object, key PropertyKey, v Value, e *ICEntry) bool {
-	if o.flags&(flagExtensible|flagDict|flagHasLazy|flagIsPrototype|flagShared) != flagExtensible ||
-		o.class == ClassArray || o.class == ClassString || o.class == ClassTypedArray || o.class == ClassProxy {
+	if s := e.Shape; s != nil && s.parent == o.shape && r.addIC(o, key, v, e) {
+		return true
+	}
+	if !addsTo(o) {
 		return false
 	}
 	before := o.shape
-	if s := e.Shape; s != nil && s.parent == before && e.Epoch == r.protoEpoch && e.HolderDepth() == icAdd && s.key == key {
-		o.shape = s
-		o.slots = append(o.slots, v)
-		return true
-	}
-	if before.noFill != 0 || before.has(key) || !protoChainLacks(o.proto, key) {
+	if before.noFill != 0 || before.has(key) || !protoChainAdds(o.Proto(), key) {
 		return false
 	}
 	o.addNamed(r, key, propCell{value: v, attrs: attrDefault})
@@ -197,17 +332,52 @@ func (r *Realm) setNamedAdd(o *Object, key PropertyKey, v Value, e *ICEntry) boo
 	return true
 }
 
-// protoChainLacks reports whether no object on the prototype chain from p
-// has key or could answer it other than with an own property: a proxy runs
-// its trap, a typed array answers numeric keys, a pending lazy definition
-// of key would define it.
-func protoChainLacks(p *Object, key PropertyKey) bool {
-	for ; p != nil; p = p.proto {
+// addsTo reports whether setNamedAdd may add to o: an ordinary extensible
+// shape-mode object that is no prototype.
+func addsTo(o *Object) bool {
+	return o.flags&(flagExtensible|flagDict|flagHasLazy|flagIsPrototype|flagShared) == flagExtensible &&
+		o.class != ClassArray && o.class != ClassString && o.class != ClassTypedArray && o.class != ClassProxy
+}
+
+// addIC performs the add of key to o that e records from o's shape
+// (setNamedAdd) and reports whether it did. Its callers test that e's
+// shape follows o's first, without the call, which a site that sees
+// several shapes misses on.
+func (r *Realm) addIC(o *Object, key PropertyKey, v Value, e *ICEntry) bool {
+	s := e.Shape
+	if e.Epoch != r.protoEpoch || e.HolderDepth() != icAdd || s.key != key || !addsTo(o) {
+		return false
+	}
+	o.shape = s
+	if len(o.slots) == cap(o.slots) {
+		o.growSlots(r)
+	}
+	o.slots = append(o.slots, v)
+	return true
+}
+
+// protoChainAdds reports whether OrdinarySet of key on an object whose
+// prototype is p reaches the receiver's own definition of key: the first
+// object on the chain from p that has key has it as a writable data
+// property, or none has it, and none before it could answer the write
+// otherwise (a proxy runs its trap, a typed array answers numeric keys, a
+// pending lazy definition of key would define it). An array's length is
+// never cached: making it read-only sets a bit, which bumps no epoch.
+//
+// A cached add depends on the chain's own properties of key and their
+// attributes, and on the chain itself: every change to them changes a
+// prototype's shape, attributes or [[Prototype]], which bumps the realm's
+// protoEpoch (bumpEpoch), and the entry's epoch no longer matches.
+func protoChainAdds(p *Object, key PropertyKey) bool {
+	for ; p != nil; p = p.Proto() {
 		if p.class == ClassProxy || p.class == ClassTypedArray || p.flags&flagHasLazy != 0 && p.lazyPending(key) {
 			return false
 		}
-		if _, ok := p.getOwnCell(key); ok {
+		if key == lengthKey && p.class == ClassArray {
 			return false
+		}
+		if c, ok := p.getOwnCell(key); ok {
+			return c.attrs&(attrAccessor|attrWritable) == attrWritable
 		}
 	}
 	return true
@@ -230,7 +400,7 @@ func (r *Realm) fillSetIC(e *ICEntry, o *Object, key PropertyKey) {
 		// The assignment went to a setter: cache it like a get would.
 		var t ICEntry
 		r.fillGetIC(&t, o, key)
-		if t.Epoch&1 != 0 && t.Holder(o).slots[t.Slot()].asAccessor().Set != nil {
+		if t.Epoch&1 != 0 && t.loc != icAbsent && t.Holder(o).slots[t.Slot()].asAccessor().Set != nil {
 			*e = t
 		}
 		return
@@ -265,8 +435,12 @@ func (r *Realm) getGlobalSlow(key PropertyKey, e *ICEntry, orUndef bool) (Value,
 	return r.getNamedSlow(g, ObjectValue(g), key, e)
 }
 
-// setGlobalSlow assigns to a declared global (strict mode rejects new ones).
+// setGlobalSlow assigns to a declared global (strict mode rejects new ones);
+// in a function that is not strict, it is setGlobalSloppy.
 func (r *Realm) setGlobalSlow(key PropertyKey, v Value, e *ICEntry) error {
+	if !r.frameStrict() {
+		return r.setGlobalSloppy(key, v, e)
+	}
 	g := r.Global
 	if a := r.accessorIC(e, g); a != nil {
 		return r.callSetter(a, ObjectValue(g), key, v)
@@ -292,7 +466,7 @@ func (r *Realm) setGlobalSlow(key PropertyKey, v Value, e *ICEntry) error {
 // differ, or see that there are two. (A compound assignment runs the read's
 // and the write's pairs, one call more than the spec's.)
 func (r *Realm) globalStillExists(g *Object, key PropertyKey) error {
-	for p := g.proto; p != nil; p = p.proto {
+	for p := g.Proto(); p != nil; p = p.Proto() {
 		if p.class != ClassProxy {
 			continue
 		}
@@ -410,7 +584,7 @@ func (r *Realm) getElemSlow(o, k Value) (Value, error) {
 	if o.IsString() && k.IsNumber() {
 		s := o.AsString()
 		if i, ok := k.IsArrayIndex(); ok {
-			if int(i) < s.Len() {
+			if int64(i) < int64(s.Len()) {
 				return StringValue(charString(s.At(int(i)))), nil
 			}
 			return Undefined(), nil
@@ -426,7 +600,10 @@ func (r *Realm) getElemSlow(o, k Value) (Value, error) {
 	return r.GetV(o, key)
 }
 
-// setElemSlow is the generic strict computed property write.
+// setElemSlow is run's SetElem past its fast paths, the generic computed
+// property write: strict, or ignoring a rejected assignment as
+// setElemSloppy does when the innermost frame's function is not strict,
+// as the compiler emits SetElem in sloppy code too.
 func (r *Realm) setElemSlow(o, k, v Value) error {
 	if o.IsNullish() {
 		return r.TypeError("Cannot set properties of %s (setting '%s')", o.String(), k.String())
@@ -438,7 +615,25 @@ func (r *Realm) setElemSlow(o, k, v Value) error {
 	if err != nil {
 		return err
 	}
+	if o.IsObject() {
+		// Strictness matters only once the write is rejected.
+		obj := o.AsObject()
+		ok, err := obj.Set(r, key, v, o)
+		if err == nil && !ok && r.frameStrict() {
+			err = r.readOnlyError(obj, key)
+		}
+		return err
+	}
+	if !r.frameStrict() {
+		return r.setVSloppy(o, key, v)
+	}
 	return r.SetV(o, key, v)
+}
+
+// frameStrict reports whether the innermost frame's function is strict.
+func (r *Realm) frameStrict() bool {
+	st := &r.interp
+	return st.frames[st.nframes-1].fn.funcData().code.Strict
 }
 
 // deleteSlow implements the strict `delete` operator for base and key values.
@@ -557,75 +752,13 @@ func (r *Realm) compareSlow(op bytecode.Op, x, y Value) (bool, error) {
 
 // --- calls ------------------------------------------------------------------------
 
-// callValue calls fn with this and args (which may alias the register
-// stack). Bytecode callees enter a new frame directly; natives are invoked
-// in place. The frame of an ordinary call (every parameter passed, no rest
-// parameter, arguments object or captured binding, room in the register
-// stack and frame table, its inline caches bound, no interrupt pending) is
-// set up here, one call fewer per JavaScript call; enterFrame takes the
-// others.
-func (r *Realm) callValue(fn Value, this Value, args []Value) (Value, error) {
-	if !fn.IsObject() || fn.AsObject().class != ClassFunction {
-		if IsCallable(fn) { // a callable proxy
-			return r.CallObject(fn.AsObject(), this, args)
-		}
-		return Undefined(), r.calleeError(fn, "is not a function")
-	}
-	o := fn.AsObject()
-	fd := o.internal.(*FunctionData)
-	if r.callDepth >= MaxCallDepth {
-		return Undefined(), r.RangeError("Maximum call stack size exceeded")
-	}
-	r.callDepth++
-	var (
-		res Value
-		err error
-	)
-	switch fd.kind {
-	case FuncBytecode:
-		code := fd.code
-		st := &r.interp
-		base := st.sp
-		top := base + int(code.NumRegs)
-		np := int(code.NumParams)
-		fi := st.nframes
-		if !fd.plain || r.interruptFlag.Load() != 0 || fd.icBase == icUnbound || top > len(st.stack) || len(args) < np || fi == len(st.frames) {
-			res, err = r.enterFrame(o, fd, this, args)
-			break
-		}
-		regs := st.stack[base:top:top]
-		dst, src := regs[:np], args[:np]
-		for i := range src {
-			dst[i] = src[i]
-		}
-		if code.Kind == bytecode.KindArrow {
-			this = fd.thisValue
-		}
-		st.frames[fi] = frameInfo{fn: o, base: uint32(base)}
-		st.nframes = fi + 1
-		st.sp = top
-		res, err = r.run(fi, fd, base, fd.env, this, o)
-		st.sp = base
-		st.nframes = fi
-	case FuncNative:
-		res, err = fd.native(r, this, args)
-		if r.interruptFlag.Load() == flagMeasure && err == nil {
-			err = r.measureAfterCall(res)
-		}
-	default:
-		res, err = r.callOther(fd, this, args)
-	}
-	r.callDepth--
-	return res, err
-}
-
 // constructValue implements `new fn(...args)`.
 func (r *Realm) constructValue(fn Value, args []Value) (Value, error) {
 	if !IsConstructor(fn) {
 		return Undefined(), r.calleeError(fn, "is not a constructor")
 	}
 	o := fn.AsObject()
-	fd := o.internal.(*FunctionData)
+	fd := o.funcData()
 	if r.callDepth >= MaxCallDepth {
 		return Undefined(), r.RangeError("Maximum call stack size exceeded")
 	}
@@ -647,6 +780,55 @@ func (r *Realm) constructValue(fn Value, args []Value) (Value, error) {
 	return res, err
 }
 
+// constructAt is constructValue for run's New w, whose arguments are the
+// argc = B registers from the stack's hb. One the compiler marked
+// bytecode.CallOverlap enters an ordinary function's frame at hb, as
+// callAt does a call's (enterAt); the others, and every other kind of
+// constructor, take constructValue's paths.
+func (r *Realm) constructAt(fn Value, hb int, w uint32) (Value, error) {
+	if !IsConstructor(fn) {
+		return Undefined(), r.calleeError(fn, "is not a constructor")
+	}
+	argc := int(uint8(w >> 16))
+	args := r.interp.stack[hb : hb+argc : hb+argc]
+	o := fn.AsObject()
+	fd := o.funcData()
+	if r.callDepth >= MaxCallDepth {
+		return Undefined(), r.RangeError("Maximum call stack size exceeded")
+	}
+	r.callDepth++
+	var (
+		res Value
+		err error
+	)
+	switch fd.kind {
+	case FuncBytecode:
+		if w>>24&bytecode.CallOverlap == 0 || fd.code.Kind != bytecode.KindNormal || fd.code.NewTarget {
+			res, err = interpConstruct(r, o, fd, args, o)
+			break
+		}
+		var obj *Object
+		if obj, err = r.constructThis(o); err == nil {
+			res, err = r.enterAt(o, fd, ObjectValue(obj), hb, argc, hb)
+		}
+		if err != nil {
+			res = Undefined()
+			break
+		}
+		if !res.IsObject() {
+			res = ObjectValue(obj)
+		}
+		noteCtorSlots(fd, res)
+	case FuncNative:
+		res, err = fd.ctor()(r, args, o)
+	default:
+		r.callDepth--
+		return r.Construct(fn, args, nil)
+	}
+	r.callDepth--
+	return res, err
+}
+
 // calleeError is the TypeError of a call or `new` instruction whose callee
 // fn is not callable or constructible. callValue and constructValue run only
 // from those instructions, so the innermost frame is executing it and the
@@ -656,7 +838,7 @@ func (r *Realm) calleeError(fn Value, what string) error {
 	name := ""
 	if st := &r.interp; st.nframes > 0 && bytecode.DescribeCallee != nil {
 		if fr := &st.frames[st.nframes-1]; fr.fn != nil {
-			name = bytecode.DescribeCallee(fr.fn.internal.(*FunctionData).code, fr.pc)
+			name = bytecode.DescribeCallee(fr.fn.funcData().code, fr.pc)
 		}
 	}
 	if name == "" {
@@ -673,7 +855,7 @@ func (r *Realm) spreadArgs(top int, v Value) ([]Value, error) {
 		return nil, r.TypeError("internal: spread arguments are not an array")
 	}
 	o := v.AsObject()
-	n := int(o.internal.(*ArrayData).length)
+	n := int(o.arrayLen())
 	st := &r.interp
 	if top+n > len(st.stack) {
 		r.growStack(top + n)
@@ -701,14 +883,17 @@ func (r *Realm) appendSpread(arr *Object, v Value) error {
 	}
 	if it.IsObject() && pos.IsNumber() {
 		src := it.AsObject()
-		n := int(src.internal.(*ArrayData).length)
+		n := int(src.arrayLen())
+		if src.class == ClassArray {
+			arr.reserveElems(r, min(n, src.elemLen()))
+		}
 		for i := 0; i < n; i++ {
 			e, err := arrayElementAt(r, src, i)
 			if err != nil {
 				return err
 			}
 			arr.Push(r, e)
-			n = int(src.internal.(*ArrayData).length)
+			n = int(src.arrayLen())
 			if err := interruptEvery(r, int64(i)); err != nil {
 				return err
 			}
@@ -754,6 +939,9 @@ func (r *Realm) forInInit(v Value) (keys, obj Value, err error) {
 	o, err := r.ToObject(v)
 	if err != nil {
 		return Undefined(), Undefined(), err
+	}
+	if keys := r.forInOwn(o); keys != nil {
+		return ObjectValue(keys), ObjectValue(o), nil
 	}
 	var (
 		list  []Value
@@ -819,8 +1007,179 @@ func (r *Realm) forInInit(v Value) (keys, obj Value, err error) {
 	return ObjectValue(r.NewArrayFromSlice(list)), ObjectValue(o), nil
 }
 
-// forInNext yields the next key that is still a property of obj. keys and
-// idx are the key list and the index of a for-in record, an object and a
+// forInDepth bounds the prototype chain forInOwn checks: a longer one takes
+// forInInit's walk, which checks the interrupt at each level.
+const forInDepth = 8
+
+// forInOwn is forInInit's key array when no prototype on o's chain has an
+// enumerable string key: the keys are then o's own enumerable string keys
+// in [[OwnPropertyKeys]] order (indices ascending, then strings in
+// insertion order), none shadowed by another, so no set of the keys seen
+// is needed. Each loop checks the chain, so a property a script adds to a
+// prototype later counts from the next loop on. It returns nil, for the
+// walk, when an object of the chain may have keys its storage does not
+// list (forInPlain), a prototype has elements or the chain is longer than
+// forInDepth. A short list shares the array's allocation
+// (newArrayStorage). The keys of an object without elements in shape mode
+// are its shape's, and come from the realm's cache once the shape's keys
+// were listed (forInCache).
+func (r *Realm) forInOwn(o *Object) *Object {
+	if !forInPlain(o) {
+		return nil
+	}
+	depth := 0
+	for p := o.Proto(); p != nil; p = p.Proto() {
+		if depth++; depth > forInDepth || !forInPlain(p) || p.elemLen() != 0 || p.hasEnumerableString() {
+			return nil
+		}
+	}
+	var e *forInCacheEntry
+	if o.flags&flagDict == 0 && o.elemLen() == 0 && !o.shape.owned {
+		if e = r.forInSlot(o.shape); e != nil && e.shape == o.shape {
+			return e.keys
+		}
+	}
+	n := 0
+	for _, v := range o.elems() {
+		if !v.IsHole() {
+			n++
+		}
+	}
+	if o.flags&flagDict == 0 {
+		for _, p := range o.shape.Props() {
+			if p.attrs&attrEnumerable != 0 && p.key.IsString() {
+				n++
+			}
+		}
+	} else {
+		for i := range o.dictTable().entries {
+			if e := &o.dictTable().entries[i]; e.live() && e.cell.attrs&attrEnumerable != 0 && e.key.IsString() {
+				n++
+			}
+		}
+	}
+	ao, list := r.newArrayStorage(0, n)
+	for i, v := range o.elems() {
+		if !v.IsHole() {
+			list = append(list, StringValue(r.indexString(uint32(i))))
+		}
+	}
+	if o.flags&flagDict == 0 {
+		for _, p := range o.shape.Props() {
+			if p.attrs&attrEnumerable != 0 && p.key.IsString() {
+				list = append(list, StringValue(p.key.String()))
+			}
+		}
+	} else {
+		for i := range o.dictTable().entries {
+			if e := &o.dictTable().entries[i]; e.live() && e.cell.attrs&attrEnumerable != 0 && e.key.IsString() {
+				list = append(list, StringValue(e.key.String()))
+			}
+		}
+	}
+	keys := r.initArray(ao, list, uint32(len(list)))
+	if e != nil {
+		keys.Freeze(r)
+		*e = forInCacheEntry{o.shape, keys}
+	}
+	return keys
+}
+
+// forInCache maps shapes to the key arrays of for-in loops over objects
+// without elements in shape mode, so that a loop over an object of a shape
+// seen before allocates nothing: a template's loop over its props objects,
+// a polyfill's over its option bags. Such an object's enumerable string
+// keys are a function of its shape, which an object leaves for another
+// whenever it adds a property, deletes one, changes its attributes or its
+// prototype, or freezes. An owned shape's props grow in place, but an
+// object of the shape never looks past its count, so its keys are the
+// shape's too; owned shapes are left out all the same, since their objects
+// (a global object) can have any number of keys. The chain is checked at
+// every loop, the cache or not (forInOwn).
+//
+// A cached array is frozen: nothing the engine does changes a key array
+// (forInNext only reads it), and crafted bytecode that passes the record's
+// key list on as a value, or a suspended generator holding it, can only
+// read it as well. Loops over objects of one shape share it.
+//
+// It is direct-mapped, slot by address, and holds each shape it maps, so
+// another shape at its address can never be taken for it, as the key memo
+// holds its strings (keyMemo). The entries keep their shapes and the
+// arrays of their keys, which the live measurement counts (memlive.go);
+// they keep nothing else of the loops, so ReleaseCallData leaves them, as
+// it leaves the inline caches, which keep shapes too.
+type forInCache [forInCacheSize]forInCacheEntry
+
+type forInCacheEntry struct {
+	shape *Shape
+	keys  *Object
+}
+
+// forInCacheSize entries take 4 KiB, allocated when a realm has run
+// forInCacheAfter loops that the cache takes, so that a realm that runs a
+// few pays nothing. At 256 entries 88 to 100 % of the loops of three
+// server-side rendering workloads hit, at 128 86 to 100 %.
+const (
+	forInCacheBits  = 8
+	forInCacheSize  = 1 << forInCacheBits
+	forInCacheAfter = 256
+)
+
+// forInSlot returns the cache entry for s, by its address (Fibonacci
+// hashing of the 16-byte granules, as keyMemoSlot), or nil while the
+// realm has no cache, counting the loop then.
+func (r *Realm) forInSlot(s *Shape) *forInCacheEntry {
+	l := r.shapeState()
+	if l.forIn == nil {
+		if l.forInMisses < forInCacheAfter {
+			l.forInMisses++
+			return nil
+		}
+		l.forIn = new(forInCache)
+		r.charge(int(unsafe.Sizeof(forInCache{})))
+	}
+	return &l.forIn[uint32(uintptr(unsafe.Pointer(s))>>4)*0x9e3779b9>>(32-forInCacheBits)]
+}
+
+// forInPlain reports whether o's own keys are those its storage lists: its
+// elements, all enumerable, and its named properties. It is false for a
+// class with keys of its own making (a proxy or module namespace, a String
+// wrapper, a typed array, an arguments object: only plain objects, arrays
+// and functions qualify), for keys still pending (lazy or cold properties,
+// the Go map or slice of a host node) and for sparse elements, whose
+// attributes vary and which are not in index order.
+func forInPlain(o *Object) bool {
+	switch o.class {
+	case ClassObject, ClassArray, ClassFunction:
+	default:
+		return false
+	}
+	x := o.extData()
+	return o.flags&(flagHasLazy|flagHostNode) == 0 && (x == nil || len(x.sparse) == 0)
+}
+
+// hasEnumerableString reports whether o has an enumerable own property
+// with a string key among its named properties.
+func (o *Object) hasEnumerableString() bool {
+	if o.flags&flagDict == 0 {
+		for _, p := range o.shape.Props() {
+			if p.attrs&attrEnumerable != 0 && p.key.IsString() {
+				return true
+			}
+		}
+		return false
+	}
+	for i := range o.dictTable().entries {
+		if e := &o.dictTable().entries[i]; e.live() && e.cell.attrs&attrEnumerable != 0 && e.key.IsString() {
+			return true
+		}
+	}
+	return false
+}
+
+// forInNext writes to *dst the next key that is still a property of obj,
+// and reports false, writing nothing, when there is none. keys and idx are
+// the key list and the index of a for-in record, an object and a
 // non-negative integer, which the bytecode verifier proves
 // (bytecode.KindOperands), as run's ForInNext relies on. A key that is no
 // string is skipped: the list is the array of strings ForInInit made, but
@@ -828,29 +1187,47 @@ func (r *Realm) forInInit(v Value) (keys, obj Value, err error) {
 // object, and a suspended generator's list stays reachable through the
 // registers it left on the stack, which a later frame may read before it
 // writes them.
-func forInNext(keys, idx *Value, obj Value) (Value, bool) {
+func forInNext(dst, keys, idx *Value, obj Value) bool {
 	if !obj.IsObject() {
-		return Undefined(), false
+		return false
 	}
 	arr := keys.AsObject()
 	o := obj.AsObject()
-	list := arr.elements
+	list := arr.elemsReadOnly()
 	for i := int(idx.AsNumber()); i < len(list); i++ {
 		k := list[i]
-		*idx = IntValue(i + 1)
-		// Keys deleted during iteration are skipped.
-		if k.IsString() && forInHas(o, keyOfString(o, k.AsString())) {
-			return k, true
+		idx.setScalarBits(IntValue(i + 1))
+		// Keys deleted during iteration are skipped. An ordinary object's
+		// named property needs only its shape, without reading its value.
+		if !k.IsString() {
+			continue
+		}
+		key := keyOfString(o, k.AsString())
+		own := false
+		if o.class == ClassObject && o.flags&(flagDict|flagHasLazy|flagHostNode) == 0 && !key.IsIndex() {
+			_, _, own = o.shape.Lookup(key)
+		}
+		if own || forInHas(o, key) {
+			*dst = k
+			return true
 		}
 	}
-	return Undefined(), false
+	return false
+}
+
+// forInDone is the pc ForInNext at pc jumps to once forInNext has no key,
+// the end of the loop: its sBx read from the code again. Inlined, it costs
+// run's size, which must stay below the compiler's big-function size
+// (DESIGN §6), only its call.
+func forInDone(insns codeWords, pc int) int {
+	return pc + 1 + int(int16(insns.at(pc)>>16))
 }
 
 // forInHas is the check of forInNext: whether key is still a property of o
 // or its chain. A proxy on the chain is taken to still have every key it
 // reported (its traps ran in forInInit).
 func forInHas(o *Object, key PropertyKey) bool {
-	for obj := o; obj != nil; obj = obj.proto {
+	for obj := o; obj != nil; obj = obj.Proto() {
 		if obj.class == ClassProxy || obj.HasOwnProperty(key) {
 			return true
 		}
@@ -865,7 +1242,7 @@ func forInHas(o *Object, key PropertyKey) bool {
 // strings come from PropertyKey.ToJSString: index keys are canonical decimal
 // strings (some of them interned small-index atoms), the rest are atoms.
 func keyOfString(o *Object, s *String) PropertyKey {
-	if a, ok := s.ASCII(); ok {
+	if a, ok := s.ASCII(); ok && a != "" && a[0] <= '9' {
 		if i, ok := parseArrayIndex(a); ok {
 			return IndexKey(i)
 		}
@@ -878,7 +1255,9 @@ func keyOfString(o *Object, s *String) PropertyKey {
 // copyDataProps implements CopyDataProperties(target, source, excluded):
 // excluded is undefined or an array of key values.
 func (r *Realm) copyDataProps(target *Object, source Value, excluded Value) error {
-	if source.IsNullish() {
+	// ToObject's wrapper of a boolean, number, symbol or bigint has no own
+	// property: nothing to build for the false of {...(c && {k: v})}.
+	if source.IsNullish() || !source.IsObject() && !source.IsString() {
 		return nil
 	}
 	from, err := r.ToObject(source)
@@ -887,7 +1266,15 @@ func (r *Realm) copyDataProps(target *Object, source Value, excluded Value) erro
 	}
 	var excl []PropertyKey
 	if excluded.IsObject() {
-		for _, k := range excluded.AsObject().elements {
+		// The keys a rest element's pattern names: a component's props
+		// destructured before ...rest are often more than a few.
+		var buf [32]PropertyKey
+		excl = buf[:0]
+		ks := excluded.AsObject().elemsReadOnly()
+		if len(ks) > len(buf) {
+			excl = make([]PropertyKey, 0, len(ks))
+		}
+		for _, k := range ks {
 			pk, err := r.ToPropertyKey(k)
 			if err != nil {
 				return err
@@ -895,35 +1282,355 @@ func (r *Realm) copyDataProps(target *Object, source Value, excluded Value) erro
 			excl = append(excl, pk)
 		}
 	}
+	if r.spreadFresh(target, from, excl) {
+		return nil
+	}
 	if from.class == ClassProxy {
 		return r.copyProxyDataProps(target, from, excl)
+	}
+	if hasOnlyShapeProps(from) {
+		// The keys are those of from's shape now, read in place: a getter
+		// that changes from gives it another shape. While from keeps it, a
+		// data property's value is the one in its slot.
+		s := from.shape
+		ps := s.Props()
+		for _, strings := range [2]bool{true, false} {
+			for i := range ps {
+				if k := ps[i].key; k.IsString() == strings && !k.IsPrivate() {
+					if len(target.slots) == cap(target.slots) {
+						r.spreadRoom(target, ps, i, strings, excl)
+					}
+					var err error
+					if from.shape != s || ps[i].attrs&(attrAccessor|attrLazy) != 0 {
+						err = r.copyDataProp(target, from, k, excl)
+					} else if ps[i].attrs&attrEnumerable != 0 && !slices.Contains(excl, k) {
+						err = r.createDataProp(target, k, from.slots[i])
+					}
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
 	}
 	keys, err := r.ownPropertyKeys(from)
 	if err != nil {
 		return err
 	}
 	for _, k := range keys {
-		skip := false
-		for _, x := range excl {
-			if x == k {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
-		c, ok := from.getOwnCell(k)
-		if !ok || c.attrs&attrEnumerable == 0 {
-			continue
-		}
-		v, err := from.Get(r, k, ObjectValue(from))
-		if err != nil {
-			return err
-		}
-		if err := target.CreateDataPropertyOrThrow(r, k, v); err != nil {
+		if err := r.copyDataProp(target, from, k, excl); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// spreadRoom gives target, whose slots are full, room at once for the keys
+// of a shape left to copy into it (copyDataProps: ps[i:] of the pass over
+// strings or symbols, then the symbols) that it lacks, where the next is
+// new to it, in place of a growth for each: a spread into a literal with
+// keys before it ({ref, ...props}, {...defaults, ...options}) adds a few
+// keys to an object of many, or many to an object of a few, where append's
+// doubling leaves twice the room it needs or grows several times. Where
+// objects before took the shapes those keys lead to, it gives the room of
+// the trunk below the last (Shape.trunkSlots), for the keys the literal
+// goes on to add after the spread, even for one key; otherwise that below
+// target's shape, and one key is left to growSlots.
+func (r *Realm) spreadRoom(target *Object, ps []shapeProp, i int, strings bool, excl []PropertyKey) {
+	s := target.shape
+	if target.flags&flagDict != 0 || target.class != ClassObject {
+		return
+	}
+	if _, _, ok := s.Lookup(ps[i].key); ok {
+		return
+	}
+	n, end := 0, s
+	for pass := range 2 {
+		for j := range ps {
+			p := ps[j]
+			if pass == 0 && (j < i || p.key.IsString() != strings) || pass == 1 && (!strings || p.key.IsString()) ||
+				p.attrs&attrEnumerable == 0 || p.key.IsPrivate() || slices.Contains(excl, p.key) {
+				continue
+			}
+			if _, _, ok := s.Lookup(p.key); ok {
+				continue // a value for a key target has
+			}
+			n++
+			if end != nil {
+				if c := end.child(p.key, attrDefault); c != nil {
+					end = c
+				} else if _, _, ok := end.Lookup(p.key); !ok {
+					end = nil
+				}
+			}
+		}
+	}
+	l := len(target.slots)
+	want := l + n
+	if end != nil {
+		want = max(want, end.trunkSlots(int(end.count)))
+	} else {
+		want = max(want, s.trunkSlots(l))
+	}
+	if want = min(want, maxShapeProps); want > l+1 || end != nil && want > l {
+		// As growSlots, but from no capacity: append doubles past full
+		// slots, where the keys left may need far less.
+		ns := slices.Grow([]Value(nil), want)[:l]
+		copy(ns, target.slots)
+		target.slots = ns
+		r.charge(cap(ns) * valueSize)
+	}
+}
+
+// spreadPairSource returns the source of the spread into the same object
+// that follows the spread w right away in the instructions next, where
+// w's own source is read: {...defaults, ...options}, the second source in
+// a register or a closure's variable (GetEnv, GetEnv0, GetEnv1, GetEnv2,
+// or GetEnvChk, whose extra word, the name constant, comes before the
+// spread). It returns undefined for anything else.
+func spreadPairSource(w uint32, next []uint32, regs []Value, env *Env) Value {
+	if len(next) == 0 {
+		return Undefined()
+	}
+	if n := next[0]; n&0xffff == w&0xffff {
+		return regs[uint8(n>>16)]
+	} else if op := bytecode.Op(n); op == bytecode.GetEnv || op == bytecode.GetEnv0 || op == bytecode.GetEnv1 || op == bytecode.GetEnv2 || op == bytecode.GetEnvChk {
+		if j := 1 + op.ExtraWords(); len(next) > j && next[j]&0xffff == w&0xffff && uint8(next[j]>>16) == uint8(n>>8) {
+			return env.up(uint8(n >> 16)).slots()[uint8(n>>24)]
+		}
+	}
+	return Undefined()
+}
+
+// spreadPairRoom gives target, a literal's fresh object that the spread of
+// from starts and the spread of next continues ({...defaults, ...options},
+// copyDataProps twice), room at once for from's keys, those of next that
+// from lacks and those the objects before went on to add after them (the
+// trunk below, Shape.trunkSlots), where the first spread would give the
+// room of from's shape and the second grow it (spreadRoom).
+func (r *Realm) spreadPairRoom(target, from *Object, next Value) {
+	if !next.IsObject() || target.shape != r.plainRoot || len(target.slots) != 0 {
+		return
+	}
+	nx := next.AsObject()
+	for _, o := range [2]*Object{from, nx} {
+		if o.class != ClassObject || o.flags&(flagDict|flagHasLazy|flagHostNode) != 0 || o.shape.owned {
+			return
+		}
+	}
+	s := from.shape
+	n, end := int(s.count), s
+	for _, p := range nx.shape.Props() {
+		if p.attrs&attrEnumerable == 0 || p.key.IsPrivate() {
+			continue
+		}
+		if _, _, ok := s.Lookup(p.key); ok {
+			continue
+		}
+		if n++; end != nil && p.key.IsString() {
+			end = end.child(p.key, attrDefault)
+		} else {
+			end = nil // a symbol: copied after the strings
+		}
+	}
+	if n == int(s.count) {
+		return
+	}
+	if end != nil {
+		n = max(n, end.trunkSlots(int(end.count)))
+	}
+	if n = min(n, maxShapeProps); cap(target.slots) < n {
+		target.slots = r.growValues(target.slots, n)
+	}
+}
+
+// copyDataProp is one key of copyDataProps.
+func (r *Realm) copyDataProp(target, from *Object, k PropertyKey, excl []PropertyKey) error {
+	if slices.Contains(excl, k) {
+		return nil
+	}
+	c, ok := from.getOwnCell(k)
+	if !ok || c.attrs&attrEnumerable == 0 {
+		return nil
+	}
+	v := c.value // what [[Get]] returns of an ordinary object's data property
+	if c.attrs&attrAccessor != 0 || from.class != ClassObject {
+		var err error
+		if v, err = from.Get(r, k, ObjectValue(from)); err != nil {
+			return err
+		}
+	}
+	return r.createDataProp(target, k, v)
+}
+
+// createDataProp is target.CreateDataPropertyOrThrow(r, k, v) for
+// copyDataProps. An ordinary target in shape mode with nothing lazy takes
+// a named key it lacks, or a new value for one whose attributes
+// CreateDataProperty leaves as they are, after one lookup, where
+// [[DefineOwnProperty]] builds a descriptor of the current property and
+// validates the new one against it. Any other takes the general path.
+func (r *Realm) createDataProp(target *Object, k PropertyKey, v Value) error {
+	if target.class == ClassObject && target.flags&(flagExtensible|flagDict|flagHasLazy|flagShared) == flagExtensible && !k.IsIndex() {
+		slot, attrs, ok := target.shape.Lookup(k)
+		if !ok {
+			target.addNamed(r, k, propCell{value: v, attrs: attrDefault})
+			return nil
+		}
+		if attrs == attrDefault {
+			target.slots[slot] = v
+			return nil
+		}
+	}
+	return target.CreateDataPropertyOrThrow(r, k, v)
+}
+
+// spreadFresh is copyDataProps for a spread ({...o}) or a rest element
+// ({a, ...rest} = o) into target, a fresh object of Object.prototype with
+// no property yet, from an ordinary object in shape mode whose keys its
+// storage lists, all of them data properties. The general path pays a
+// [[GetOwnProperty]], a [[Get]] and a [[DefineOwnProperty]] per key, each
+// with a lookup; here the keys come from from's shape and the values from
+// its slots and elements, which hold what [[Get]] returns. target lists
+// them in [[OwnPropertyKeys]] order: the elements ascending, then the
+// strings and then the symbols in creation order.
+//
+// When every property is enumerable, writable and configurable, none is a
+// private name or excluded, and from's shape has target's prototype,
+// target takes that shape with a copy of the slots, and room for the
+// properties the trunk below it adds (Shape.trunkSlots): its keys and
+// attributes are those the general path gives target, and their
+// [[OwnPropertyKeys]] order is the same, as it lists a shape's strings
+// before its symbols wherever they were added. The shape must be one any
+// object of r may hold, as an inline cache keyed on it then serves both:
+// one of the shared tree or of r's own tree (from r.plainRoot, or from the
+// local root a shared realm continues the shared tree on, localize). Never
+// an owned shape, which grows in place (Shape.addOwned), nor one of
+// another realm's tree, whose transitions that realm writes. Otherwise the
+// copied keys are added from target's root through the transitions
+// addNamed takes, the strings and then the symbols, so target gets the
+// shape the general path gives it, and stays in shape mode as it does
+// there: a shape that is not owned has at most maxShapeProps properties.
+//
+// It reports false, having changed nothing, for the general path: a target
+// that is not fresh; a source of another class (a proxy or module
+// namespace, an array, a String wrapper, a typed array, an arguments
+// object); one with lazy properties pending, a host node over a Go map or
+// slice, an internal payload, sparse elements or a dictionary; an accessor
+// or a lazy slot; a shape that is owned or bars inline caches (noFill).
+func (r *Realm) spreadFresh(target, from *Object, excl []PropertyKey) bool {
+	if target.shape != r.plainRoot || target.flags != flagExtensible || target.class != ClassObject ||
+		target.elemLen() != 0 || target.dictTable() != nil {
+		return false
+	}
+	if from.class != ClassObject || from.flags&(flagDict|flagHasLazy|flagHostNode) != 0 || from.pkind != 0 ||
+		(from.dictTable() != nil && len(from.dictTable().sparse) != 0) {
+		return false
+	}
+	s := from.shape
+	if s.owned || s.noFill != 0 || s.count > maxShapeProps {
+		return false
+	}
+	props := s.Props()
+	adopt, copied := s.proto == target.Proto(), 0
+	for _, p := range props {
+		if p.attrs&(attrAccessor|attrLazy) != 0 {
+			return false
+		}
+		if p.attrs&attrEnumerable != 0 && !p.key.IsPrivate() && !slices.Contains(excl, p.key) {
+			copied++
+		}
+		if p.attrs != attrDefault {
+			adopt = false
+		}
+	}
+	adopt = adopt && copied == len(props)
+	if adopt && !s.shared {
+		root := s.root()
+		adopt = root == r.plainRoot || root == r.rootShapes[target.Proto()]
+	}
+	if n := from.elemLen(); n != 0 {
+		elems := r.growValues(nil, n)[:n]
+		copy(elems, from.elems())
+		for _, k := range excl {
+			if k.IsIndex() && int64(k.Index()) < int64(n) {
+				elems[k.Index()] = Hole()
+			}
+		}
+		for n > 0 && elems[n-1].IsHole() { // an excluded last index
+			n--
+		}
+		target.setElems(elems[:n])
+	}
+	if adopt {
+		if cap(target.slots) < copied {
+			// With room for the properties the objects that took s went on
+			// to get, as the literal's own after the spread.
+			target.slots = r.growValues(target.slots, s.trunkSlots(copied))
+		}
+		target.slots = target.slots[:copied]
+		copy(target.slots, from.slots)
+		target.shape = s
+		return true
+	}
+	shape, slots := target.shape, target.slots
+	if cap(slots) < copied {
+		slots = r.growValues(slots, copied)
+	}
+	symbols := false
+	for i, p := range props {
+		if p.attrs&attrEnumerable == 0 || p.key.IsPrivate() || slices.Contains(excl, p.key) {
+			continue
+		}
+		if !p.key.IsString() {
+			symbols = true
+			continue
+		}
+		shape = shape.addProperty(r, p.key, attrDefault)
+		slots = append(slots, from.slots[i])
+	}
+	if symbols {
+		for i, p := range props {
+			if p.attrs&attrEnumerable != 0 && p.key.IsSymbol() && !slices.Contains(excl, p.key) {
+				shape = shape.addProperty(r, p.key, attrDefault)
+				slots = append(slots, from.slots[i])
+			}
+		}
+	}
+	target.shape, target.slots = shape, slots
+	return true
+}
+
+// caseChain runs the cases of a switch from fd's JmpCaseK at pc: it and
+// each JmpStrictEqK after it that tests the same register, whose value is
+// x. It returns the target of the first whose constant x equals, or the
+// pc of the first instruction past them. A string compares by pointer,
+// then by length; two atoms of one length are different strings.
+func caseChain(fd *FunctionData, pc int, x Value) int {
+	insns, consts := fd.code.Code, fd.meta.consts
+	next := uint32(bytecode.JmpStrictEqK) | insns[pc]&0xFF00
+	xs := (*String)(nil)
+	if x.IsString() {
+		xs = x.AsString()
+	}
+	for {
+		w := insns[pc]
+		// The verifier's strictOperand: y is a string, null or undefined.
+		y := consts[insns[pc+1]]
+		if x.bits == y.bits {
+			if x.ptr == y.ptr {
+				return bytecode.JumpTarget(pc, w)
+			}
+			if xs != nil && y.ptr != nil {
+				ys := y.AsString()
+				if xs.n == ys.n && (xs.atom == 0 || ys.atom == 0) && xs.Equals(ys) {
+					return bytecode.JumpTarget(pc, w)
+				}
+			}
+		}
+		pc += 2
+		if insns[pc]&0xFFFF != next {
+			return pc
+		}
+	}
 }

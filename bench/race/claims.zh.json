@@ -1,0 +1,395 @@
+{
+ "duration_s": 113.669,
+ "frames": 6820,
+ "builds": {
+  "targets": 47,
+  "goos": [
+   "aix",
+   "android",
+   "darwin",
+   "dragonfly",
+   "freebsd",
+   "illumos",
+   "ios",
+   "js",
+   "linux",
+   "netbsd",
+   "openbsd",
+   "plan9",
+   "solaris",
+   "wasip1",
+   "windows"
+  ],
+  "goarch": [
+   "386",
+   "amd64",
+   "arm",
+   "arm64",
+   "loong64",
+   "mips",
+   "mips64",
+   "mips64le",
+   "mipsle",
+   "ppc64",
+   "ppc64le",
+   "riscv64",
+   "s390x",
+   "wasm"
+  ],
+  "default_and_purego": "all 0"
+ },
+ "scenes": [
+  {
+   "name": "Hook",
+   "start": 0.0,
+   "dur": 5.4,
+   "rate": null
+  },
+  {
+   "name": "PureGo",
+   "start": 5.4,
+   "dur": 14.25,
+   "rate": null
+  },
+  {
+   "name": "GenTitle",
+   "start": 19.65,
+   "dur": 5.1,
+   "rate": null
+  },
+  {
+   "name": "V8Relay",
+   "start": 24.75,
+   "dur": 25.46,
+   "rate": 0.8
+  },
+  {
+   "name": "V8Score",
+   "start": 50.21,
+   "dur": 7.2,
+   "rate": null
+  },
+  {
+   "name": "Gateway",
+   "start": 57.41,
+   "dur": 6.0,
+   "rate": null
+  },
+  {
+   "name": "PluginTitle",
+   "start": 63.41,
+   "dur": 7.55,
+   "rate": null
+  },
+  {
+   "name": "PluginRelay",
+   "start": 70.96,
+   "dur": 19.06,
+   "rate": 1.0
+  },
+  {
+   "name": "StationTiles",
+   "start": 90.02,
+   "dur": 6.4,
+   "rate": null
+  },
+  {
+   "name": "Method",
+   "start": 96.42,
+   "dur": 10.85,
+   "rate": null
+  },
+  {
+   "name": "End",
+   "start": 107.27,
+   "dur": 6.4,
+   "rate": null
+  }
+ ],
+ "v8": {
+  "rate": 0.8,
+  "rate_segments": [
+   [
+    2.2,
+    0.8
+   ],
+   [
+    20.061249999999998,
+    0.0
+   ]
+  ],
+  "finish_s": {
+   "moejs": 14.289,
+   "go-quickjs": 20.261,
+   "goant": 94.126,
+   "modernc": 67.167,
+   "goja": 142.343,
+   "sobek": 147.175,
+   "qjs": 21.983,
+   "moejs-old": 41.547
+  },
+  "leg_screen_s": [
+   2.32,
+   2.05,
+   2.29,
+   2.26,
+   2.34,
+   2.61,
+   1.8,
+   2.2
+  ],
+  "lanes": 8,
+  "previous": "v0.1.0-alpha.11",
+  "speedup": 2.908,
+  "moejs_place": 1
+ },
+ "scores": {
+  "goja": 163.0,
+  "sobek": 160.0,
+  "goant": 222.0,
+  "modernc": 323.0,
+  "qjs": 1058.0,
+  "go-quickjs": 999.0,
+  "moejs": 1429.0
+ },
+ "score_vs_qjs": 1.351,
+ "score_lanes": 8,
+ "methods": [
+  "通用测试：V8 benchmark suite v7，8 个程序各占 1/8 赛道",
+  "通用测试画面按 0.8 倍速播放，时钟是实测秒数",
+  "总得分：套件自带的 run.js，单独测量；上个版本：v0.1.0-alpha.11",
+  "moejs：当前开发版，-tags purego，CGO_ENABLED=0，Go 1.27.2",
+  "Go 1.27.2 的 47 个系统/CPU 组合全部能编译（CGO_ENABLED=0）",
+  "插件：new-api 任务插件，结果 SHA-256 与 C QuickJS 一致",
+  "插件接力：5 段各占 1/5 赛道，每段用时是这一段单独实测的用时",
+  "请求数：small 10 万，agent100k 1600，big8m 160，multi8x1m 160",
+  "第 1-4 段：1 个 vCPU，一次一个请求",
+  "第 5 段：agent100k，8 个进程各占 1 个 vCPU，到一共完成 7000 个请求为止",
+  "第 5 段的倍数：8 个进程各计时 10 秒，比完成的请求数",
+  "通用测试和第 2 段：多个测试同时跑，各占 1 个核",
+  "每场 3 轮取中位数；名次只比画面上的引擎"
+ ],
+ "plugin_relay": {
+  "rate": 1.0,
+  "rate_segments": [
+   [
+    2.2,
+    1.0
+   ],
+   [
+    14.058095999999999,
+    0.0
+   ]
+  ],
+  "legs": [
+   "普通请求",
+   "AI Agent 长对话",
+   "大图请求",
+   "多图请求",
+   "8 核一起跑"
+  ],
+  "total_s": {
+   "moejs": 11.858,
+   "go-quickjs": 61.173,
+   "goant": 53.393,
+   "modernc": 170.476,
+   "goja": 152.065,
+   "sobek": 154.387,
+   "qjs": 54.842
+  },
+  "moejs_place": 1,
+  "close_ratio": 1.0577,
+  "close_caption": true
+ },
+ "gateway": [
+  {
+   "name": "普通请求",
+   "scenario": "small",
+   "leg_s": {
+    "moejs": 3.351,
+    "go-quickjs": 5.467,
+    "goant": 13.041,
+    "modernc": 11.677,
+    "goja": 25.374,
+    "sobek": 25.592,
+    "qjs": 3.544
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 3.351,
+    "go-quickjs": 5.467,
+    "goant": 13.041,
+    "modernc": 11.677,
+    "goja": 25.374,
+    "sobek": 25.592,
+    "qjs": 3.544
+   },
+   "requests": 100000,
+   "check": "949933c64ca61dacd4348b022227180c63bd87b03030689b0ddf2286734e152c",
+   "lanes": 1
+  },
+  {
+   "name": "AI Agent 长对话",
+   "scenario": "agent100k",
+   "leg_s": {
+    "moejs": 2.143,
+    "go-quickjs": 10.019,
+    "goant": 11.079,
+    "modernc": 18.012,
+    "goja": 16.745,
+    "sobek": 17.541,
+    "qjs": 6.243
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.143,
+    "go-quickjs": 10.019,
+    "goant": 11.079,
+    "modernc": 18.012,
+    "goja": 16.745,
+    "sobek": 17.541,
+    "qjs": 6.243
+   },
+   "requests": 1600,
+   "check": "359020ec7233d589748f09211e2b1466114f733796c5ee7ea4c86b149b97343b",
+   "lanes": 4
+  },
+  {
+   "name": "大图请求",
+   "scenario": "big8m",
+   "leg_s": {
+    "moejs": 2.559,
+    "go-quickjs": 19.735,
+    "goant": 12.599,
+    "modernc": 64.572,
+    "goja": 52.014,
+    "sobek": 52.415,
+    "qjs": 20.533
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.559,
+    "go-quickjs": 19.735,
+    "goant": 12.599,
+    "modernc": 64.572,
+    "goja": 52.014,
+    "sobek": 52.415,
+    "qjs": 20.533
+   },
+   "requests": 160,
+   "check": "439b247997cf18362c0a3449ae47821a76d8cbf230ccae19dde16d310cecdc4b",
+   "lanes": 1
+  },
+  {
+   "name": "多图请求",
+   "scenario": "multi8x1m",
+   "leg_s": {
+    "moejs": 2.578,
+    "go-quickjs": 20.148,
+    "goant": 10.564,
+    "modernc": 66.362,
+    "goja": 48.676,
+    "sobek": 49.059,
+    "qjs": 21.111
+   },
+   "place": 1,
+   "finish_s": {
+    "moejs": 2.578,
+    "go-quickjs": 20.148,
+    "goant": 10.564,
+    "modernc": 66.362,
+    "goja": 48.676,
+    "sobek": 49.059,
+    "qjs": 21.111
+   },
+   "requests": 160,
+   "check": "17fd1f965a5a698abdb01f16be819b6ea303ad6a28bce16e2ccbbe1687781dd2",
+   "lanes": 1
+  },
+  {
+   "name": "8 核一起跑",
+   "scenario": "agent100k",
+   "leg_s": {
+    "moejs": 1.228,
+    "go-quickjs": 5.804,
+    "goant": 6.11,
+    "modernc": 9.853,
+    "goja": 9.255,
+    "sobek": 9.779,
+    "qjs": 3.41
+   },
+   "place": 1,
+   "workers": 8,
+   "window_s": 10.0,
+   "done": {
+    "moejs": 56892,
+    "go-quickjs": 12051,
+    "goant": 11487,
+    "modernc": 7102,
+    "goja": 7557,
+    "sobek": 7158,
+    "qjs": 20540
+   },
+   "leg_requests": 7000,
+   "per_worker_requests": {
+    "moejs": 12000,
+    "go-quickjs": 2600,
+    "goant": 2400,
+    "modernc": 1500,
+    "goja": 1600,
+    "sobek": 1500,
+    "qjs": 4200
+   },
+   "start_skew_s": {
+    "moejs": 0.114,
+    "go-quickjs": 0.012,
+    "goant": 0.012,
+    "modernc": 0.053,
+    "goja": 0.016,
+    "sobek": 0.01,
+    "qjs": 0.014
+   },
+   "check": "359020ec7233d589748f09211e2b1466114f733796c5ee7ea4c86b149b97343b"
+  }
+ ],
+ "tiles": {
+  "普通请求": 1.058,
+  "AI Agent 长对话": 2.914,
+  "大图请求": 8.023,
+  "多图请求": 8.19,
+  "8 核一起跑": 2.77
+ },
+ "headlines": {
+  "general": "通用测试：也不落后",
+  "plugin": "插件场景：大幅领先",
+  "end": [
+   "插件场景：大幅领先",
+   "通用测试：也不落后"
+  ]
+ },
+ "beats": {
+  "hook": 3.7,
+  "zero": 13.0,
+  "os": 19.05,
+  "gen": 24.15,
+  "v8_lights": 26.05,
+  "v8_go": 27.55,
+  "v8_leg3": 32.32,
+  "v8_leg6": 39.2,
+  "v8_first": 45.41,
+  "v8_old": 47.21,
+  "v8_times": 49.81,
+  "score": 56.61,
+  "gateway": 62.81,
+  "plugins": 70.36,
+  "plug_go": 74.16,
+  "plug_leg3": 79.65,
+  "plug_leg5": 84.39,
+  "plug_first": 85.82,
+  "plug_times": 89.62,
+  "plug_close": 77.21,
+  "tiles": 95.82,
+  "method": 105.87,
+  "end": 112.47
+ }
+}

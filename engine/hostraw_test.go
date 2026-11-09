@@ -270,13 +270,13 @@ func TestFromGoRawJSONLazy(t *testing.T) {
 	proto := r.NewObject()
 	require.True(t, v.AsObject().SetPrototypeOf(r, proto))
 	assert.Equal(t, stringifyGo(t, r, want), stringifyGo(t, r, v))
-	assert.Same(t, proto, v.AsObject().proto)
+	assert.Same(t, proto, v.AsObject().Proto())
 	v = mustFromGo(t, r, json.RawMessage(`{"x": 1, "y": [2]}`))
 	require.True(t, v.AsObject().SetPrototypeOf(r, nil))
 	x, err := v.AsObject().GetProp(r, key(r, "x"))
 	require.NoError(t, err)
 	assert.Equal(t, IntValue(1), x)
-	assert.Nil(t, v.AsObject().proto)
+	assert.Nil(t, v.AsObject().Proto())
 }
 
 // TestFromGoRawJSONCopied: FromGo converts a RawMessage from a copy of its

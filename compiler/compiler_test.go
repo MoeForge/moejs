@@ -1,9 +1,11 @@
 package compiler
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,18 +55,15 @@ func TestDisassembleGolden(t *testing.T) {
   return n > hi ? hi : n;
 }`)
 	want := `function clamp (normal) params=3 regs=5 env=0 ics=0
-  0000 UndefRange r3 1
-  0001 Plus r3 r0
-  0002 TypeofIs r4 r0 "number"
-  0003 Not r4 r4
-  0004 JmpF r4 -> 0006
-  0005 Ret r1
-  0006 JmpNLt r3 -> 0009 r1
-  0008 Ret r1
-  0009 JmpNGt r3 -> 0012 r2
-  0011 Ret r2
-  0012 Ret r3
-  0013 RetUndef
+  0000 Plus r3 r0
+  0001 JmpTypeofIs r0 -> 0004 "number"
+  0003 Ret r1
+  0004 JmpNLt r3 -> 0007 r1
+  0006 Ret r1
+  0007 JmpNGt r3 -> 0010 r2
+  0009 Ret r2
+  0010 Ret r3
+  0011 RetUndef
 `
 	assert.Equal(t, want, bytecode.Disassemble(child(t, fn, "clamp")))
 }
@@ -252,6 +251,7 @@ export function loopEnv() { const fs = []; for (let i = 0; i < 2; i++) fs[i] = (
 	assert.Empty(t, plain.CaptureLayout)
 	assert.NotContains(t, ops(plain), bytecode.PushEnv)
 	assert.NotContains(t, ops(plain), bytecode.GetEnv)
+	assert.NotContains(t, ops(plain), bytecode.GetEnv0)
 	assert.NotContains(t, ops(plain), bytecode.CheckTDZ)
 
 	cap := child(t, fn, "captured")
@@ -259,7 +259,7 @@ export function loopEnv() { const fs = []; for (let i = 0; i < 2; i++) fs[i] = (
 	assert.Contains(t, ops(cap), bytecode.SetEnv)
 	inner := cap.Children[0]
 	assert.Equal(t, bytecode.KindArrow, inner.Kind)
-	assert.Contains(t, ops(inner), bytecode.GetEnv)
+	assert.Contains(t, ops(inner), bytecode.GetEnv0)
 
 	blk := child(t, fn, "block")
 	assert.Empty(t, blk.CaptureLayout, "block scope environments are pushed, not part of the function env")
@@ -269,6 +269,29 @@ export function loopEnv() { const fs = []; for (let i = 0; i < 2; i++) fs[i] = (
 	loop := child(t, fn, "loopEnv")
 	assert.Contains(t, ops(loop), bytecode.CopyEnv)
 	assert.False(t, loop.HasArguments)
+}
+
+// TestGetEnvDepth checks that a read of the function's own environment, of
+// the enclosing one and of the one around it is GetEnv0, GetEnv1 and
+// GetEnv2, with B 0, 1 and 2, and a read of a deeper one GetEnv.
+func TestGetEnvDepth(t *testing.T) {
+	fn := compileModule(t, `
+export function f0(a) {
+	return function f1(b) {
+		return function f2(c) {
+			return function f3(d) { return () => a + b + c + d; };
+		};
+	};
+}`)
+	arrow := child(t, fn, "f0").Children[0].Children[0].Children[0].Children[0]
+	require.Equal(t, bytecode.KindArrow, arrow.Kind)
+	depths := map[bytecode.Op][]int{}
+	for _, w := range words(arrow) {
+		if op := bytecode.DecodeOp(w[0]); op == bytecode.GetEnv || op == bytecode.GetEnv0 || op == bytecode.GetEnv1 || op == bytecode.GetEnv2 {
+			depths[op] = append(depths[op], int(bytecode.DecodeB(w[0])))
+		}
+	}
+	assert.Equal(t, map[bytecode.Op][]int{bytecode.GetEnv: {3}, bytecode.GetEnv2: {2}, bytecode.GetEnv1: {1}, bytecode.GetEnv0: {0}}, depths)
 }
 
 // TestArgumentsRegister checks that a function referencing `arguments` (in
@@ -296,7 +319,126 @@ export function viaArrow(a) { return () => arguments; }
 	assert.Equal(t, bytecode.CaptureLayout{1}, via.CaptureLayout, "the arguments register (after a) is boxed")
 	arrow := via.Children[0]
 	assert.False(t, arrow.HasArguments)
-	assert.Contains(t, ops(arrow), bytecode.GetEnv)
+	assert.Contains(t, ops(arrow), bytecode.GetEnv0)
+}
+
+// TestForwardArguments checks which functions leave their arguments object
+// to ApplyArguments (ForwardArguments): those whose every use of it is
+// f.apply(x, arguments), with nothing else that could reach it (reads of
+// its length and elements, TestArgumentsReadCompile, may join them). Their
+// prologue maps no object, and each such call is an ApplyArguments of the
+// arguments register, mapped in sloppy code with simple parameters.
+func TestForwardArguments(t *testing.T) {
+	fn := compileScript(t, `
+function plain() { return g.apply(this, arguments); }
+function params(a, b) { o.f.apply(a, arguments); return o.g.apply(b, arguments); }
+function strictWrites(a) { 'use strict'; a = 1; return g.apply(this, arguments); }
+function inCtor() { this.initialize.apply(this, arguments); }
+function writes(a) { a = 1; return g.apply(this, arguments); }
+function arrow() { return () => g.apply(this, arguments); }
+function evals() { eval(''); return g.apply(this, arguments); }
+function withs(o) { with (o) { return g.apply(this, arguments); } }
+function* gen() { yield g.apply(this, arguments); }
+async function asyncFn() { return g.apply(this, arguments); }
+function computed() { return g['apply'](this, arguments); }
+function three() { return g.apply(this, arguments, 1); }
+function optional() { return g?.apply(this, arguments); }
+function spread() { return g.apply(...arguments); }
+function call() { return g.call(this, arguments); }
+function typeofArgs() { return typeof arguments + g.apply(this, arguments); }
+`)
+	for _, name := range []string{"plain", "params", "strictWrites", "inCtor"} {
+		f := child(t, fn, name)
+		assert.True(t, f.ForwardArguments, name)
+		assert.NotContains(t, ops(f), bytecode.MapArguments, name)
+		args := int(f.NumParams)
+		mapped := uint8(1)
+		if name == "strictWrites" {
+			mapped = 0
+		}
+		n := 0
+		for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
+			if w := f.Code[pc]; bytecode.DecodeOp(w) == bytecode.ApplyArguments {
+				n++
+				assert.Equal(t, args, int(bytecode.DecodeB(w)), name)
+				assert.Equal(t, mapped, bytecode.DecodeC(w), name)
+			}
+		}
+		want := 1
+		if name == "params" {
+			want = 2
+		}
+		assert.Equal(t, want, n, name)
+		require.NoError(t, bytecode.VerifyRegisters(f), name)
+	}
+	for _, name := range []string{"writes", "arrow", "evals", "withs", "gen", "asyncFn", "computed", "three", "optional", "spread", "call", "typeofArgs"} {
+		f := child(t, fn, name)
+		assert.True(t, f.HasArguments, name)
+		assert.False(t, f.ForwardArguments, name)
+		assert.NotContains(t, ops(f), bytecode.ApplyArguments, name)
+	}
+}
+
+// TestArgumentsReadCompile checks the functions whose arguments object
+// waits while they only read arguments.length and arguments[k], directly or
+// through a top-level var a = arguments (ArgsLen, ArgsGet of the arguments
+// register, X = 1 when mapped), and those whose other uses need the object.
+func TestArgumentsReadCompile(t *testing.T) {
+	fn := compileScript(t, `
+function length() { return arguments.length; }
+function index(i) { return arguments[i] + arguments[0]; }
+function both() { return g.apply(this, arguments) + arguments[arguments.length - 1]; }
+function strictIndex(a) { 'use strict'; a = 1; return arguments[0]; }
+function defaults(a = 1) { return arguments[0]; }
+function alias() { var res = null, a = arguments; for (var i = a.length - 1; i >= 0; i--) res = [a[i], res]; return res; }
+function callee() { return arguments[0](); }
+function method() { return arguments.callee; }
+function writes() { arguments[0] = 1; }
+function updates() { arguments[0]++; }
+function deletes() { delete arguments[0]; }
+function forIn() { for (arguments[0] in o); }
+function tag() { return arguments[0]`+"`t`"+`; }
+function optional() { return arguments?.[0]; }
+function bare() { return arguments; }
+function aliasBefore() { a[0]; var a = arguments; return a[0]; }
+function aliasWritten() { var a = arguments; a = []; return a[0]; }
+function aliasCaptured() { var a = arguments; return () => a[0]; }
+function aliasNested() { if (x) { var a = arguments; } return a[0]; }
+function aliasMember() { var a = arguments; a.x = 1; return a[0]; }
+`)
+	for _, name := range []string{"length", "index", "both", "strictIndex", "defaults", "alias"} {
+		f := child(t, fn, name)
+		assert.True(t, f.ForwardArguments, name)
+		assert.NotContains(t, ops(f), bytecode.MapArguments, name)
+		args := uint8(f.NumParams)
+		mapped := uint32(1)
+		if name == "strictIndex" || name == "defaults" {
+			mapped = 0
+		}
+		n := 0
+		for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
+			switch w := f.Code[pc]; bytecode.DecodeOp(w) {
+			case bytecode.ArgsLen:
+				n++
+				assert.Equal(t, args, bytecode.DecodeB(w), name)
+			case bytecode.ArgsGet:
+				n++
+				assert.Equal(t, args, bytecode.DecodeB(w), name)
+				assert.Equal(t, mapped, f.Code[pc+1], name)
+			}
+		}
+		want := map[string]int{"length": 1, "index": 2, "both": 2, "strictIndex": 1, "defaults": 1, "alias": 2}[name]
+		assert.Equal(t, want, n, name)
+		require.NoError(t, bytecode.VerifyRegisters(f), name)
+	}
+	for _, name := range []string{"callee", "method", "writes", "updates", "deletes", "forIn", "tag", "optional", "bare",
+		"aliasBefore", "aliasWritten", "aliasCaptured", "aliasNested", "aliasMember"} {
+		f := child(t, fn, name)
+		assert.True(t, f.HasArguments, name)
+		assert.False(t, f.ForwardArguments, name)
+		assert.NotContains(t, ops(f), bytecode.ArgsGet, name)
+		assert.NotContains(t, ops(f), bytecode.ArgsLen, name)
+	}
 }
 
 // TestTaggedTemplateCompile checks the tagged-template lowering: one
@@ -452,9 +594,10 @@ func TestCompileLimits(t *testing.T) {
 	sb.WriteString("return v0;\n}")
 	m, err := syntax.ParseModule("t.js", sb.String(), syntax.Options{})
 	require.NoError(t, err)
-	_, err = CompileModule(m)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "more than 256 registers")
+	fn, err := CompileModule(m)
+	require.NoError(t, err, "300 let bindings spill and compile")
+	assert.Less(t, int(fn.Children[0].NumRegs), 256, "spilled bindings live in the environment")
+	assert.Greater(t, len(fn.Children[0].CaptureLayout), 100, "spilled bindings are environment slots")
 }
 
 // TestCompileParameterLimits checks that parameters count against the
@@ -527,8 +670,10 @@ func TestLineTable(t *testing.T) {
 		}
 		pc += 1 + op.ExtraWords()
 	}
+	// The body's first instruction is the const's: nothing clears b, which
+	// it writes before anything reads it.
 	assert.Equal(t, uint32(0), f.LineTable[0].PC)
-	assert.Equal(t, int32(1), f.LineTable[0].Line)
+	assert.Equal(t, int32(2), f.LineTable[0].Line)
 }
 
 // TestLineTablePositions: the words emitted at one position share an entry,
@@ -558,6 +703,28 @@ func TestTypeofIsFusion(t *testing.T) {
 	}
 	assert.Equal(t, 3, count, "three fusable comparisons; unknown type names and non-literals stay generic")
 	assert.Contains(t, ops(f), bytecode.Typeof)
+}
+
+// TestTestJumps checks the conditions condJump compiles as the jump's own
+// test: a typeof test, a template as the type name too, is JmpTypeofNot or
+// JmpTypeofIs; a loose comparison with null or undefined is JmpNullish or
+// JmpNotNullish; a strict one with undefined is JmpNotUndef where that
+// jump is taken when the value is not undefined, else JmpStrictEqK. A
+// template key names a property as a string does.
+func TestTestJumps(t *testing.T) {
+	fn := compileModule(t, "export function ty(x) { if (typeof x == `object`) return 1; if (typeof x != `function`) return 2; }\n"+
+		"export function nu(x, y) { if (x == null) return 1; if (void 0 != y) return 2; }\n"+
+		"export function un(x, y) { if (x === undefined) return 1; if (y !== void 0) return 2; }\n"+
+		"export function key(o) { return o[`k`]; }\n"+
+		"export function val(x) { return x == null; }")
+	assert.Equal(t, []bytecode.Op{bytecode.JmpTypeofNot, bytecode.LoadInt, bytecode.Ret,
+		bytecode.JmpTypeofIs, bytecode.LoadInt, bytecode.Ret, bytecode.RetUndef}, ops(child(t, fn, "ty")))
+	assert.Equal(t, []bytecode.Op{bytecode.JmpNotNullish, bytecode.LoadInt, bytecode.Ret,
+		bytecode.JmpNullish, bytecode.LoadInt, bytecode.Ret, bytecode.RetUndef}, ops(child(t, fn, "nu")))
+	assert.Equal(t, []bytecode.Op{bytecode.JmpNotUndef, bytecode.LoadInt, bytecode.Ret,
+		bytecode.JmpStrictEqK, bytecode.LoadInt, bytecode.Ret, bytecode.RetUndef}, ops(child(t, fn, "un")))
+	assert.Equal(t, []bytecode.Op{bytecode.GetProp, bytecode.Ret, bytecode.RetUndef}, ops(child(t, fn, "key")))
+	assert.Equal(t, []bytecode.Op{bytecode.LoadNull, bytecode.Eq, bytecode.Ret, bytecode.RetUndef}, ops(child(t, fn, "val")))
 }
 
 func TestNamedEvaluation(t *testing.T) {
@@ -715,6 +882,9 @@ func TestFoldChainLinear(t *testing.T) {
 		{"nullish", 2000, chain("export const x = ", "a", "??", ";")},
 		{"mixed", 2000, chain("export const x = ", "a*a+a", "&&", ";")},
 		{"if-and", 500, chain("if (", "a", "&&", ") {}")},
+		{"lt-or", 2000, chain("export const x = ", "a<1", "||", ";")},
+		{"and-lt", 2000, func(n int) string { return "export const x = a" + strings.Repeat(" && a<1", n) + ";" }},
+		{"return-lt-or", 2000, func(n int) string { return "export function f(a) { return a<0" + strings.Repeat(" || a<1", n) + "; }" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			runtime.GC() // the garbage of the cases before
@@ -761,12 +931,78 @@ func TestAssignmentIntoRegister(t *testing.T) {
 export function out(g) { var a = 1; a = g(); return a; }
 export function inTry(g) { var a = 1; try { a = g(); } catch (e) {} return a; }
 export function simple(g) { var a = 1; try { a = 2; a = g; a = function () {}; } catch (e) {} return a; }`)
-	assert.Equal(t, []bytecode.Op{bytecode.UndefRange, bytecode.LoadInt, bytecode.Move, bytecode.Call, bytecode.Ret, bytecode.RetUndef},
+	assert.Equal(t, []bytecode.Op{bytecode.LoadInt, bytecode.Move, bytecode.Call, bytecode.Ret, bytecode.RetUndef},
 		ops(child(t, fn, "out")), "the callee and the result share the variable's register")
-	assert.Equal(t, []bytecode.Op{bytecode.UndefRange, bytecode.LoadInt, bytecode.Move, bytecode.Call, bytecode.Move, bytecode.Jmp, bytecode.Move, bytecode.Ret, bytecode.RetUndef},
+	assert.Equal(t, []bytecode.Op{bytecode.LoadInt, bytecode.Move, bytecode.Call, bytecode.Move, bytecode.Jmp, bytecode.Move, bytecode.Ret, bytecode.RetUndef},
 		ops(child(t, fn, "inTry")), "the result is moved to the variable once the call returns")
-	assert.Equal(t, []bytecode.Op{bytecode.UndefRange, bytecode.LoadInt, bytecode.LoadInt, bytecode.Move, bytecode.Closure, bytecode.Jmp, bytecode.Move, bytecode.Ret, bytecode.RetUndef},
+	assert.Equal(t, []bytecode.Op{bytecode.LoadInt, bytecode.LoadInt, bytecode.Move, bytecode.Closure, bytecode.Jmp, bytecode.Move, bytecode.Ret, bytecode.RetUndef},
 		ops(child(t, fn, "simple")))
+}
+
+// TestStoreIntoRegister: x = o[k] = v computes v in x's register, from
+// which the store reads it, except inside a try statement, where a handler
+// would find x written before a store that throws, and when o or k reads x.
+func TestStoreIntoRegister(t *testing.T) {
+	fn := compileModule(t, `
+export function chain(o, k, s) { for (;;) s = o[k] = s * 2; }
+export function prop(o, s) { for (;;) s = o.p = s * 2; }
+export function inTry(o, k, s) { try { s = o[k] = s * 2; } catch (e) {} return s; }
+export function keyReads(o, s) { s = o[s] = s * 2; return s; }
+export function objReads(s) { s = s.p = s.q; return s; }`)
+	assert.NotContains(t, ops(child(t, fn, "chain")), bytecode.Move)
+	assert.NotContains(t, ops(child(t, fn, "prop")), bytecode.Move)
+	for _, name := range []string{"inTry", "keyReads", "objReads"} {
+		assert.Contains(t, ops(child(t, fn, name)), bytecode.Move, name)
+	}
+}
+
+// TestCompareEnvOperand: a compare-and-branch reads a binding closures
+// share in the innermost environment itself (bytecode.EnvOperand), without
+// a GetEnv before it; one in its TDZ, one further out and a strict
+// equality keep their read.
+func TestCompareEnvOperand(t *testing.T) {
+	fn := compileModule(t, `
+export function bound(a) { var n = a, k = () => n; for (var i = 0; i < n; i++) a++; return a; }
+export function tdz(a) { for (var i = 0; i < n; i++) a++; let n = a, k = () => n; return a; }
+export function outer(a) { var n = a; return function () { var m = 1, g = () => m; for (var i = 0; i < n; i++) a++; return a + g(); }; }
+export function strict(a) { var n = a, k = () => n; if (a === n) a++; return a; }`)
+	envReads := func(f *bytecode.Function) (n int) {
+		for _, w := range words(f) {
+			if op := bytecode.DecodeOp(w[0]); op >= bytecode.JmpLt && op <= bytecode.JmpNGe && w[1] >= bytecode.EnvOperand {
+				n++
+			}
+		}
+		return n
+	}
+	bound := child(t, fn, "bound")
+	assert.Equal(t, 1, envReads(bound))
+	assert.NotContains(t, ops(bound), bytecode.GetEnv0)
+	tdz := child(t, fn, "tdz")
+	assert.Equal(t, 0, envReads(tdz))
+	assert.Contains(t, ops(tdz), bytecode.GetEnvChk)
+	inner := child(t, fn, "outer").Children[0]
+	assert.Equal(t, 0, envReads(inner))
+	assert.Contains(t, ops(inner), bytecode.GetEnv1)
+	strict := child(t, fn, "strict")
+	assert.Equal(t, 0, envReads(strict))
+	assert.Contains(t, ops(strict), bytecode.GetEnv0)
+}
+
+// TestValueFromItsRegister: the property of an object literal that adds
+// its properties one at a time and a member assignment whose value is not
+// used store a local from its own register, without a copy; an assignment
+// whose value is used still builds it in the result's register.
+func TestValueFromItsRegister(t *testing.T) {
+	fn := compileModule(t, `
+export function lit(a, b) { return {a, b: b, c: 1, ...a}; }
+export function set(o, v) { o.p = v; o[0] = v; }
+export function used(o, v) { return o.p = v; }`)
+	assert.Equal(t, []bytecode.Op{bytecode.NewObject, bytecode.DefineField, bytecode.DefineField, bytecode.LoadInt, bytecode.DefineField, bytecode.CopyDataProps, bytecode.Ret, bytecode.RetUndef},
+		ops(child(t, fn, "lit")))
+	assert.Equal(t, []bytecode.Op{bytecode.SetProp, bytecode.LoadInt, bytecode.SetElem, bytecode.RetUndef},
+		ops(child(t, fn, "set")))
+	assert.Equal(t, []bytecode.Op{bytecode.Move, bytecode.SetProp, bytecode.Ret, bytecode.RetUndef},
+		ops(child(t, fn, "used")))
 }
 
 // TestGetElemRefEmission checks that only a compound assignment or update
@@ -823,7 +1059,7 @@ func TestResolveGlobalEmission(t *testing.T) {
 		`(function (v) { "use strict"; x = v; })`: {bytecode.SetGlobal},
 		`"use strict"; var x; x = f();`:           {bytecode.SetGlobal},
 		`"use strict"; x += f(); x++; x ??= f();`: {bytecode.SetGlobal},
-		`x = f();`: {bytecode.SetGlobalSloppy},
+		`x = f();`: {bytecode.SetGlobal},
 		`(function () { "use strict"; x = f(); })`: {bytecode.ResolveGlobal, bytecode.SetGlobalRef},
 	} {
 		s, err := syntax.ParseScript("s.js", src, syntax.Options{})
@@ -848,4 +1084,397 @@ func TestResolveGlobalEmission(t *testing.T) {
 		walk(fn)
 		assert.Equal(t, want, got, src)
 	}
+}
+
+// TestUndefRangeLeavesOutWrittenVars: the UndefRange of a function's
+// prologue clears the registers of its vars that may be read before they
+// are written, and leaves out those every path writes before it reads
+// them, its lexical bindings and its function declarations.
+func TestUndefRangeLeavesOutWrittenVars(t *testing.T) {
+	src := `
+function first(g) { var x = g(); var y = x; return y; }
+function readBefore(g) { g(x); var x = 1; return x; }
+function inBranch(g) { if (g) { var x = 1; } return x; }
+function inTry(g) { try { var x = g(); } finally {} return x; }
+function inLabelledBlock() { l: { var x = 1; break l; } return x; }
+function forHead() { var r; for (var i = 0; i < 2; i++) { var y = i; r = y; } return r; }
+function labelledFor() { l: for (var i = 0; i < 2; i++) { continue l; } return i; }
+function selfInit() { var x = x; return x; }
+function order() { var a = b, b = 1; return a + b; }
+function noInit() { var x; return x; }
+function lexical() { let x; const y = 1; class C {} return [x, y, C]; }
+function decl() { return h(); function h() { return 1; } }
+function annexB() { var r = k; { function k() {} } return r; }
+function inWith(o) { with (o) { var x = 1; } return x; }
+function withEval(s) { var x = 1; return eval(s) + x; }
+function split(a, b = () => a) { var a = 2; var x = 1; var y = y; return [a, x, y]; }
+function* gen() { var x = 1; yield x; }
+async function async() { var x = 1; await x; }
+function strict() { "use strict"; var x = 1; { function k() {} } return x; }
+function inCase(t) { switch (t) { case 1: var x = 1; return x; case 2: var y = 2; break; } return y; }
+function caseFallthrough(t) { switch (t) { case 1: var x = 1; case 2: return x; } }
+function ifElse(c) { if (c) var x = 1; else x = 2; return x; }
+function returnBranch(c) { if (c) { return 0; } else { var x = 1; } return x; }
+function loopBody(a) { for (var i = 0; i < a.length; i++) { var v = a[i]; if (v) return v; } return 0; }
+function afterLoop(a) { for (var k in a) var v = k; return v; }
+function whileBody(n) { while (n) { var t = n; n = t - 1; } return n; }
+function doWhile(a) { do { var x = a(); } while (x); return 0; }
+function shortCircuit(c) { c && (x = 1); return x; var x; }
+function logicalAssign(c) { var r = c; r ||= (x = 1); return x; var x; }
+function bothArms(c) { var x = c ? (y = 1) : (y = 2); return x + y; var y; }
+function optional(o) { o?.f(x = 1); return x; var x; }
+function tryCatch(g) { try { var x = g(); } catch (e) { x = 0; } return x; }
+function catchReads(g) { try { var x = g(); } catch (e) { return x; } return x; }
+function finallyWrites(g) { try { g(); } finally { var x = 1; } return x; }
+function member(o) { o[x = 1] = x; return x; var x; }
+function pattern(o) { var {p} = o; return p; }
+`
+	fn := compileScript(t, src)
+	// cleared returns the number of registers the UndefRange at the start
+	// of f clears.
+	cleared := func(name string) int {
+		f := child(t, fn, name)
+		n := 0
+		for pc := 0; pc < len(f.Code); {
+			w := f.Code[pc]
+			op := bytecode.DecodeOp(w)
+			if op == bytecode.UndefRange {
+				n += int(uint8(w >> 16))
+			}
+			pc += 1 + op.ExtraWords()
+		}
+		return n
+	}
+	for _, c := range []struct {
+		name string
+		want int
+	}{
+		{"first", 0},
+		{"readBefore", 1},
+		{"inBranch", 1},
+		{"inTry", 0}, // a throw leaves the function
+		{"inLabelledBlock", 1},
+		{"forHead", 1}, // r; the head writes i, the body y before it reads it
+		{"labelledFor", 0},
+		{"selfInit", 1},
+		{"order", 1}, // b
+		{"noInit", 1},
+		{"lexical", 0},
+		{"decl", 0},
+		{"annexB", 1}, // the var k
+		{"inWith", 1},
+		{"withEval", 0}, // x lives in the environment
+		{"split", 1},    // the body's y; its a starts with the parameter's value
+		{"gen", 1},
+		{"async", 1},
+		{"strict", 0},          // k is the block's own
+		{"inCase", 1},          // y, read after the switch
+		{"caseFallthrough", 1}, // x, which case 2 reads when entered by its test
+		{"ifElse", 0},
+		{"returnBranch", 0},
+		{"loopBody", 0},
+		{"afterLoop", 1}, // v: the body may not run
+		{"whileBody", 0},
+		{"doWhile", 1}, // the test is checked as if the body had not run
+		{"shortCircuit", 1},
+		{"logicalAssign", 1},
+		{"bothArms", 0},
+		{"optional", 1},
+		{"tryCatch", 0},
+		{"catchReads", 1},
+		{"finallyWrites", 0},
+		{"member", 0}, // the key's assignment runs before the value
+		{"pattern", 1},
+	} {
+		assert.Equal(t, c.want, cleared(c.name), c.name)
+	}
+
+	// A function whose vars take all 256 registers clears them in two
+	// runs: one UndefRange would encode the length 256 as 0.
+	names := make([]string, 256)
+	for i := range names {
+		names[i] = "a" + strconv.Itoa(i)
+	}
+	fn = compileScript(t, "function wide() { var "+strings.Join(names, ", ")+"; return a0; }")
+	assert.Equal(t, 256, cleared("wide"))
+}
+
+// TestEnvOrderByReferences: a function with more captured bindings than
+// GetEnv reaches gives the most referenced the first slots after its
+// parameters, so that a closure reads the hot one with GetEnv and a cold
+// one with GetEnvW.
+func TestEnvOrderByReferences(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("function outer(a, b) {\n")
+	for i := range 300 {
+		fmt.Fprintf(&b, "var v%d = %d; function f%d() { return v%d; }\n", i, i, i, i)
+	}
+	b.WriteString("function hot() { return v299 + v299 + v299 + v299 + a + b; }\n")
+	b.WriteString("function cold() { return v0; }\n")
+	b.WriteString("return hot; }")
+	fn := compileScript(t, b.String())
+	outer := child(t, fn, "outer")
+	require.Greater(t, len(outer.CaptureLayout), bytecode.MaxRegister+1)
+	assert.Equal(t, uint16(0), outer.CaptureLayout[0], "a keeps slot 0")
+	assert.Equal(t, uint16(1), outer.CaptureLayout[1], "b keeps slot 1")
+	hot := child(t, outer, "hot")
+	assert.NotContains(t, ops(hot), bytecode.GetEnvW)
+	assert.Contains(t, ops(hot), bytecode.GetEnv0)
+	// v0 has one reference as each of v1..v298 has, the function
+	// declarations too: past the first 256 slots some of them read wide.
+	wide := 0
+	for i := range 300 {
+		if slices.Contains(ops(child(t, outer, fmt.Sprintf("f%d", i))), bytecode.GetEnvW) {
+			wide++
+		}
+	}
+	assert.Greater(t, wide, 0)
+	assert.Less(t, wide, 300)
+}
+
+// TestArrayPushK checks which elements of an array literal ArrayPushK
+// pushes: runs of two or more constants (numbers, strings, null and
+// undefined as fold finds them), at most arrayPushKMax at a time and while
+// the constant pool stays within arrayPushKPool; any other element is
+// pushed on its own. A literal that is one such run is a NewArrayK.
+func TestArrayPushK(t *testing.T) {
+	seq := func(n int, f func(i int) string) string {
+		var b strings.Builder
+		for i := range n {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(f(i))
+		}
+		return "[" + b.String() + "]"
+	}
+	num := func(i int) string { return strconv.Itoa(i) }
+	for _, tc := range []struct {
+		src  string
+		runs []int // the n of each ArrayPushK, in order
+		push int   // ArrayPush count
+		newK int   // the n of the literal's NewArrayK, 0 for none
+	}{
+		{`[1, 2, 3]`, nil, 0, 3},
+		{`[1, 2]`, nil, 0, 2},
+		{`[1]`, nil, 1, 0},
+		{`[1, x, 2, 3]`, []int{2}, 2, 0},
+		{`[, 1, 2, , 3]`, []int{2}, 1, 0},
+		{`[...a, 1, 2, ...b]`, []int{2}, 0, 0},
+		{`[-0, 'é', null, undefined, NaN, Infinity, -1, 1 / 2, 'a' + 'b', void 0, ` + "`t`" + `]`, nil, 0, 11},
+		{`[-0, 'é', null, undefined, NaN, x]`, []int{5}, 1, 0},
+		{`(function (undefined) { return [undefined, 1]; })`, nil, 2, 0},
+		{`with (o) [undefined, NaN];`, nil, 2, 0},
+		{`[x, y]`, nil, 2, 0},
+		{`[true, false, {}]`, nil, 3, 0},
+		{seq(256, num), nil, 0, 256},
+		{seq(257, num), []int{256}, 1, 0},
+		{seq(600, num), []int{256, 256, 88}, 0, 0},
+		{seq(5000, num), slices.Repeat([]int{256}, 16), 5000 - 16*256, 0},
+	} {
+		fn := compileScript(t, tc.src)
+		var runs []int
+		var walk func(fn *bytecode.Function)
+		push, newK := 0, 0
+		walk = func(fn *bytecode.Function) {
+			for pc := 0; pc < len(fn.Code); {
+				w := fn.Code[pc]
+				op := bytecode.DecodeOp(w)
+				switch op {
+				case bytecode.ArrayPushK:
+					x := fn.Code[pc+1]
+					runs = append(runs, int(bytecode.ExtraHi(x)))
+					assert.LessOrEqual(t, int(bytecode.ExtraLo(x))+int(bytecode.ExtraHi(x)), len(fn.Consts))
+				case bytecode.ArrayPush:
+					push++
+				case bytecode.NewArrayK:
+					x := fn.Code[pc+1]
+					newK = int(bytecode.ExtraHi(x))
+					assert.LessOrEqual(t, int(bytecode.ExtraLo(x))+int(bytecode.ExtraHi(x)), len(fn.Consts))
+				}
+				pc += 1 + op.ExtraWords()
+			}
+			for _, c := range fn.Children {
+				walk(c)
+			}
+		}
+		walk(fn)
+		name := tc.src[:min(len(tc.src), 40)]
+		assert.Equal(t, tc.runs, runs, name)
+		assert.Equal(t, tc.push, push, name)
+		assert.Equal(t, tc.newK, newK, name)
+		assert.LessOrEqual(t, len(fn.Consts), arrayPushKPool+16, name)
+	}
+}
+
+// TestObjectLitK: a literal of two or more plain data properties under
+// static keys is one NewObjectLit of its values, evaluated into registers in a row, a
+// call's result where the call leaves it; its keys are a run of constants,
+// which the next literal of the same keys shares. Every other literal makes
+// its object first and adds its properties one at a time.
+func TestObjectLitK(t *testing.T) {
+	fn := compileModule(t, `
+function g() {}
+let k;
+export function rows(x) { const p = {a: x, "b c": 1}; const q = {a: g(), "b c": 2}; return [p, q]; }
+export function calls() { return {a: g(), b: g(), c: {d: g()}}; }
+export function* gen() { return {a: yield 1, 1.5: 2, "4294967295": 3}; }
+export function sixteen(a) { return {a, b: a, c: a, d: a, e: a, f: a, g: a, h: a, i: a, j: a, k: a, l: a, m: a, n: a, o: a, p: a}; }
+export function seventeen(a) { return {a, b: a, c: a, d: a, e: a, f: a, g: a, h: a, i: a, j: a, k: a, l: a, m: a, n: a, o: a, p: a, q: a}; }
+export function empty() { return {}; }
+export function single(a) { return {a}; }
+export function locals(a, b) { return {a, b: b}; }
+export function twice() { return {a: 1, a: 2}; }
+export function proto() { return {__proto__: null, a: 1}; }
+export function protoString() { return {"__proto__": 1}; }
+export function protoShorthand(__proto__) { return {__proto__}; }
+export function index() { return {a: 1, 0: 2}; }
+export function indexString() { return {"1": 1}; }
+export function computed() { return {[k]: 1}; }
+export function spread() { return {a: 1, ...k}; }
+export function method() { return {a: 1, m() {}}; }
+export function getter() { return {a: 1, get b() { return 1; }}; }
+`)
+	type lit struct{ b, c, lo, ic int }
+	lits := func(f *bytecode.Function) []lit {
+		var out []lit
+		for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
+			if w := f.Code[pc]; bytecode.DecodeOp(w) == bytecode.NewObjectLit {
+				x := f.Code[pc+1]
+				out = append(out, lit{int(bytecode.DecodeB(w)), int(bytecode.DecodeC(w)), int(bytecode.ExtraLo(x)), int(bytecode.ExtraHi(x))})
+			}
+		}
+		return out
+	}
+	keys := func(f *bytecode.Function, l lit) []string {
+		var out []string
+		for _, k := range f.Consts[l.lo : l.lo+l.c] {
+			assert.True(t, k.Kind == bytecode.ConstString && k.Key, "%v", k)
+			out = append(out, k.Str)
+		}
+		return out
+	}
+
+	rows := child(t, fn, "rows")
+	assert.NotContains(t, ops(rows), bytecode.NewObject)
+	assert.NotContains(t, ops(rows), bytecode.DefineField)
+	if l := lits(rows); assert.Len(t, l, 2) {
+		assert.Equal(t, []string{"a", "b c"}, keys(rows, l[0]))
+		assert.Equal(t, l[0].lo, l[1].lo, "the second literal's keys are the first's")
+		assert.NotEqual(t, l[0].ic, l[1].ic)
+	}
+
+	calls := child(t, fn, "calls")
+	assert.NotContains(t, ops(calls), bytecode.Move, "each call's result is in its value's register")
+	if l := lits(calls); assert.Len(t, l, 1) {
+		assert.Equal(t, []string{"a", "b", "c"}, keys(calls, l[0]))
+	}
+
+	gen := child(t, fn, "gen")
+	if l := lits(gen); assert.Len(t, l, 1) {
+		assert.Equal(t, []string{"a", "1.5", "4294967295"}, keys(gen, l[0]))
+	}
+	if l := lits(child(t, fn, "sixteen")); assert.Len(t, l, 1) {
+		assert.Equal(t, 16, l[0].c)
+	}
+
+	for _, name := range []string{"seventeen", "empty", "single", "locals", "twice", "proto", "protoString", "protoShorthand", "index", "indexString", "computed", "spread", "method", "getter"} {
+		f := child(t, fn, name)
+		assert.Contains(t, ops(f), bytecode.NewObject, name)
+		assert.NotContains(t, ops(f), bytecode.NewObjectLit, name)
+	}
+}
+
+// TestObjectLitKeyRuns checks the key runs of a function's literals: one
+// run for each set of keys, however far apart its literals are; past
+// objectLitKeyBudget, a literal of keys without a run makes its object one
+// property at a time, under a constant per name; and a function whose runs
+// would take its constants past the limit compiles again without them.
+func TestObjectLitKeyRuns(t *testing.T) {
+	type lit struct{ lo, c int }
+	lits := func(f *bytecode.Function) []lit {
+		var out []lit
+		for pc := 0; pc < len(f.Code); pc += 1 + bytecode.DecodeOp(f.Code[pc]).ExtraWords() {
+			if w := f.Code[pc]; bytecode.DecodeOp(w) == bytecode.NewObjectLit {
+				out = append(out, lit{int(bytecode.ExtraLo(f.Code[pc+1])), int(bytecode.DecodeC(w))})
+			}
+		}
+		return out
+	}
+	keyConsts := func(f *bytecode.Function) int {
+		n := 0
+		for _, k := range f.Consts {
+			if k.Kind == bytecode.ConstString && k.Key {
+				n++
+			}
+		}
+		return n
+	}
+	count := func(f *bytecode.Function, op bytecode.Op) int {
+		n := 0
+		for _, o := range ops(f) {
+			if o == op {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Six sets of keys, their literals interleaved, the first six in the
+	// order a b, id name tags, id name, x y z, b a, a c: 12 constants, as
+	// {id, name} takes the start of {id, name, tags}'s run, whose id is the
+	// function's property name id.
+	sets := []string{"a: 1, b: 2", "a: 1, c: 2", "b: 1, a: 2", "x: 1, y: 2, z: 3", "id: 1, name: 2", "id: 1, name: 2, tags: 3"}
+	var src strings.Builder
+	src.WriteString("export function rows() { return [")
+	for i := range 60 {
+		fmt.Fprintf(&src, "{%s}, ", sets[(i*5)%len(sets)])
+	}
+	src.WriteString("]; }")
+	rows := child(t, compileModule(t, src.String()), "rows")
+	l := lits(rows)
+	require.Len(t, l, 60)
+	runs := map[int]bool{}
+	for i, x := range l {
+		runs[x.lo] = true
+		assert.Equal(t, l[i%len(sets)].lo, x.lo, "literal %d", i)
+	}
+	assert.Len(t, runs, len(sets)-1)
+	assert.Equal(t, l[1].lo, l[2].lo)
+	assert.Equal(t, 12, keyConsts(rows))
+
+	// Sets of four keys fill the budget; a literal of a new set past it
+	// makes its object one property at a time, its names a, b and c the
+	// constants of the first run, and one of a set with a run still takes
+	// the run.
+	src.Reset()
+	src.WriteString("export function many() { return [")
+	for i := range objectLitKeyBudget / 4 {
+		fmt.Fprintf(&src, "{a: 1, b: 2, c: 3, k%d: 4}, ", i)
+	}
+	src.WriteString("{a: 1, b: 2, c: 3, past: 4}, {a: 1, b: 2, c: 3, k7: 4}]; }")
+	many := child(t, compileModule(t, src.String()), "many")
+	l = lits(many)
+	require.Len(t, l, objectLitKeyBudget/4+1)
+	assert.Equal(t, l[7].lo, l[len(l)-1].lo)
+	assert.Equal(t, 1, count(many, bytecode.NewObject))
+	assert.Equal(t, 4, count(many, bytecode.DefineField))
+	assert.Equal(t, objectLitKeyBudget+1, keyConsts(many)) // and past, through nameConst
+
+	// 65,000 strings leave room for the names of the literals, a constant
+	// each, not for their runs.
+	src.Reset()
+	src.WriteString("export function full() { var s; ")
+	for i := range 65000 {
+		fmt.Fprintf(&src, "s = 's%d'; ", i)
+	}
+	for i := range 200 {
+		fmt.Fprintf(&src, "s = {a: 1, b: 2, k%d: 3}; ", i)
+	}
+	src.WriteString("return s; }")
+	full := child(t, compileModule(t, src.String()), "full")
+	assert.Empty(t, lits(full))
+	assert.Equal(t, 200, count(full, bytecode.NewObject))
+	assert.Equal(t, 202, keyConsts(full))
+	assert.Len(t, full.Consts, 65000+202)
 }

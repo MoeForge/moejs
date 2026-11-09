@@ -22,7 +22,7 @@ func booleanConstruct(r *Realm, args []Value, newTarget *Object) (Value, error) 
 	if err != nil {
 		return Undefined(), err
 	}
-	o.internal = &primitiveWrapper{value: Bool(ToBoolean(Arg(args, 0)))}
+	setExtData(o, kindPrimitive, &primitiveWrapper{value: Bool(ToBoolean(Arg(args, 0)))})
 	return ObjectValue(o), nil
 }
 
@@ -32,7 +32,7 @@ func thisBooleanValue(r *Realm, this Value, method string) (bool, error) {
 		return this.AsBool(), nil
 	}
 	if this.IsObject() && this.AsObject().class == ClassBoolean {
-		return this.AsObject().internal.(*primitiveWrapper).value.AsBool(), nil
+		return extDataOf(this.AsObject(), kindPrimitive).value.AsBool(), nil
 	}
 	return false, r.TypeError("Boolean.prototype.%s requires that 'this' be a Boolean", method)
 }

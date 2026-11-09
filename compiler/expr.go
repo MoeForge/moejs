@@ -3,6 +3,7 @@ package compiler
 import (
 	"math"
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -33,6 +34,10 @@ func (f *funcState) expr(e syntax.Expr, dst int) {
 			f.loadLoc(e.Binding, dst)
 			return
 		}
+		if f.thisReg >= 0 {
+			f.emitMove(dst, f.thisReg)
+			return
+		}
 		f.emitA(bytecode.LoadThis, dst)
 	case *syntax.BigIntLit:
 		f.emitABx(bytecode.LoadConst, dst, f.addConst(bytecode.Const{Kind: bytecode.ConstBigInt, Str: e.Digits}))
@@ -53,8 +58,20 @@ func (f *funcState) expr(e syntax.Expr, dst int) {
 	case *syntax.BinaryExpr:
 		f.binary(e, dst, nil)
 	case *syntax.LogicalExpr:
-		f.expr(e.X, dst)
 		end := f.newLabel()
+		if e.Op != syntax.Nullish && boolValued(e.X) {
+			// X's value is a boolean, so the operator yields it only when it
+			// decides: X is a test that jumps to that constant.
+			short := f.newLabel()
+			f.condJump(e.X, short, e.Op == syntax.LogOr)
+			f.expr(e.Y, dst)
+			f.emitJump(bytecode.Jmp, 0, end)
+			f.bind(short)
+			f.emitBool(dst, e.Op == syntax.LogOr)
+			f.bind(end)
+			return
+		}
+		f.expr(e.X, dst)
 		switch e.Op {
 		case syntax.LogOr:
 			f.emitJump(bytecode.JmpT, dst, end)
@@ -162,8 +179,56 @@ func (f *funcState) markScriptOrModule() {
 
 // exprReg compiles e and returns a register holding its value. Un-captured
 // locals and the constants a loop hoisted (hoist.go) are returned directly
-// (no copy); callers must only read the result.
+// (no copy, localReg); callers must only read the result.
 func (f *funcState) exprReg(e syntax.Expr) int {
+	if id := f.updatedLocal(e); id != nil {
+		e = id
+	}
+	if r := f.localReg(e); r >= 0 {
+		return r
+	}
+	t := f.alloc()
+	f.expr(e, t)
+	return t
+}
+
+// patternSource is exprReg for the value that pattern p destructures: a
+// local's register is aliased only when p does not name the local, as p
+// may assign it before it reads the value again.
+func (f *funcState) patternSource(e syntax.Expr, p syntax.Pattern) int {
+	if id := f.updatedLocal(e); id != nil {
+		e = id
+	}
+	if id, ok := e.(*syntax.Ident); ok && f.regOf(id.Binding) >= 0 && mentions(p, id.Binding) {
+		t := f.alloc()
+		f.expr(id, t)
+		return t
+	}
+	return f.exprReg(e)
+}
+
+// updatedLocal compiles e for its effect when it is a prefix update of a
+// writable register local and returns the local's name, whose register
+// then holds e's value, as a read of the name right after the update
+// would; else nil. (An update of an immutable binding throws, or in
+// sloppy code of a function expression's own name has a value but leaves
+// the name as it is.)
+func (f *funcState) updatedLocal(e syntax.Expr) *syntax.Ident {
+	u, ok := e.(*syntax.UpdateExpr)
+	if !ok || !u.Prefix {
+		return nil
+	}
+	id, ok := u.X.(*syntax.Ident)
+	if !ok || f.regOf(id.Binding) < 0 || immutable(id.Binding) {
+		return nil
+	}
+	f.update(u, -1, false)
+	return id
+}
+
+// localReg returns the register that holds e's value already, an
+// un-captured local's or a constant's a loop hoisted (hoist.go), or -1.
+func (f *funcState) localReg(e syntax.Expr) int {
 	switch x := e.(type) {
 	case *syntax.Ident:
 		if r := f.regOf(x.Binding); r >= 0 {
@@ -173,24 +238,26 @@ func (f *funcState) exprReg(e syntax.Expr) int {
 		if r := f.regOf(x.Binding); r >= 0 {
 			return r
 		}
+	case *syntax.ThisExpr:
+		if x.Binding == nil && f.thisReg >= 0 {
+			return f.thisReg
+		}
 	}
-	if r := f.hoistedReg(e); r >= 0 {
-		return r
-	}
-	t := f.alloc()
-	f.expr(e, t)
-	return t
+	return f.hoistedReg(e)
 }
 
 // operand is exprReg for an operand that is consumed only after the
 // expressions in after have been evaluated: a local register is aliased only
-// when none of them can assign to it.
+// when none of them can assign to it (assigns).
 func (f *funcState) operand(e syntax.Expr, after ...syntax.Expr) int {
+	if id := f.updatedLocal(e); id != nil {
+		e = id
+	}
 	if id, ok := e.(*syntax.Ident); ok {
 		if r := f.regOf(id.Binding); r >= 0 {
 			safe := true
 			for _, a := range after {
-				if a != nil && containsAssign(a) {
+				if a != nil && assigns(a, id.Binding) {
 					safe = false
 					break
 				}
@@ -199,6 +266,9 @@ func (f *funcState) operand(e syntax.Expr, after ...syntax.Expr) int {
 				return r
 			}
 		}
+	}
+	if t, ok := e.(*syntax.ThisExpr); ok && t.Binding == nil && f.thisReg >= 0 {
+		return f.thisReg // nothing assigns this
 	}
 	if r := f.hoistedReg(e); r >= 0 {
 		return r
@@ -293,8 +363,20 @@ func (f *funcState) condJump(e syntax.Expr, lbl *label, jumpIf bool) {
 			f.bind(skip)
 			return
 		}
+	case *syntax.SeqExpr:
+		// The expressions before the last run for their effects, as they
+		// do for its value, and the last is the condition.
+		for _, y := range x.Exprs[:len(x.Exprs)-1] {
+			f.exprEffect(y)
+		}
+		f.condJump(x.Exprs[len(x.Exprs)-1], lbl, jumpIf)
+		return
 	}
 	mark := f.nregs
+	if b, ok := e.(*syntax.BinaryExpr); ok && f.testJump(b, lbl, jumpIf) {
+		f.free(mark)
+		return
+	}
 	if b, ok := compareJump(e); ok {
 		// What exprReg and expr do before binary, so that the operands
 		// get the same registers and the jump the comparison's position.
@@ -417,7 +499,7 @@ func (f *funcState) storeName(id *syntax.Ident, src int, mode bindMode) {
 
 // mentions reports whether e references binding b (outside nested functions,
 // which cannot reference a register local).
-func mentions(e syntax.Expr, b *syntax.Binding) bool {
+func mentions(e syntax.Node, b *syntax.Binding) bool {
 	if b == nil {
 		return false
 	}
@@ -537,6 +619,25 @@ func (f *funcState) binaryOp(e *syntax.BinaryExpr, dst, left int, jmp *condJumpT
 	if !ok {
 		f.c.fail(e.Pos, "internal: unexpected binary operator "+e.Op.String())
 	}
+	if jmp != nil && (op == bytecode.StrictEq || op == bytecode.StrictNe) {
+		// A string, null or undefined is the jump's X word. Strict
+		// equality is symmetric and a constant's evaluation has no effect,
+		// so the constant may be either operand.
+		x, y := e.X, e.Y
+		if _, ok := f.strictConst(y); !ok && left < 0 {
+			x, y = y, x
+		}
+		if k, ok := f.strictConst(y); ok {
+			b := left
+			if b < 0 {
+				b = f.exprReg(x)
+			}
+			jop, _ := bytecode.CompareJump(op, jmp.jumpIf)
+			f.emitJump(jop.Constant(), b, jmp.lbl)
+			f.emitExtra(uint32(k))
+			return
+		}
+	}
 	b := left
 	if b < 0 {
 		b = f.operand(e.X, e.Y)
@@ -553,6 +654,14 @@ func (f *funcState) binaryOp(e *syntax.BinaryExpr, dst, left int, jmp *condJumpT
 			}
 		}
 	}
+	if jmp != nil && op != bytecode.StrictEq && op != bytecode.StrictNe {
+		if s, ok := f.envOperand(e.Y); ok {
+			jop, _ := bytecode.CompareJump(op, jmp.jumpIf)
+			f.emitJump(jop, b, jmp.lbl)
+			f.emitExtra(bytecode.EnvOperand | uint32(s)<<8 | uint32(b))
+			return
+		}
+	}
 	c := f.operand(e.Y)
 	if jmp != nil {
 		jop, _ := bytecode.CompareJump(op, jmp.jumpIf)
@@ -561,6 +670,62 @@ func (f *funcState) binaryOp(e *syntax.BinaryExpr, dst, left int, jmp *condJumpT
 		return
 	}
 	f.emitABC(op, dst, b, c)
+}
+
+// envOperand returns the slot of env^0 that holds the binding e names,
+// when a compare-and-branch op may read it itself (bytecode.EnvOperand):
+// a binding initialized before any read, no with statement around the
+// read, and no register the loop nest holds it in.
+func (f *funcState) envOperand(e syntax.Expr) (int, bool) {
+	id, ok := e.(*syntax.Ident)
+	if !ok || id.Binding == nil || id.Binding.NeedsTDZ || id.Binding.Kind == syntax.BindImport || f.withsFor(id.Binding) != nil || f.hoistedReg(e) >= 0 {
+		return 0, false
+	}
+	loc, ok := f.c.locs[id.Binding]
+	if !ok || loc.env == nil || loc.slot > bytecode.MaxRegister || f.envDepthOf(loc.env) != 0 {
+		return 0, false
+	}
+	return loc.slot, true
+}
+
+// boolValued reports whether e's value is always a boolean: a comparison,
+// !, a boolean literal, or && and || of those. It looks at 32 operands at
+// most, so that a long chain, which expr enters at each of its levels,
+// compiles in linear time.
+func boolValued(e syntax.Expr) bool {
+	n := 32
+	return boolOperands(e, &n)
+}
+
+func boolOperands(e syntax.Expr, n *int) bool {
+	if *n--; *n < 0 {
+		return false
+	}
+	switch e := e.(type) {
+	case *syntax.BinaryExpr:
+		switch e.Op {
+		case syntax.Eq, syntax.NotEq, syntax.StrictEq, syntax.StrictNeq, syntax.Lt, syntax.Gt, syntax.LtEq, syntax.GtEq,
+			syntax.KwIn, syntax.KwInstanceof:
+			return true
+		}
+	case *syntax.UnaryExpr:
+		return e.Op == syntax.Not
+	case *syntax.BoolLit:
+		return true
+	case *syntax.LogicalExpr:
+		// The right operand first: a chain nests to the left.
+		return e.Op != syntax.Nullish && boolOperands(e.Y, n) && boolOperands(e.X, n)
+	}
+	return false
+}
+
+// emitBool loads the boolean v into dst.
+func (f *funcState) emitBool(dst int, v bool) {
+	if v {
+		f.emitA(bytecode.LoadTrue, dst)
+	} else {
+		f.emitA(bytecode.LoadFalse, dst)
+	}
 }
 
 // condJumpTo is the jump that a comparison compiled by binary ends in.
@@ -600,6 +765,71 @@ func (f *funcState) typeofIs(e *syntax.BinaryExpr, dst int) bool {
 	return true
 }
 
+// testJump compiles the condition e of condJump as a test the jump op
+// makes itself, and reports whether e is one: a typeof test is
+// JmpTypeofIs or JmpTypeofNot, TypeofIs and the jump on its result; a loose
+// comparison with null or undefined (x == null, void 0 != x) is
+// JmpNullish or JmpNotNullish, which convert nothing, as the comparison
+// does not; a strict one with undefined is JmpNotUndef where the jump is
+// taken when x is not undefined.
+func (f *funcState) testJump(e *syntax.BinaryExpr, lbl *label, jumpIf bool) bool {
+	var eq bool
+	switch e.Op {
+	case syntax.Eq, syntax.StrictEq:
+		eq = true
+	case syntax.NotEq, syntax.StrictNeq:
+	default:
+		return false
+	}
+	if un, idx, ok := typeofIsParts(e); ok {
+		x := f.typeofOperand(un.X)
+		f.setPosNode(e)
+		op := bytecode.JmpTypeofNot
+		if eq == jumpIf {
+			op = bytecode.JmpTypeofIs
+		}
+		f.emitJump(op, x, lbl)
+		f.emitExtra(uint32(idx))
+		return true
+	}
+	x, undef, ok := f.nullishOperand(e)
+	if !ok {
+		return false
+	}
+	var op bytecode.Op
+	switch {
+	case e.Op == syntax.Eq || e.Op == syntax.NotEq:
+		op = bytecode.JmpNotNullish
+		if eq == jumpIf {
+			op = bytecode.JmpNullish
+		}
+	case undef && eq != jumpIf:
+		op = bytecode.JmpNotUndef
+	default:
+		return false
+	}
+	f.setPosNode(e)
+	f.emitJump(op, f.exprReg(x), lbl)
+	return true
+}
+
+// nullishOperand returns the operand of e that is compared with null or
+// undefined, when the other is either (folded: null, undefined, void 0),
+// and whether that is undefined.
+func (f *funcState) nullishOperand(e *syntax.BinaryExpr) (x syntax.Expr, undef, ok bool) {
+	for _, p := range [2][2]syntax.Expr{{e.X, e.Y}, {e.Y, e.X}} {
+		switch c := p[1].(type) {
+		case *syntax.NullLit:
+			return p[0], false, true
+		case *syntax.Ident, *syntax.UnaryExpr:
+			if k, ok := f.fold(c); ok && k.kind == kUndefined {
+				return p[0], true, true
+			}
+		}
+	}
+	return nil, false, false
+}
+
 // typeofIsParts recognizes the `typeof x === "name"` shape (either operand
 // order; ==, !==, != too) and returns the typeof node and the type index.
 func typeofIsParts(e *syntax.BinaryExpr) (*syntax.UnaryExpr, uint8, bool) {
@@ -617,11 +847,11 @@ func typeofIsParts(e *syntax.BinaryExpr) (*syntax.UnaryExpr, uint8, bool) {
 		}
 		lit = u
 	}
-	s, ok := lit.(*syntax.StringLit)
+	s, ok := stringLit(lit)
 	if !ok {
 		return nil, 0, false
 	}
-	idx, ok := bytecode.TypeNameIndex(s.Value)
+	idx, ok := bytecode.TypeNameIndex(s)
 	if !ok {
 		return nil, 0, false
 	}
@@ -765,8 +995,8 @@ func (f *funcState) propName(m *syntax.MemberExpr) (string, bool) {
 		}
 		return "", false
 	}
-	if s, ok := m.Prop.(*syntax.StringLit); ok && !isArrayIndexName(s.Value) {
-		return s.Value, true
+	if s, ok := stringLit(m.Prop); ok && !isArrayIndexName(s) {
+		return s, true
 	}
 	return "", false
 }
@@ -823,12 +1053,65 @@ func (f *funcState) memberGet(dst, obj int, e *syntax.MemberExpr) {
 // The key's temporary is freed: a call's argument block must start right
 // after its callee and this (base+2) even when the key is not a local.
 func (f *funcState) emitGet(dst, obj int, e *syntax.MemberExpr) {
+	if f.readsArguments(e) {
+		f.argsGet(dst, e)
+		return
+	}
 	if name, ok := f.propName(e); ok {
 		f.emitGetNamed(dst, obj, name)
 		return
 	}
+	if r := f.incrementedLocal(e.Prop); r >= 0 {
+		f.emitABC(bytecode.GetElemInc, dst, obj, r)
+		return
+	}
 	mark := f.nregs
 	f.emitGetKey(dst, obj, f.exprReg(e.Prop), e)
+	f.free(mark)
+}
+
+// incrementedLocal returns the register of k when e is ++k of a writable
+// register local, whose update exprReg would compile as Inc k k (update),
+// or -1. The key of a read x[++k] then goes to GetElemInc.
+func (f *funcState) incrementedLocal(e syntax.Expr) int {
+	u, ok := e.(*syntax.UpdateExpr)
+	if !ok || !u.Prefix || u.Op != syntax.Inc {
+		return -1
+	}
+	id, ok := u.X.(*syntax.Ident)
+	if !ok || id.Binding == nil || immutable(id.Binding) || id.Binding.Kind == syntax.BindFuncName {
+		return -1
+	}
+	return f.regOf(id.Binding)
+}
+
+// readsArguments reports whether e reads the arguments of a function with
+// ForwardArguments, or their alias: arguments.length or arguments[k], the
+// only members of them forwardsArguments lets the function have.
+func (f *funcState) readsArguments(e *syntax.MemberExpr) bool {
+	if !f.out.ForwardArguments {
+		return false
+	}
+	id, ok := e.Object.(*syntax.Ident)
+	return ok && id.Binding != nil && (id.Binding == f.fn.ArgumentsBinding() || id.Binding == f.argsAlias)
+}
+
+// argsGet compiles e, arguments.length or arguments[k] of a function with
+// ForwardArguments: ArgsLen or ArgsGet of the arguments register, which
+// holds their count until an op creates the object.
+func (f *funcState) argsGet(dst int, e *syntax.MemberExpr) {
+	reg := f.regOf(f.fn.ArgumentsBinding())
+	if name, ok := f.propName(e); ok && name == "length" {
+		f.emitAB(bytecode.ArgsLen, dst, reg)
+		return
+	}
+	mark := f.nregs
+	f.emitABC(bytecode.ArgsGet, dst, reg, f.exprReg(e.Prop))
+	mapped := uint32(0)
+	if !f.fn.IsStrict && f.fn.HasSimpleParams {
+		mapped = 1
+	}
+	f.emitExtra(mapped)
 	f.free(mark)
 }
 
@@ -845,12 +1128,14 @@ func (f *funcState) emitGetNamed(dst, obj int, name string) {
 // emitSet emits the property write R[obj][key] = R[val] for member e whose
 // computed key (if any) is already in register key.
 func (f *funcState) emitSet(obj, key, val int, e *syntax.MemberExpr) {
-	setProp, setElem := bytecode.SetProp, bytecode.SetElem
+	// A computed write is SetElem in sloppy code too: the engine ignores
+	// a rejected one when the function is not strict.
+	sloppy := 0
 	if !f.out.Strict {
-		setProp, setElem = bytecode.SetPropSloppy, bytecode.SetElemSloppy
+		sloppy = bytecode.SetPropSloppyFlag
 	}
 	if name, ok := f.propName(e); ok {
-		f.emitAB(setProp, obj, val)
+		f.emitABC(bytecode.SetProp, obj, val, sloppy)
 		f.emitExtra(bytecode.ExtraArg(f.nameConst(name), f.newIC()))
 		return
 	}
@@ -858,7 +1143,7 @@ func (f *funcState) emitSet(obj, key, val int, e *syntax.MemberExpr) {
 		f.emitABC(bytecode.SetPrivate, obj, key, val)
 		return
 	}
-	f.emitABC(setElem, obj, key, val)
+	f.emitABC(bytecode.SetElem, obj, key, val)
 }
 
 // --- assignment -------------------------------------------------------------------
@@ -883,9 +1168,15 @@ func (f *funcState) assign(e *syntax.AssignExpr, dst int, want bool) {
 		if e.Op == syntax.Assign {
 			v := dst
 			if !want {
-				v = f.alloc()
+				// Only the store reads the value: a local's or a hoisted
+				// constant's own register serves, no copy.
+				if v = f.localReg(e.Value); v < 0 {
+					v = f.alloc()
+					f.expr(e.Value, v)
+				}
+			} else {
+				f.expr(e.Value, v)
 			}
-			f.expr(e.Value, v)
 			f.emitSet(obj, key, v, target)
 			return
 		}
@@ -976,6 +1267,27 @@ func lastOpWrites(e syntax.Expr) bool {
 	return false
 }
 
+// storeIntoReg reports whether e, the value of an assignment to the
+// variable of binding b in a register, is a store to a property or an
+// element of an object (x = o[k] = v) that may be compiled into the
+// variable's register: v is computed there, and the store reads it from
+// there. The store may throw after v wrote the register, so only where no
+// handler of the function could find the variable's new value (outside a
+// try statement, as intoReg), and o and k, read by the store after v is
+// written, must not read the variable; v itself must read every old value
+// it needs before it writes the register, as for lastOpWrites.
+func (f *funcState) storeIntoReg(e syntax.Expr, b *syntax.Binding) bool {
+	a, ok := e.(*syntax.AssignExpr)
+	if !ok || a.Op != syntax.Assign || f.guards > len(f.iterCloses) {
+		return false
+	}
+	m, ok := a.Target.(*syntax.MemberExpr)
+	if !ok || isSuper(m) || m.Optional || mentions(m.Object, b) || mentions(m.Prop, b) {
+		return false
+	}
+	return !mentions(a.Value, b) || lastOpWrites(a.Value)
+}
+
 // logicalSkip emits the short-circuit jump of a logical assignment operator
 // and returns its label, or nil for other operators.
 func (f *funcState) logicalSkip(op syntax.Token, cur int) *label {
@@ -1007,7 +1319,7 @@ func (f *funcState) assignIdent(e *syntax.AssignExpr, target *syntax.Ident, dst 
 		name = ""
 	}
 	if e.Op == syntax.Assign {
-		if reg >= 0 && (!mentions(e.Value, b) && f.intoReg(e.Value) || lastOpWrites(e.Value)) {
+		if reg >= 0 && (!mentions(e.Value, b) && f.intoReg(e.Value) || lastOpWrites(e.Value) || f.storeIntoReg(e.Value, b)) {
 			f.exprNamed(e.Value, reg, name)
 			if want {
 				f.emitMove(dst, reg)
@@ -1033,8 +1345,11 @@ func (f *funcState) assignIdent(e *syntax.AssignExpr, target *syntax.Ident, dst 
 		return
 	}
 	// Compound and logical assignment: an arithmetic one writes the register
-	// with its one operator.
-	if _, arith := compoundOps[e.Op]; reg >= 0 && !containsAssign(e.Value) && (arith || f.intoReg(e.Value)) {
+	// with its one operator; a logical one computes its value into the
+	// register, so, as a plain assignment, only a value that does not read
+	// the local (whose old value a template, an array or a call would read
+	// after the register is written).
+	if _, arith := compoundOps[e.Op]; reg >= 0 && (arith && !assigns(e.Value, b) || !containsAssign(e.Value) && !mentions(e.Value, b) && f.intoReg(e.Value)) {
 		if lbl := f.logicalSkip(e.Op, reg); lbl != nil {
 			f.exprNamed(e.Value, reg, name)
 			f.bind(lbl)
@@ -1098,8 +1413,7 @@ func (f *funcState) update(e *syntax.UpdateExpr, dst int, want bool) {
 				return
 			}
 			if want {
-				f.emitAB(bytecode.ToNumeric, dst, r)
-				f.emitAB(op, r, dst)
+				f.emitPostUpdate(op, dst, r)
 				return
 			}
 			f.emitAB(op, r, r)
@@ -1120,8 +1434,7 @@ func (f *funcState) update(e *syntax.UpdateExpr, dst int, want bool) {
 		if !want {
 			old = f.alloc()
 		}
-		f.emitAB(bytecode.ToNumeric, old, cur)
-		f.emitAB(op, cur, old)
+		f.emitPostUpdate(op, old, cur)
 		f.put(ref, cur, bindAssign)
 	case *syntax.MemberExpr:
 		if isSuper(t) {
@@ -1152,14 +1465,24 @@ func (f *funcState) update(e *syntax.UpdateExpr, dst int, want bool) {
 		if !want {
 			old = f.alloc()
 		}
-		f.emitAB(bytecode.ToNumeric, old, cur)
-		f.emitAB(op, cur, old)
+		f.emitPostUpdate(op, old, cur)
 		f.emitSet(obj, key, cur, t)
 	case *syntax.CallExpr:
 		f.callTarget(t, "Invalid left-hand side expression in update operation")
 	default:
 		pos, _ := e.X.Range()
 		f.c.fail(pos, "SyntaxError: Invalid left-hand side expression in update operation")
+	}
+}
+
+// emitPostUpdate emits the update of a postfix ++ or -- (op Inc or Dec)
+// whose value is used: R[old] = ToNumeric(R[cur]), then R[cur] = R[old] ± 1,
+// in one op.
+func (f *funcState) emitPostUpdate(op bytecode.Op, old, cur int) {
+	if op == bytecode.Inc {
+		f.emitAB(bytecode.PostInc, old, cur)
+	} else {
+		f.emitAB(bytecode.PostDec, old, cur)
 	}
 }
 
@@ -1178,6 +1501,13 @@ func (f *funcState) callBase(dst int) int {
 func (f *funcState) call(e *syntax.CallExpr, dst int) {
 	if _, ok := e.Callee.(*syntax.SuperExpr); ok {
 		f.superCall(e, dst)
+		return
+	}
+	if f.literalTest(e, dst) {
+		return
+	}
+	if f.out.ForwardArguments && appliedArguments(e, f.fn.ArgumentsBinding()) != nil {
+		f.applyArguments(e, dst)
 		return
 	}
 	mark := f.nregs
@@ -1259,6 +1589,76 @@ func (f *funcState) call(e *syntax.CallExpr, dst int) {
 		f.emitAB(bytecode.Call, base, len(e.Args))
 	}
 	f.emitMove(dst, base)
+}
+
+// applyArguments compiles f.apply(x, arguments) of a function with
+// ForwardArguments: the call block of a method call with its first
+// argument, then ApplyArguments with the arguments register, which creates
+// the object when the call needs one.
+func (f *funcState) applyArguments(e *syntax.CallExpr, dst int) {
+	m := e.Callee.(*syntax.MemberExpr)
+	mark := f.nregs
+	defer f.free(mark)
+	base := f.callBase(dst)
+	f.allocN(4)
+	f.expr(m.Object, base+1)
+	f.setPos(m.Pos)
+	f.emitGet(base, base+1, m)
+	f.setPos(e.Pos)
+	f.expr(e.Args[0], base+2)
+	f.setPos(callPos(m))
+	mapped := 0
+	if !f.fn.IsStrict && f.fn.HasSimpleParams {
+		mapped = 1
+	}
+	f.emitABC(bytecode.ApplyArguments, base, f.regOf(f.fn.ArgumentsBinding()), mapped)
+	f.emitMove(dst, base)
+}
+
+// literalTest compiles /lit/.test(x), with a literal neither global nor
+// sticky and x a local, as the call preceded by RegExpTest, which matches
+// without the literal's object while no code could see it and then jumps
+// over the call. Reading x has no effect, so RegExpTest may read it ahead
+// of the literal and the test property.
+func (f *funcState) literalTest(e *syntax.CallExpr, dst int) bool {
+	m, ok := e.Callee.(*syntax.MemberExpr)
+	if !ok || m.Optional || e.Optional || len(e.Args) != 1 {
+		return false
+	}
+	lit, ok := m.Object.(*syntax.RegexLit)
+	if !ok || strings.ContainsAny(lit.Flags, "gy") {
+		return false
+	}
+	if name, ok := f.propName(m); !ok || name != "test" {
+		return false
+	}
+	id, ok := e.Args[0].(*syntax.Ident)
+	if !ok {
+		return false
+	}
+	x := f.regOf(id.Binding)
+	if x < 0 {
+		return false
+	}
+	mark := f.nregs
+	defer f.free(mark)
+	base := f.callBase(dst)
+	f.allocN(3)
+	k := f.addConst(bytecode.Const{Kind: bytecode.ConstRegExp, Str: lit.Pattern, Flags: lit.Flags})
+	done := f.newLabel()
+	f.setPos(callPos(m))
+	f.emitJump(bytecode.RegExpTest, base, done)
+	f.emitExtra(bytecode.ExtraArg(k, uint16(x)))
+	f.setPosNode(lit)
+	f.emitABx(bytecode.NewRegExp, base+1, k)
+	f.setPos(m.Pos)
+	f.emitGetNamed(base, base+1, "test")
+	f.emitMove(base+2, x)
+	f.setPos(callPos(m))
+	f.emitAB(bytecode.Call, base, 1)
+	f.bind(done)
+	f.emitMove(dst, base)
+	return true
 }
 
 // undefThis gives the call block at base an undefined this: by the Call's
@@ -1437,11 +1837,27 @@ func (f *funcState) template(e *syntax.TemplateLit, dst int) {
 }
 
 func (f *funcState) arrayLit(e *syntax.ArrayLit, dst int) {
+	// A literal of constants only is one NewArrayK.
+	if n := len(e.Elems); n >= 2 && f.constRun(e.Elems) == n {
+		f.constArray(bytecode.NewArrayK, dst, e.Elems)
+		for i := range n {
+			f.c.pollItem(i)
+		}
+		return
+	}
 	f.emitABx(bytecode.NewArray, dst, capHint(len(e.Elems)))
-	for i, el := range e.Elems {
+	for i := 0; i < len(e.Elems); i++ {
 		f.c.pollItem(i)
+		if n := f.constRun(e.Elems[i:]); n >= 2 {
+			f.constArray(bytecode.ArrayPushK, dst, e.Elems[i:i+n])
+			for j := i + 1; j < i+n; j++ {
+				f.c.pollItem(j)
+			}
+			i += n - 1
+			continue
+		}
 		mark := f.nregs
-		switch el := el.(type) {
+		switch el := e.Elems[i].(type) {
 		case nil:
 			f.emitA(bytecode.ArrayHole, dst)
 		case *syntax.SpreadElem:
@@ -1453,6 +1869,70 @@ func (f *funcState) arrayLit(e *syntax.ArrayLit, dst int) {
 		}
 		f.free(mark)
 	}
+}
+
+// arrayPushKMax bounds the elements of one ArrayPushK or NewArrayK, and
+// arrayPushKPool the constant pool that a run may grow to: its constants
+// are entries of their own, in a row, which the other constants do not
+// share.
+const (
+	arrayPushKMax  = 256
+	arrayPushKPool = 4096
+)
+
+// constRun returns how many of the elements at the start of els are
+// constants that ArrayPushK can push (numbers, strings, null and
+// undefined, as fold finds them), up to arrayPushKMax and as many as the
+// constant pool has room for below arrayPushKPool.
+func (f *funcState) constRun(els []syntax.Expr) int {
+	limit := min(len(els), arrayPushKMax, arrayPushKPool-len(f.consts))
+	n := 0
+	for n < limit {
+		if _, ok := f.pushConst(els[n]); !ok {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// pushConst returns the constant-pool entry of an array literal element
+// that ArrayPushK can push.
+func (f *funcState) pushConst(el syntax.Expr) (bytecode.Const, bool) {
+	if el == nil {
+		return bytecode.Const{}, false
+	}
+	if _, ok := el.(*syntax.SpreadElem); ok {
+		return bytecode.Const{}, false
+	}
+	k, ok := f.fold(el)
+	if !ok {
+		return bytecode.Const{}, false
+	}
+	switch k.kind {
+	case kNumber:
+		return bytecode.Const{Kind: bytecode.ConstNumber, Num: k.num}, true
+	case kString:
+		return makeStringConst(k.str, false), true
+	case kNull:
+		return bytecode.Const{Kind: bytecode.ConstNull}, true
+	case kUndefined:
+		return bytecode.Const{Kind: bytecode.ConstUndefined}, true
+	}
+	return bytecode.Const{}, false
+}
+
+// constArray emits op, ArrayPushK or NewArrayK, over the constant
+// elements els (constRun's) of the array literal in dst: their constants,
+// in a row, and the op.
+func (f *funcState) constArray(op bytecode.Op, dst int, els []syntax.Expr) {
+	lo := len(f.consts)
+	for _, el := range els {
+		k, _ := f.pushConst(el)
+		f.addConst(k)
+	}
+	f.emitA(op, dst)
+	f.emitExtra(bytecode.ExtraArg(uint16(lo), uint16(len(els))))
 }
 
 // literalKeyName returns the string form of a non-computed property key.
@@ -1490,7 +1970,169 @@ func (f *funcState) defineNamed(obj int, name string, val int) {
 	f.emitExtra(bytecode.ExtraArg(f.nameConst(name), f.newIC()))
 }
 
+// objectLitMax bounds the properties of an object literal one NewObjectLit
+// makes, whose values take as many registers in a row.
+const objectLitMax = 16
+
+// objectLitRegs bounds the registers in use before such a literal: a
+// function that needs many more makes its literals one property at a time,
+// as it would on running out of registers (hoistRetry).
+const objectLitRegs = 160
+
+// objectLitKeyBudget bounds the constants a function's key runs take
+// (keyRun): past it, a literal of keys no earlier literal of the function
+// had makes its object one property at a time, whose names take a constant
+// each however many literals name them.
+const objectLitKeyBudget = 1 << 14
+
+// plainLiteral reports whether one NewObjectLit can make e, and returns
+// the index of its keys' run (keyRun): a literal of 2 to objectLitMax data
+// properties, plain values and shorthands, under static keys that are no
+// array index, no __proto__ and no key twice, and of two only if a value
+// is not in a register already. Its values are evaluated before the object
+// is made, which no code can see: no value can reach the object before the
+// literal completes, as the home object of a method or a getter could, a
+// spread copies into it, and __proto__ sets its prototype. A function that
+// compiles again without hoisting (hoistRetry) makes none either. The keys
+// go into names.
+func (f *funcState) plainLiteral(e *syntax.ObjectLit, names *[objectLitMax]string) (uint16, bool) {
+	// A literal of one property makes its object and adds it, which
+	// costs less than the NewObjectLit and the copy of a local's value
+	// into the register its value takes.
+	n := len(e.Props)
+	if n < 2 || n > objectLitMax || f.nregs+n > objectLitRegs {
+		return 0, false
+	}
+	if h := f.c.hoist; h != nil && h.noHoist[f.fn] {
+		return 0, false
+	}
+	for i, p := range e.Props {
+		if p.Kind != syntax.PropInit && p.Kind != syntax.PropShorthand || p.Computed {
+			return 0, false
+		}
+		name := f.literalKeyName(p.Key)
+		if name == "__proto__" || isArrayIndexName(name) || slices.Contains(names[:i], name) {
+			return 0, false
+		}
+		names[i] = name
+	}
+	// Nor one of two values in registers already, locals or hoisted
+	// constants, which DefineField reads where they are and NewObjectLit
+	// would copy: the copies cost more than it saves.
+	if n == 2 && f.localReg(e.Props[0].Value) >= 0 && f.localReg(e.Props[1].Value) >= 0 {
+		return 0, false
+	}
+	return f.keyRun(names[:n])
+}
+
+// objectLitK emits the plain literal e (plainLiteral) into dst: its values
+// into registers in a row, each into a register taken as it starts, so
+// that a call's result lands there (callBase), and the NewObjectLit of
+// them, under the run of the keys at lo (keyRun).
+func (f *funcState) objectLitK(e *syntax.ObjectLit, dst int, lo uint16, names []string) {
+	mark := f.nregs
+	f.wide = true
+	for i, p := range e.Props {
+		f.c.pollItem(i)
+		f.setPos(p.Pos)
+		v := f.alloc() // mark+i
+		f.exprNamed(p.Value, v, names[i])
+		f.free(v + 1)
+	}
+	f.setPos(e.Pos)
+	f.emitABC(bytecode.NewObjectLit, dst, mark, len(e.Props))
+	f.emitExtra(bytecode.ExtraArg(lo, f.newIC()))
+	f.free(mark)
+}
+
+// keyRunEntry is a run of an object literal's keys in the constant pool:
+// n keys from lo, of the hash hash (keyRun). n is 0 in an unused entry.
+type keyRunEntry struct {
+	hash uint64
+	lo   uint16
+	n    uint8
+}
+
+// keyRun returns the index of the first of the constants that name the
+// keys names in order: the run of an earlier literal of the function with
+// the same keys, or property names already in the pool in that order, or
+// else a new run at the end of the pool, unless that would take the
+// function's runs past objectLitKeyBudget. A new run's constants serve as
+// the property names of its keys the function has none of yet (nameConst),
+// so that a key the literal adds and code reads takes one constant.
+func (f *funcState) keyRun(names []string) (uint16, bool) {
+	h := uint64(14695981039346656037) // FNV-1a over the keys, each ended by a zero byte
+	for _, name := range names {
+		for i := 0; i < len(name); i++ {
+			h = (h ^ uint64(name[i])) * 1099511628211
+		}
+		h *= 1099511628211
+	}
+	free := -1
+	for i, r := range f.litRuns {
+		if r.n == 0 {
+			free = i
+			break
+		}
+		if r.hash == h && f.sameRun(r, names) {
+			return r.lo, true
+		}
+	}
+	if r, ok := f.litMore[h]; ok && f.sameRun(r, names) {
+		return r.lo, true
+	}
+	n := len(names)
+	r := keyRunEntry{hash: h, n: uint8(n)}
+	if lo, ok := f.keyConst[names[0]]; ok && f.sameRun(keyRunEntry{lo: lo, n: r.n}, names) {
+		r.lo = lo
+	} else {
+		if int(f.litConsts)+n > objectLitKeyBudget {
+			return 0, false
+		}
+		f.litConsts += int32(n)
+		r.lo = uint16(len(f.consts))
+		for _, name := range names {
+			i := f.addConst(makeStringConst(name, true))
+			if _, ok := f.keyConst[name]; !ok {
+				f.keyConst[name] = i
+			}
+		}
+	}
+	switch {
+	case free >= 0:
+		f.litRuns[free] = r
+	case f.litMore == nil:
+		f.litMore = map[uint64]keyRunEntry{h: r}
+	default:
+		// Keys of the same hash as another run's, which is kept, cost
+		// their literals their own runs.
+		if _, ok := f.litMore[h]; !ok {
+			f.litMore[h] = r
+		}
+	}
+	return r.lo, true
+}
+
+// sameRun reports whether the constants of the run r are the property
+// names names in order.
+func (f *funcState) sameRun(r keyRunEntry, names []string) bool {
+	if int(r.n) != len(names) || int(r.lo)+len(names) > len(f.consts) {
+		return false
+	}
+	for i, name := range names {
+		if k := f.consts[int(r.lo)+i]; k.Kind != bytecode.ConstString || !k.Key || k.Str != name {
+			return false
+		}
+	}
+	return true
+}
+
 func (f *funcState) objectLit(e *syntax.ObjectLit, dst int) {
+	var names [objectLitMax]string
+	if lo, ok := f.plainLiteral(e, &names); ok {
+		f.objectLitK(e, dst, lo, names[:len(e.Props)])
+		return
+	}
 	f.emitABx(bytecode.NewObject, dst, capHint(len(e.Props)))
 	for i, p := range e.Props {
 		f.c.pollItem(i)
@@ -1525,16 +2167,23 @@ func (f *funcState) objectLit(e *syntax.ObjectLit, dst int) {
 				break
 			}
 			name := f.literalKeyName(p.Key)
-			v := f.alloc()
+			var v int
 			switch {
 			case p.Kind == syntax.PropMethod:
+				v = f.alloc()
 				fn := p.Value.(*syntax.Function)
 				f.emitClosure(v, f.compileFunction(fn, name))
 				f.setHome(fn, v, dst)
 			case p.Kind == syntax.PropInit && name == "__proto__":
+				v = f.alloc()
 				f.expr(p.Value, v) // not a NamedEvaluation
 			default:
-				f.exprNamed(p.Value, v, name)
+				// The definition reads the value next: a local's or a
+				// hoisted constant's own register serves, no copy.
+				if v = f.localReg(p.Value); v < 0 {
+					v = f.alloc()
+					f.exprNamed(p.Value, v, name)
+				}
 			}
 			if p.Kind == syntax.PropInit && name == "__proto__" {
 				f.emitAB(bytecode.SetProto, dst, v)

@@ -1026,9 +1026,9 @@ export function plain() {
 	assert.Same(t, &h.sentinel, o.shape)
 	assert.True(t, o.shape.isDict)
 	assert.Equal(t, flagExtensible|flagDict|flagHasLazy|flagHostNode, o.flags)
-	assert.Nil(t, o.dict)
+	assert.Nil(t, o.dictTable())
 	assert.Empty(t, o.slots)
-	assert.Empty(t, o.elements)
+	assert.Empty(t, o.elems())
 	assert.Nil(t, o.Internal(), "a map node's Go map is not its payload")
 
 	assert.Equal(t, "gpt-42", f.callValues("get", x))
@@ -1046,17 +1046,17 @@ export function plain() {
 		assert.Equal(t, "plain1", f.callValues("get", p))
 	}
 
-	// Array nodes: *ArrayData stays the payload, and length needs no
-	// materialization.
+	// Array nodes: length needs no materialization, and the Go slice is
+	// not the payload.
 	list, err := o.GetProp(r, key(r, "list"))
 	require.NoError(t, err)
 	lo := list.AsObject()
-	assert.Same(t, &h.sentinel, lo.shape)
+	assert.Same(t, &h.arraySentinel.shape, lo.shape)
 	assert.Equal(t, uint32(2), lo.ArrayLength())
-	assert.IsType(t, &ArrayData{}, lo.Internal())
-	assert.Same(t, &h.sentinel, lo.shape, "length does not materialize")
+	assert.Nil(t, lo.Internal())
+	assert.Same(t, &h.arraySentinel.shape, lo.shape, "length does not materialize")
 	assert.True(t, lo.IsDenseArray())
-	assert.NotSame(t, &h.sentinel, lo.shape)
+	assert.NotSame(t, &h.arraySentinel.shape, lo.shape)
 }
 
 // TestHostLazySharedStrings: the same Go string converted twice in a period
@@ -1145,7 +1145,7 @@ func TestHostLazyArrayFastPaths(t *testing.T) {
 	list := mustFromGo(t, r, []any{"a", map[string]any{"k": 1.0}}).AsObject()
 	assert.True(t, plainArray(list))
 	assert.Zero(t, list.flags&flagHasLazy, "materialized")
-	assert.Len(t, list.elements, 2)
+	assert.Len(t, list.elems(), 2)
 	assert.False(t, plainArray(mustFromGo(t, r, map[string]any{"a": 1}).AsObject()))
 }
 
@@ -1207,7 +1207,7 @@ func TestHostLazyProtocolFastPaths(t *testing.T) {
 			list := h([]any{"a", 1.0})
 			assert.True(t, r.fastIterable(ObjectValue(list)))
 			assert.NotEqual(t, hostSentinelKey, list.shape.key, "iterating reads the elements")
-			assert.Len(t, list.elements, 2)
+			assert.Len(t, list.elems(), 2)
 
 			list = h([]any{"a", 1.0})
 			ctor, err := r.arraySpeciesCtor(list)

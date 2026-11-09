@@ -188,7 +188,7 @@ func (f *funcState) varDecl(d *syntax.VarDecl) {
 			f.free(mark)
 			continue
 		}
-		v := f.exprReg(decl.Init)
+		v := f.patternSource(decl.Init, decl.Target)
 		f.bindPattern(decl.Target, v, bindInit)
 		f.free(mark)
 	}
@@ -199,17 +199,32 @@ func (f *funcState) varDecl(d *syntax.VarDecl) {
 // conditional returns from each of its branches instead of joining their
 // values in one register with a Move and a Jmp.
 func (f *funcState) returnExpr(e syntax.Expr) {
-	if c, ok := e.(*syntax.CondExpr); ok && len(f.finallys) == 0 && len(f.iterCloses) == 0 && f.retLbl == nil {
+	if len(f.finallys) == 0 && len(f.iterCloses) == 0 && f.retLbl == nil {
 		// A conditional that folds is one constant: expr loads it, where
 		// splitting would compile a dead branch and a jump.
-		if _, folds := f.fold(c); !folds {
-			f.setPosNode(c)
-			alt := f.newLabel()
-			f.condJump(c.Test, alt, false)
-			f.returnExpr(c.Cons)
-			f.bind(alt)
-			f.returnExpr(c.Alt)
-			return
+		switch c := e.(type) {
+		case *syntax.CondExpr:
+			if _, folds := f.fold(c); !folds {
+				f.setPosNode(c)
+				alt := f.newLabel()
+				f.condJump(c.Test, alt, false)
+				f.returnExpr(c.Cons)
+				f.bind(alt)
+				f.returnExpr(c.Alt)
+				return
+			}
+		case *syntax.LogicalExpr:
+			// && and || whose left operand is a boolean return it from a
+			// branch of their own (expr).
+			if _, folds := f.fold(c); !folds && c.Op != syntax.Nullish && boolValued(c.X) {
+				f.setPosNode(c)
+				short := f.newLabel()
+				f.condJump(c.X, short, c.Op == syntax.LogOr)
+				f.returnExpr(c.Y)
+				f.bind(short)
+				f.returnExpr(&syntax.BoolLit{Span: c.Span, Value: c.Op == syntax.LogOr})
+				return
+			}
 		}
 	}
 	mark := f.nregs
@@ -430,14 +445,24 @@ func (f *funcState) forInOf(s *syntax.ForInOfStmt) {
 	}
 	es, mark := f.enterScope(s.Scope)
 	it := f.allocN(4)
-	f.expr(s.Right, it)
+	// The init reads its operand before it writes the iterator's
+	// registers: a local in a register is read in place.
+	src := it
+	if id, ok := s.Right.(*syntax.Ident); ok {
+		if r := f.regOf(id.Binding); r >= 0 {
+			src = r
+		}
+	}
+	if src == it {
+		f.expr(s.Right, it)
+	}
 	f.setPos(s.Pos)
 	if s.Await {
-		f.emitAB(bytecode.AsyncIterInit, it, it)
+		f.emitAB(bytecode.AsyncIterInit, it, src)
 	} else if s.Of {
-		f.emitAB(bytecode.IterInit, it, it)
+		f.emitAB(bytecode.IterInit, it, src)
 	} else {
-		f.emitAB(bytecode.ForInInit, it, it)
+		f.emitAB(bytecode.ForInInit, it, src)
 	}
 	loop, cont, exit := f.newLabel(), f.newLabel(), f.newLabel()
 	f.bind(loop)
@@ -505,15 +530,43 @@ func (f *funcState) forInOf(s *syntax.ForInOfStmt) {
 
 // --- switch ---------------------------------------------------------------------
 
+// caseRunMin is the fewest cases on constants in a row that start with
+// JmpCaseK: the engine's coldOp, which runs it, costs a few dispatches.
+const caseRunMin = 4
+
 func (f *funcState) switchStmt(s *syntax.SwitchStmt) {
 	names := f.takeLabels()
 	mark := f.nregs
-	disc := f.alloc()
-	f.expr(s.Disc, disc)
+	// Only the tests run before a case's body: a local in a register that
+	// none of them assigns is compared in place.
+	tests := make([]syntax.Expr, 0, len(s.Cases))
+	for _, c := range s.Cases {
+		tests = append(tests, c.Test)
+	}
+	disc := f.operand(s.Disc, tests...)
 	es, mark2 := f.enterScope(s.Scope)
 	exit := f.newLabel()
 	labels := make([]*label, len(s.Cases))
+	// The cases on constants test disc in a row, a default between them
+	// emitting nothing: the first of caseRunMin or more is JmpCaseK, which
+	// runs them all without a dispatch each (engine caseChain).
+	ks := make([]int32, len(s.Cases)) // a case's constant, or -1
+	run := make([]int, len(s.Cases))  // the cases on constants from a case's on
+	n := 0
+	for i := len(s.Cases) - 1; i >= 0; i-- {
+		ks[i] = -1
+		if t := s.Cases[i].Test; t != nil {
+			if k, ok := f.strictConst(t); ok {
+				ks[i] = int32(k)
+				n++
+			} else {
+				n = 0
+			}
+		}
+		run[i] = n
+	}
 	var def *label
+	inRun := false
 	for i, c := range s.Cases {
 		labels[i] = f.newLabel()
 		if c.Test == nil {
@@ -522,6 +575,17 @@ func (f *funcState) switchStmt(s *syntax.SwitchStmt) {
 		}
 		m := f.nregs
 		f.setPosNode(c.Test)
+		if k := ks[i]; k >= 0 {
+			op := bytecode.JmpStrictEqK
+			if !inRun && run[i] >= caseRunMin {
+				op = bytecode.JmpCaseK
+			}
+			inRun = true
+			f.emitJump(op, disc, labels[i])
+			f.emitExtra(uint32(k))
+			continue
+		}
+		inRun = false
 		v := f.operand(c.Test)
 		f.emitJump(bytecode.JmpStrictEq, disc, labels[i])
 		f.emitExtra(uint32(v))

@@ -1,0 +1,67 @@
+{
+  "suite": "V8 benchmark suite v7, scored by its run.js; higher is better",
+  "measured": "2026-11-07",
+  "setup": "Intel Xeon E5-2699A v4 KVM guest (24 vCPUs, one thread per core, 16 MiB L3); each engine single-threaded on its own pinned vCPU with GOMAXPROCS=1; Go 1.27.2, CGO_ENABLED=0, moejs built with -tags purego",
+  "runs": "3 runs per engine with rotating engine order; the run with the median total is kept, with its per-program scores",
+  "programs": [
+    "Richards",
+    "DeltaBlue",
+    "Crypto",
+    "RayTrace",
+    "EarleyBoyer",
+    "RegExp",
+    "Splay",
+    "NavierStokes"
+  ],
+  "engines": [
+    {
+      "name": "moejs",
+      "version": "the 2026-11-07 source",
+      "reference": false,
+      "score": 1429,
+      "programs": {"Richards": 1019, "DeltaBlue": 826, "Crypto": 1056, "RayTrace": 1361, "EarleyBoyer": 2003, "RegExp": 1097, "Splay": 2697, "NavierStokes": 2422}
+    },
+    {
+      "name": "go-quickjs",
+      "version": "github.com/go-quickjs/go-quickjs v0.28.0",
+      "reference": false,
+      "score": 999,
+      "programs": {"Richards": 581, "DeltaBlue": 588, "Crypto": 933, "RayTrace": 1033, "EarleyBoyer": 1221, "RegExp": 843, "Splay": 1586, "NavierStokes": 1844}
+    },
+    {
+      "name": "modernc",
+      "version": "modernc.org/quickjs v0.25.0",
+      "reference": false,
+      "score": 323,
+      "programs": {"Richards": 199, "DeltaBlue": 220, "Crypto": 199, "RayTrace": 403, "EarleyBoyer": 530, "RegExp": 140, "Splay": 923, "NavierStokes": 491}
+    },
+    {
+      "name": "goant",
+      "version": "github.com/robomotionio/goant v0.2.1",
+      "reference": false,
+      "score": 222,
+      "programs": {"Richards": 140, "DeltaBlue": 145, "Crypto": 142, "RayTrace": 179, "EarleyBoyer": 281, "RegExp": 178, "Splay": 821, "NavierStokes": 275}
+    },
+    {
+      "name": "goja",
+      "version": "github.com/dop251/goja v0.0.0-20261020172427-7b1a02208696",
+      "reference": false,
+      "score": 163,
+      "programs": {"Richards": 142, "DeltaBlue": 161, "Crypto": 69.9, "RayTrace": 147, "EarleyBoyer": 237, "RegExp": 146, "Splay": 527, "NavierStokes": 118}
+    },
+    {
+      "name": "Sobek",
+      "version": "github.com/grafana/sobek v0.0.0-20260708062710-267a0e055bb4",
+      "reference": false,
+      "score": 160,
+      "programs": {"Richards": 143, "DeltaBlue": 162, "Crypto": 69.5, "RayTrace": 142, "EarleyBoyer": 232, "RegExp": 141, "Splay": 487, "NavierStokes": 118}
+    },
+    {
+      "name": "QuickJS (C)",
+      "version": "2026-06-04",
+      "reference": true,
+      "score": 1058,
+      "programs": {"Richards": 779, "DeltaBlue": 696, "Crypto": 883, "RayTrace": 1248, "EarleyBoyer": 1655, "RegExp": 319, "Splay": 2546, "NavierStokes": 1949}
+    }
+  ]
+}

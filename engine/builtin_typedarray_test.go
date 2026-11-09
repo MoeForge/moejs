@@ -69,6 +69,9 @@ func TestTypedArrayExotic(t *testing.T) {
 		{"Array.prototype methods", `const a = new Uint8Array([3, 1, 2]); return [Array.prototype.join.call(a, "-"), Array.prototype.slice.call(a, 1).join(), Array.prototype.includes.call(a, 1), Array.isArray(a)].join()`, "3-1-2,1,2,true,false"},
 		{"JSON", `return JSON.stringify({a: new Uint8Array([1, 2])})`, `{"a":{"0":1,"1":2}}`},
 		{"Object.entries", `return Object.entries(new Int8Array([5, 6])).join(";")`, "0,5;1,6"},
+		// Array indices of 2^31 and more, which an int of 32 bits holds as
+		// negative numbers, and an array out of bounds.
+		{"index past 2^31", `const a = new Uint8Array([1, 2]), f = new Float64Array([1.5]), out = []; for (const k of ["2147483648", "4294967294", 2147483648, 4294967294]) { a[k] = 9; f[k] = 9; out.push(a[k], f[k], k in a, Object.hasOwn(f, k), Reflect.defineProperty(a, k, {value: 1}), delete a[k]); } out.push(a.join(), f.join(), Object.keys(a).join()); const b = new ArrayBuffer(2, {maxByteLength: 4}), v = new Uint8Array(b, 1, 1); b.resize(1); out.push(v["2147483648"], v[0], "2147483648" in v, 0 in v); return out.join()`, ",,false,false,false,true,,,false,false,false,true,,,false,false,false,true,,,false,false,false,true,1,2,1.5,0,1,,,false,false"},
 	})
 	runMutableProtoCases(t, []protoCase{
 		{"prototype chain is skipped", `Object.prototype[3] = "p"; Object.prototype["-0"] = "q"; return [new Uint8Array(1)[3], 3 in new Uint8Array(1), new Uint8Array(1)["-0"], new Uint8Array(1)[4] = 1, Object.prototype[4]].join()`, ",false,,1,"},
@@ -254,8 +257,8 @@ func TestTypedArrayLateGroup(t *testing.T) {
 		for k, c := range b.typedArrayCtors {
 			name := typedArrayCtorNames[k].GoString()
 			require.NotNil(t, c, name)
-			assert.Same(t, b.TypedArrayCtor, c.proto, name)
-			assert.Same(t, b.TypedArrayPrototype, b.typedArrayPrototypes[k].proto, name)
+			assert.Same(t, b.TypedArrayCtor, c.Proto(), name)
+			assert.Same(t, b.TypedArrayPrototype, b.typedArrayPrototypes[k].Proto(), name)
 			v, ok := r.Global.GetOwnProperty(StringKey(typedArrayCtorNames[k]))
 			require.True(t, ok, name)
 			assert.Same(t, c, v.Value.AsObject(), name)

@@ -1,6 +1,9 @@
 package engine
 
-import "unsafe"
+import (
+	"slices"
+	"unsafe"
+)
 
 // installObject fills the Object constructor and Object.prototype. It runs
 // first in the install list because the abstract operations of every other
@@ -149,7 +152,7 @@ func hasOnlyShapeProps(o *Object) bool {
 	if o.flags&flagHasLazy != 0 {
 		o.materializeHost()
 	}
-	return o.class == ClassObject && o.flags&(flagDict|flagHasLazy) == 0 && len(o.elements) == 0 && (o.dict == nil || o.dict.sparse == nil)
+	return o.class == ClassObject && o.flags&(flagDict|flagHasLazy) == 0 && o.elemLen() == 0 && (o.dictTable() == nil || o.dictTable().sparse == nil)
 }
 
 // objectKeys implements Object.keys.
@@ -176,6 +179,9 @@ func objectKeys(r *Realm, this Value, args []Value) (Value, error) {
 		}
 		return ObjectValue(r.initArray(ao, items, uint32(n))), nil
 	}
+	if o.class == ClassObject && o.flags&(flagDict|flagHasLazy) == flagDict {
+		return r.dictObjectKeys(o)
+	}
 	keys, err := r.enumerableOwnKeys(o)
 	if err != nil {
 		return Undefined(), err
@@ -190,6 +196,39 @@ func objectKeys(r *Realm, this Value, args []Value) (Value, error) {
 	return ObjectValue(r.initArray(ao, items, uint32(len(keys)))), nil
 }
 
+// dictObjectKeys is Object.keys of an ordinary object in dictionary mode
+// (an Intl polyfill's tables of hundreds of keys): it fills the array from
+// the dictionary's entries, after the integer keys, where
+// enumerableOwnKeys builds the list of keys first.
+func (r *Realm) dictObjectKeys(o *Object) (Value, error) {
+	var idx []PropertyKey
+	if o.elemLen() != 0 || o.dictTable().sparse != nil {
+		idx = o.appendEnumerableIndexKeys(nil)
+	}
+	d := o.dictTable()
+	n := len(idx)
+	for i := range d.entries {
+		if e := &d.entries[i]; e.live() && e.cell.attrs&attrEnumerable != 0 && e.key.IsString() {
+			n++
+		}
+	}
+	ao, items := r.newArrayStorage(n, n)
+	for i, k := range idx {
+		if err := interruptEvery(r, int64(i)); err != nil {
+			return Undefined(), err
+		}
+		items[i] = StringValue(k.ToJSString(r))
+	}
+	n = len(idx)
+	for i := range d.entries {
+		if e := &d.entries[i]; e.live() && e.cell.attrs&attrEnumerable != 0 && e.key.IsString() {
+			items[n] = e.key.Value()
+			n++
+		}
+	}
+	return ObjectValue(r.initArray(ao, items, uint32(n))), nil
+}
+
 // objectValues implements Object.values.
 func objectValues(r *Realm, this Value, args []Value) (Value, error) {
 	return enumerableOwnProperties(r, Arg(args, 0), false)
@@ -201,8 +240,9 @@ func objectEntries(r *Realm, this Value, args []Value) (Value, error) {
 }
 
 // enumerableOwnProperties implements EnumerableOwnProperties(O, value) and
-// (O, key+value). Each property is re-checked before its read because a
-// getter may have removed later keys. Entry pairs share one backing slice.
+// (O, key+value). The keys are o's own string keys when it starts,
+// enumerable or not, and each key's property is checked at its turn: a
+// getter may have removed a later one or made it enumerable.
 func enumerableOwnProperties(r *Realm, v Value, entries bool) (Value, error) {
 	o, err := r.ToObject(v)
 	if err != nil {
@@ -210,22 +250,55 @@ func enumerableOwnProperties(r *Realm, v Value, entries bool) (Value, error) {
 	}
 	proxy := o.class == ClassProxy
 	var keys []PropertyKey
+	var ps []shapeProp
+	var s0 *Shape
+	n := 0
 	if proxy {
 		if keys, err = r.proxyOwnKeys(o); err != nil {
 			return Undefined(), err
 		}
-	} else if keys, err = r.enumerableOwnKeys(o); err != nil {
-		return Undefined(), err
+		n = len(keys)
+	} else if hasOnlyShapeProps(o) {
+		// The keys are those of o's shape now, read in place. While o keeps
+		// that shape their attributes are the shape's; a getter that
+		// changes o gives it another shape.
+		s0 = o.shape
+		ps = s0.Props()
+		for i := range ps {
+			if ps[i].attrs&attrEnumerable != 0 && ps[i].key.IsString() {
+				n++
+			}
+		}
+	} else {
+		if o.class == ClassTypedArray {
+			if err := r.typedArrayKeysLimit(o); err != nil {
+				return Undefined(), err
+			}
+		}
+		keys = o.ownStringKeys()
+		n = len(keys)
 	}
-	items := make([]Value, 0, len(keys))
-	var pairs []Value
-	if entries {
-		pairs = make([]Value, 0, 2*len(keys))
+	// Each entry takes its two elements in its own allocation, and the
+	// result its own where that costs no more bytes than a separate slice:
+	// an even count up to smallArrayMax and a count past it that coArray
+	// takes (newArrayStorage).
+	var res *arrayObject
+	var items []Value
+	if n == 0 || n%2 != 0 && n < smallArrayMax {
+		res, items = &arrayObject{}, make([]Value, 0, n)
+	} else {
+		res, items = r.newArrayStorage(0, n)
 	}
 	self := ObjectValue(o)
-	for i, k := range keys {
+	for i := range len(keys) + len(ps) {
 		if err := interruptEvery(r, int64(i)); err != nil {
 			return Undefined(), err
+		}
+		var k PropertyKey
+		if ps == nil {
+			k = keys[i]
+		} else if k = ps[i].key; !k.IsString() || o.shape == s0 && ps[i].attrs&attrEnumerable == 0 {
+			continue
 		}
 		var val Value
 		if proxy {
@@ -259,11 +332,11 @@ func enumerableOwnProperties(r *Realm, v Value, entries bool) (Value, error) {
 			items = append(items, val)
 			continue
 		}
-		start := len(pairs)
-		pairs = append(pairs, StringValue(k.ToJSString(r)), val)
-		items = append(items, ObjectValue(r.NewArrayFromSlice(pairs[start:start+2:start+2])))
+		ao, pair := r.newArrayStorage(2, 2)
+		pair[0], pair[1] = StringValue(k.ToJSString(r)), val
+		items = append(items, ObjectValue(r.initArray(ao, pair, 2)))
 	}
-	return ObjectValue(r.NewArrayFromSlice(items)), nil
+	return ObjectValue(r.initArray(res, items, uint32(len(items)))), nil
 }
 
 // objectAssign implements Object.assign(target, ...sources).
@@ -523,8 +596,16 @@ func objectCreate(r *Realm, this Value, args []Value) (Value, error) {
 	if err != nil {
 		return Undefined(), err
 	}
-	o := r.NewObjectWithProto(proto)
-	if props := Arg(args, 1); !props.IsUndefined() {
+	props := Arg(args, 1)
+	n := 0
+	if props.IsObject() {
+		n = props.AsObject().keyCap() - 1 // its own keys, which it defines on o
+		if pd, ok := extDataOk(props.AsObject(), kindPendingDescs); ok {
+			n = len(pd.props)
+		}
+	}
+	o := r.createObject(proto, n)
+	if !props.IsUndefined() {
 		if err := r.objectDefineProperties(o, props); err != nil {
 			return Undefined(), err
 		}
@@ -538,6 +619,12 @@ func (r *Realm) objectDefineProperties(o *Object, properties Value) error {
 	props, err := r.ToObject(properties)
 	if err != nil {
 		return err
+	}
+	if pd, ok := extDataOk(props, kindPendingDescs); ok && pd.definesOn(o, props) {
+		return pd.define(o)
+	}
+	if r.descriptorsInShape(o, props) {
+		return r.defineFromShape(o, props)
 	}
 	keys, err := r.ownPropertyKeys(props)
 	if err != nil {
@@ -570,6 +657,164 @@ func (r *Realm) objectDefineProperties(o *Object, properties Value) error {
 		}
 	}
 	return nil
+}
+
+// descriptorsInShape reports whether objectDefineProperties may define
+// props' properties on o as it reads them, without the lists of keys and
+// of descriptors it builds first: props is an ordinary object in shape
+// mode whose enumerable properties are data properties, each holding a
+// descriptor object pureDescriptor reads, and o, an ordinary object or a
+// function, is neither props, nor one of them, nor a prototype. Reading
+// them runs no code and cannot throw, and defining on o runs none and
+// changes neither them nor their prototypes, so each read after a
+// definition gives what it gave before.
+func (r *Realm) descriptorsInShape(o, props *Object) bool {
+	if o.class != ClassObject && o.class != ClassFunction || o.flags&flagIsPrototype != 0 || o == props || !hasOnlyShapeProps(props) {
+		return false
+	}
+	data, acc := r.descriptorShape(false), r.descriptorShape(true)
+	ps := props.shape.Props()
+	for i := range ps {
+		if ps[i].attrs&attrEnumerable == 0 {
+			continue
+		}
+		v := props.slots[i]
+		if ps[i].attrs&(attrAccessor|attrLazy) != 0 || !v.IsObject() || v.AsObject() == o {
+			return false
+		}
+		if _, ok := r.pureDescriptor(v.AsObject(), data, acc); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// defineFromShape defines on o the properties of props that
+// descriptorsInShape accepted, in [[OwnPropertyKeys]] order: the strings
+// and then the symbols, in creation order.
+func (r *Realm) defineFromShape(o, props *Object) error {
+	data, acc := r.descriptorShape(false), r.descriptorShape(true)
+	ps := props.shape.Props()
+	for _, strings := range [2]bool{true, false} {
+		for i := range ps {
+			if ps[i].attrs&attrEnumerable == 0 || ps[i].key.IsString() != strings {
+				continue
+			}
+			desc, _ := r.pureDescriptor(props.slots[i].AsObject(), data, acc)
+			if err := o.DefinePropertyOrThrow(r, ps[i].key, desc); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// descFields are the fields of a descriptor object, in the order
+// toPropertyDescriptor reads them.
+var descFields = [...]*String{AtomEnumerable, AtomConfigurable, AtomValue, AtomWritable, AtomGet, AtomSet}
+
+// pureDescriptor returns what toPropertyDescriptor reads from d when that
+// runs no code and cannot throw: d is an ordinary object in shape mode
+// whose fields are data properties, whose prototypes hold none of the
+// fields it lacks, and whose getter and setter, if any, are callable or
+// undefined and come without a value or writable. Of an object of data or
+// acc, the shapes of FromPropertyDescriptor's objects, it reads the slots
+// in place; of another, it finds the fields in one walk down its shape.
+// It reports false otherwise.
+func (r *Realm) pureDescriptor(d *Object, data, acc *Shape) (PropertyDescriptor, bool) {
+	var desc PropertyDescriptor
+	if d.class != ClassObject || d.flags&(flagDict|flagHasLazy) != 0 {
+		return desc, false
+	}
+	var have uint8 // the fields d has, by their index in descFields
+	switch d.shape {
+	case data:
+		desc.SetEnumerable(ToBoolean(d.slots[2]))
+		desc.SetConfigurable(ToBoolean(d.slots[3]))
+		desc.SetValue(d.slots[0])
+		desc.SetWritable(ToBoolean(d.slots[1]))
+		have = 0b1111
+	case acc:
+		desc.SetEnumerable(ToBoolean(d.slots[2]))
+		desc.SetConfigurable(ToBoolean(d.slots[3]))
+		desc.SetGet(d.slots[0])
+		desc.SetSet(d.slots[1])
+		have = 0b110011
+	default:
+		// Down the shape's chain: d's shape may have no list of its
+		// properties yet, which Props would allocate.
+		for n := d.shape; n.count != 0; n = n.parent {
+			f := descField(n.key)
+			if f < 0 {
+				continue
+			}
+			if n.attrs&attrAccessor != 0 {
+				return desc, false
+			}
+			have |= 1 << f
+			switch v := d.slots[n.slot]; f {
+			case 0:
+				desc.SetEnumerable(ToBoolean(v))
+			case 1:
+				desc.SetConfigurable(ToBoolean(v))
+			case 2:
+				desc.SetValue(v)
+			case 3:
+				desc.SetWritable(ToBoolean(v))
+			case 4:
+				desc.SetGet(v)
+			case 5:
+				desc.SetSet(v)
+			}
+		}
+	}
+	if have != 1<<len(descFields)-1 {
+		if proto := d.Proto(); !r.lacksDescFields(proto) {
+			for f, name := range descFields {
+				if have&(1<<f) == 0 && chainMayHave(proto, StringKey(name)) {
+					return desc, false
+				}
+			}
+		}
+	}
+	if desc.present&descHasGet != 0 && !IsCallable(desc.Get) && !desc.Get.IsUndefined() ||
+		desc.present&descHasSet != 0 && !IsCallable(desc.Set) && !desc.Set.IsUndefined() ||
+		desc.IsAccessorDescriptor() && desc.IsDataDescriptor() {
+		return desc, false
+	}
+	return desc, true
+}
+
+// descField returns the index of key in descFields, or -1.
+func descField(key PropertyKey) int {
+	for f, name := range descFields {
+		if key == StringKey(name) {
+			return f
+		}
+	}
+	return -1
+}
+
+// lacksDescFields reports whether p is the realm's Object.prototype and
+// holds none of descFields, so a descriptor object of Object.prototype
+// inherits none of them. A positive answer is kept for the prototype epoch
+// it was found in: adding a property to Object.prototype bumps it, and
+// Object.prototype's own [[Prototype]] is always null.
+func (r *Realm) lacksDescFields(p *Object) bool {
+	if p != r.ObjectPrototype {
+		return false
+	}
+	lz := r.lazyState()
+	if lz.descEpoch == r.protoEpoch+1 {
+		return true
+	}
+	for _, name := range descFields {
+		if p.HasOwnProperty(StringKey(name)) {
+			return false
+		}
+	}
+	lz.descEpoch = r.protoEpoch + 1
+	return true
 }
 
 // objectDefinePropertiesStatic implements Object.defineProperties(o, props).
@@ -612,6 +857,9 @@ func (r *Realm) toPropertyDescriptor(v Value) (PropertyDescriptor, error) {
 		return d, r.TypeError("Property description must be an object: %s", r.DisplayString(v))
 	}
 	o := v.AsObject()
+	if d, ok := r.pureDescriptor(o, nil, nil); ok {
+		return d, nil
+	}
 	field := func(name *String) (Value, bool, error) {
 		k := StringKey(name)
 		if has, err := r.hasProperty(o, k); err != nil || !has {
@@ -688,6 +936,24 @@ func objectGetOwnPropertyDescriptors(r *Realm, this Value, args []Value) (Value,
 	if err != nil {
 		return Undefined(), err
 	}
+	if hasOnlyShapeProps(o) {
+		// The keys are the shape's, read in place: [[GetOwnProperty]] of an
+		// ordinary object runs no code that could change them.
+		ps := o.shape.Props()
+		if res := r.pendingDescriptors(o, ps); res != nil {
+			return ObjectValue(res), nil
+		}
+		res := r.NewObjectCap(len(ps))
+		for _, strings := range [2]bool{true, false} {
+			for i := range ps {
+				if k := ps[i].key; k.IsString() == strings && !k.IsPrivate() {
+					d, _ := o.GetOwnProperty(k)
+					res.addProp(r, k, propCell{value: r.FromPropertyDescriptor(d), attrs: attrDefault})
+				}
+			}
+		}
+		return ObjectValue(res), nil
+	}
 	keys, err := r.ownPropertyKeys(o)
 	if err != nil {
 		return Undefined(), err
@@ -706,6 +972,144 @@ func objectGetOwnPropertyDescriptors(r *Realm, this Value, args []Value) (Value,
 	return ObjectValue(res), nil
 }
 
+// pendingDescs is the internal of an object Object.getOwnPropertyDescriptors
+// made, while the descriptor objects it holds are still to make: props are
+// the properties of the shape of the object it read, all data properties
+// of the shape (no accessor, lazy slot or private name), with the shape's
+// lookup table when it had one, and vals were their values, by slot. It
+// keeps the shape's list of keys and attributes, not the shape, which
+// would keep the object's prototype and its whole chain (a class's
+// methods, what they close over) until the descriptors are made. vals is the object's own slot storage,
+// which its slots leave empty meanwhile. The object has the realm's
+// pending-descriptors root, which no other object has and on which no
+// inline cache is filled (noFillAll), and flagHasLazy. A lookup of one of
+// src's keys, a write, redefinition or deletion of any key, its key list,
+// a prototype change or preventing extensions make the descriptor objects
+// and define them in its storage (resolve); a lookup of any other key
+// finds it as it is, without properties. Object.defineProperties and
+// Object.create read the descriptors from src and vals instead (define):
+// the clone of an object by Object.create(Object.getPrototypeOf(o),
+// Object.getOwnPropertyDescriptors(o)) makes none of them.
+type pendingDescs struct {
+	r     *Realm
+	props []shapeProp
+	table *shapeIndex
+	vals  []Value
+}
+
+// pendingDescriptors returns the result of Object.getOwnPropertyDescriptors
+// for o, whose properties are those of its shape, ps, with its descriptor
+// objects pending, or nil when one of them is an accessor, a lazy slot or
+// a private name, or o has fewer than two (where the internal would cost
+// as much as the descriptor objects), or the realm is a shared one.
+func (r *Realm) pendingDescriptors(o *Object, ps []shapeProp) *Object {
+	if r.sharedIntrinsics || len(ps) < 2 {
+		return nil
+	}
+	for i := range ps {
+		if ps[i].attrs&(attrAccessor|attrLazy) != 0 || ps[i].key.IsPrivate() {
+			return nil
+		}
+	}
+	res := r.NewObjectCap(len(ps))
+	vals := res.slots[:len(ps)]
+	copy(vals, o.slots)
+	res.slots = nil
+	r.chargeObject(unsafe.Sizeof(pendingDescs{}))
+	setExtData(res, kindPendingDescs, &pendingDescs{r: r, props: ps, table: o.shape.table, vals: vals})
+	l := r.shapeState()
+	if l.pendingDesc == nil {
+		l.pendingDesc = newRootShape(r.ObjectPrototype)
+		l.pendingDesc.noFill = noFillAll
+	}
+	res.shape = l.pendingDesc
+	res.flags |= flagHasLazy
+	return res
+}
+
+// makePendingDescs makes o's descriptor objects when they are pending,
+// before a path that adds to o without the lazy hooks (a private element,
+// a host's property known to be absent): the add would move o off the
+// pending root, on which no inline cache is filled, with its descriptors
+// still to make, and a site would cache what o's prototype has for them.
+func (o *Object) makePendingDescs() {
+	if o.flags&flagHasLazy != 0 {
+		if pd, ok := extDataOk(o, kindPendingDescs); ok {
+			pd.resolve(o)
+		}
+	}
+}
+
+// has reports whether key is one of the object's pending properties.
+func (pd *pendingDescs) has(key PropertyKey) bool {
+	if pd.table != nil {
+		return pd.table.find(pd.props, key) != 0
+	}
+	for i := range pd.props {
+		if pd.props[i].key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// resolve makes the descriptor objects of o, whose internal pd is, and
+// defines them in o's storage, in [[OwnPropertyKeys]] order: the strings,
+// then the symbols, in creation order. Each descriptor takes the slot of
+// the value it holds, which it has read, unless a symbol comes before a
+// string: then the values are copied first.
+func (pd *pendingDescs) resolve(o *Object) {
+	r, vals, ps := pd.r, pd.vals, pd.props
+	o.clearPayload()
+	o.flags &^= flagHasLazy
+	sorted := true
+	for i := 1; i < len(ps); i++ {
+		if ps[i].key.IsString() && !ps[i-1].key.IsString() {
+			sorted = false
+		}
+	}
+	if !sorted {
+		vals = slices.Clone(vals)
+	}
+	if o.flags&flagDict == 0 && o.shape.count == 0 {
+		o.shape, o.slots = r.plainRoot, pd.vals[:0]
+	}
+	for _, strings := range [2]bool{true, false} {
+		for i := range ps {
+			if ps[i].key.IsString() == strings {
+				d := r.FromPropertyDescriptor(DataDescriptor(vals[i], ps[i].attrs))
+				o.addProp(r, ps[i].key, propCell{value: d, attrs: attrDefault})
+			}
+		}
+	}
+}
+
+// definesOn reports whether objectDefineProperties may define on o the
+// properties of props, whose internal pd is, from src and vals: o is an
+// ordinary object or a function other than props, on which a definition
+// runs no code that could resolve props, and Object.prototype, the
+// prototype of the descriptor objects, has none of their fields, so that
+// each would read as the complete descriptor of the source's property.
+func (pd *pendingDescs) definesOn(o, props *Object) bool {
+	return (o.class == ClassObject || o.class == ClassFunction) && o.flags&flagHasLazy == 0 && o != props && pd.r.lacksDescFields(pd.r.ObjectPrototype)
+}
+
+// define defines on o the properties pd holds the descriptors of, in
+// [[OwnPropertyKeys]] order.
+func (pd *pendingDescs) define(o *Object) error {
+	ps := pd.props
+	for _, strings := range [2]bool{true, false} {
+		for i := range ps {
+			if ps[i].key.IsString() == strings {
+				if err := o.DefinePropertyOrThrow(pd.r, ps[i].key, DataDescriptor(pd.vals[i], ps[i].attrs)); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // descriptorShapeFrom returns the shape of a complete data (value,
 // writable, enumerable, configurable) or accessor (get, set, enumerable,
 // configurable) descriptor object below root.
@@ -718,9 +1122,9 @@ func descriptorShapeFrom(r *Realm, root *Shape, accessor bool) *Shape {
 		addProperty(r, StringKey(AtomEnumerable), attrDefault).addProperty(r, StringKey(AtomConfigurable), attrDefault)
 }
 
-// descriptorShape returns the realm's descriptor object shape: four cached
-// transitions from the plain root, or the template's process-wide shapes in
-// a shared realm (the same shared shapes, without the four lookups).
+// descriptorShape returns the realm's descriptor object shape: four
+// transitions from the plain root, looked up once, or the template's
+// process-wide shapes in a shared realm.
 func (r *Realm) descriptorShape(accessor bool) *Shape {
 	if r.sharedIntrinsics {
 		if accessor {
@@ -728,7 +1132,17 @@ func (r *Realm) descriptorShape(accessor bool) *Shape {
 		}
 		return sharedTpl.dataDescShape
 	}
-	return descriptorShapeFrom(r, r.plainRoot, accessor)
+	l := r.shapeState()
+	if accessor {
+		if l.accDesc == nil {
+			l.accDesc = descriptorShapeFrom(r, r.plainRoot, true)
+		}
+		return l.accDesc
+	}
+	if l.dataDesc == nil {
+		l.dataDesc = descriptorShapeFrom(r, r.plainRoot, false)
+	}
+	return l.dataDesc
 }
 
 // FromPropertyDescriptor implements FromPropertyDescriptor for a complete
@@ -926,7 +1340,7 @@ func objectProtoHasOwnProperty(r *Realm, this Value, args []Value) (Value, error
 		return Bool(ok), err
 	case TypeString:
 		if key.IsIndex() {
-			return Bool(int(key.Index()) < this.AsString().Len()), nil
+			return Bool(int64(key.Index()) < int64(this.AsString().Len())), nil
 		}
 		return Bool(key == lengthKey), nil
 	case TypeUndefined, TypeNull:
@@ -971,7 +1385,7 @@ func objectProtoPropertyIsEnumerable(r *Realm, this Value, args []Value) (Value,
 		ok, err := r.isOwnEnumerable(this.AsObject(), key)
 		return Bool(ok), err
 	case TypeString:
-		return Bool(key.IsIndex() && int(key.Index()) < this.AsString().Len()), nil
+		return Bool(key.IsIndex() && int64(key.Index()) < int64(this.AsString().Len())), nil
 	case TypeUndefined, TypeNull:
 		return Undefined(), r.TypeError("Cannot convert undefined or null to object")
 	}

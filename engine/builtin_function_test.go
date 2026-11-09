@@ -230,12 +230,12 @@ func TestFunctionToString(t *testing.T) {
 	assert.Equal(t, `function get ["\ud800"]() { [native code] }`, jsString(t, jsCall(t, r, lone, "toString")))
 	// Bytecode functions print their source slice when the compiler recorded one.
 	src := "const f = function f(a) { return a; };"
-	withSource := bytecode.Function{Name: "f", Length: 1, Kind: bytecode.KindNormal, Source: &bytecode.SourceInfo{Name: "m.js", Src: src, Start: 10, End: 37}}
+	withSource := bytecode.Function{Name: "f", Length: 1, Kind: bytecode.KindNormal, Code: bytecodeStubFunction.Code, Source: &bytecode.SourceInfo{Name: "m.js", Src: src, Start: 10, End: 37}}
 	bf, _ := testClosure(r, &withSource)
 	assert.Equal(t, "function f(a) { return a; }", jsString(t, jsCall(t, r, ObjectValue(bf), "toString")))
 	noSource, _ := testClosure(r, &bytecodeStubFunction)
 	assert.Equal(t, "function stub() { [native code] }", jsString(t, jsCall(t, r, ObjectValue(noSource), "toString")))
-	badRange := bytecode.Function{Name: "g", Source: &bytecode.SourceInfo{Src: "x", Start: 5, End: 2}}
+	badRange := bytecode.Function{Name: "g", Code: bytecodeStubFunction.Code, Source: &bytecode.SourceInfo{Src: "x", Start: 5, End: 2}}
 	bg, _ := testClosure(r, &badRange)
 	assert.Equal(t, "function g() { [native code] }", jsString(t, jsCall(t, r, ObjectValue(bg), "toString")))
 	// Non-functions.

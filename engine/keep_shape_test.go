@@ -141,10 +141,10 @@ func TestKeepShapeAddCache(t *testing.T) {
 }
 
 // TestKeepShapeSize checks that the mark takes no room: Object keeps its
-// size.
+// 48 bytes.
 func TestKeepShapeSize(t *testing.T) {
 	if unsafe.Sizeof(uintptr(0)) == 8 {
-		assert.Equal(t, uintptr(96), unsafe.Sizeof(Object{}))
+		assert.Equal(t, uintptr(48), unsafe.Sizeof(Object{}))
 	}
 }
 

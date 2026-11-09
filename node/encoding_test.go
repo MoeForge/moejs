@@ -23,36 +23,44 @@ func TestBase64(t *testing.T) {
 		}
 		std := base64.StdEncoding.EncodeToString(b)
 		url := base64.RawURLEncoding.EncodeToString(b)
+		require.Equal(t, std, decode(encBase64, b, false).GoString(), "length %d", n)
+		require.Equal(t, url, decode(encBase64URL, b, false).GoString(), "length %d", n)
 		require.Equal(t, std, string(encodeBase64(b, &stdPairs, true)), "length %d", n)
 		require.Equal(t, url, string(encodeBase64(b, &urlPairs, false)), "length %d", n)
 		for _, s := range []string{std, url, base64.RawStdEncoding.EncodeToString(b)} {
 			got, ok := decodeBase64Fast(s)
 			require.True(t, ok, s)
 			require.Equal(t, b, got, s)
-			require.Equal(t, b, decodeBase64(engine.FromGoString(s)), s)
+			require.Equal(t, b, decodeBase64(engine.FromGoString(s), false), s)
+			require.Equal(t, b, decodeBase64(engine.FromGoString(s), true), s)
 		}
 	}
 	for _, c := range []struct{ in, want string }{
 		{"aGVs bG8=", "hello"}, {"aGVs\nbG8", "hello"}, {"YQ==YQ==", "a"}, {"Y", ""}, {"YQ", "a"},
 		{"a-_b", "\x6b\xef\xdb"}, {"ab+/", "\x69\xbf\xbf"}, {"=", ""}, {"!!YWJj", "abc"},
 	} {
-		require.Equal(t, c.want, string(decodeBase64(engine.FromGoString(c.in))), c.in)
+		require.Equal(t, c.want, string(decodeBase64(engine.FromGoString(c.in), false)), c.in)
+		require.Equal(t, c.want, string(decodeBase64(engine.FromGoString(c.in), true)), c.in)
 	}
 }
 
-// FuzzBase64 checks the encoder against encoding/base64, and the fast
-// decoder against the lenient one wherever it takes the input.
+// FuzzBase64 checks the encoder against encoding/base64, the fast decoder
+// against the lenient one wherever it takes the input, and the decoder
+// against the one before moego (oldDecodeBase64).
 func FuzzBase64(f *testing.F) {
 	f.Add([]byte("hello, world"), "aGVsbG8=")
 	f.Add(make([]byte, 100), "YQ==YQ==")
 	f.Add([]byte{0xff, 0xfe, 0xfd}, "a-_b+/ab")
 	f.Fuzz(func(t *testing.T, b []byte, s string) {
 		std := base64.StdEncoding.EncodeToString(b)
-		if got := string(encodeBase64(b, &stdPairs, true)); got != std {
+		if got := decode(encBase64, b, false).GoString(); got != std {
 			t.Fatalf("encode %x: %s, want %s", b, got, std)
 		}
-		if got, want := string(encodeBase64(b, &urlPairs, false)), base64.RawURLEncoding.EncodeToString(b); got != want {
+		if got, want := decode(encBase64URL, b, false).GoString(), base64.RawURLEncoding.EncodeToString(b); got != want {
 			t.Fatalf("encode url %x: %s, want %s", b, got, want)
+		}
+		if got := string(encodeBase64(b, &stdPairs, true)); got != std {
+			t.Fatalf("table encode %x: %s, want %s", b, got, std)
 		}
 		if got, ok := decodeBase64Fast(std); !ok || string(got) != string(b) {
 			t.Fatalf("decode %s: %x %v", std, got, ok)
@@ -60,6 +68,18 @@ func FuzzBase64(f *testing.F) {
 		if got, ok := decodeBase64Fast(s); ok {
 			if want := decodeBase64Lenient(engine.FromGoString(s)); string(got) != string(want) {
 				t.Fatalf("decode %q: fast %x, lenient %x", s, got, want)
+			}
+		}
+		for _, in := range []string{s, std, base64.RawURLEncoding.EncodeToString(b)} {
+			str := engine.FromGoString(in)
+			want := oldDecodeBase64(str)
+			for _, url := range []bool{false, true} {
+				if got := decodeBase64(str, url); string(got) != string(want) {
+					t.Fatalf("decode %q (url %v): %x, before moego %x", in, url, got, want)
+				}
+				if got, ok := decodeBase64Moego(in, url); ok && string(got) != string(want) {
+					t.Fatalf("moego decode %q (url %v): %x, before moego %x", in, url, got, want)
+				}
 			}
 		}
 	})
@@ -104,7 +124,7 @@ func BenchmarkBase64(b *testing.B) {
 	b.Run("encode", func(b *testing.B) {
 		b.SetBytes(int64(len(data)))
 		for b.Loop() {
-			encodeBase64(data, &stdPairs, true)
+			decode(encBase64, data, false)
 		}
 	})
 	b.Run("decode", func(b *testing.B) {

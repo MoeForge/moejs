@@ -157,8 +157,9 @@ long strings, counts its node, and its units once it is read and flattened.
 `FromGo` counts the wrappers it makes for the host's maps and slices but not
 the host's Go values, which it refers to without copying; `ParseJSON`
 counts its copy of the text. A few internal caches of bounded size are not
-counted, nor is the interpreter's register stack, which the call depth
-limit bounds and `ReleaseCallData` trims. Expect the count to run within a small factor of what the request
+counted. The interpreter's register stack and frame table count as they
+grow, so a deep recursion with many locals stops at the limit;
+`ReleaseCallData` trims them. Expect the count to run within a small factor of what the request
 allocates, and set the limit with room.
 
 Setup does not count against the first request: `Load` and `SetGlobal`
@@ -1086,11 +1087,11 @@ next timer. The interrupt stays pending, so the host calls `ClearInterrupt`
 before it runs the loop again.
 
 A panic in a host task (the functions of `RunOnLoop`, `Post`, `done` and
-`settle`, or `OnError`) is not recovered. It unwinds through `Run`, and ends the
-program for a loop started with `Start`. The tasks and immediates of the
-phase that had not run stay queued for the next `Run`. The task that
-panicked is gone, and a promise whose settle function panicked stays
-pending.
+`settle`, `OnError`, `OnIdle` or `OnWake`) is not recovered. It unwinds
+through `Run`, and ends the program for a loop started with `Start`. The
+tasks and immediates of the phase that had not run stay queued for the next
+`Run`. The task that panicked is gone, and a promise whose settle function
+panicked stays pending.
 
 A rejection that no handler catches is the host's business, through
 `SetPromiseRejectionTracker`.
@@ -1118,6 +1119,67 @@ returns `ErrTerminated`, `RunOnLoop` returns false and the timer functions
 throw. The interrupt stays pending even when no JavaScript was running, so
 the host calls `ClearInterrupt` before it uses the runtime again. Another
 `New` gives the runtime a fresh loop.
+
+### Idle and wake
+
+A host that bounds the CPU time of a run, or shares a few execution slots
+among many runtimes, needs to know when the loop waits instead of running
+JavaScript: for a timer, a task from another goroutine, a `node:fs` result
+or a `fetch`. `Options.OnIdle` and `Options.OnWake` tell it:
+
+```go
+loop, err := eventloop.New(rt, eventloop.Options{
+	// Called when the loop has nothing to run and is about to block; no JavaScript runs after it until OnWake.
+	OnIdle: func() { /* pause the watchdog, release the execution slot */ },
+	// Called after the loop wakes, before it runs anything; an error stops the loop as an interrupt does.
+	OnWake: func() error { /* take an execution slot (may wait), start the watchdog */ return nil },
+})
+```
+
+The loop calls `OnIdle` right before it blocks, when nothing is to run now
+(no task, no immediate, no timer due) and something keeps it alive. It calls
+`OnWake` once it woke with something to run, before it runs it. A loop that
+never has to wait calls neither. A wake that finds nothing to run, such as
+a `Hold` released while another is still held, blocks again without a call.
+A wake that ends the loop (`Stop`, `StopNoWait`, `Terminate`, an interrupt,
+or for `Run` nothing left that keeps it alive) ends the run without
+`OnWake`, and `Run` returns what it would return without the hooks.
+
+So the calls alternate, `OnIdle` first, and a run can end after an `OnIdle`
+with no `OnWake`. The host knows which state it is in from the hook it saw
+last. The hooks run on the loop, so they are done when `Run` returns, or
+`Stop` for a loop started with `Start`. A host with slots takes one before
+`Run` and releases it after `Run` unless the last hook was `OnIdle`:
+
+```go
+slots <- struct{}{} // take a slot
+awake = true        // OnIdle sets it to false, OnWake to true
+watchdog.Resume()
+err = loop.Run(fn)
+if awake {
+	watchdog.Pause()
+	<-slots
+}
+```
+
+An error from `OnWake` stops the loop as an interrupt does, before it takes
+anything off its queues: `Run` returns the error unchanged, or `Stop` for a
+loop started with `Start`, and the timers, immediates and tasks stay queued
+for the next run. The run ends idle. The runtime is not interrupted, since
+no JavaScript was running.
+
+`OnWake` may block, for example while it waits for a slot. `Stop` and
+`Terminate` wait for the loop and so for `OnWake`; a host whose `OnWake`
+waits ends that wait when it stops the loop, for example through a context
+it cancels before `Stop` or `Terminate`. When `OnWake` returns nil after a
+stop, `Terminate` or interrupt came meanwhile, the run ends before the loop
+runs anything, and it ends awake. The time `OnWake` takes counts as time
+passed for the timers, so a timer that fell due meanwhile runs late.
+
+The hooks run without the loop's lock and may call `RunOnLoop`, `Post`,
+`Hold`, `Interrupt` and `StopNoWait`, but not `Stop` or `Terminate`. A panic
+in a hook is not recovered, as one in a host task is not. With both hooks
+nil the loop behaves as without them.
 
 ## Web APIs
 
@@ -1519,7 +1581,24 @@ Every path resolves inside `FSOptions.Root`:
 - Confinement is by path. A hard link that the host made inside the root
   to a file outside it is a path inside the root, and the program reads
   the file through it. Programs cannot make links.
-- On Windows, `\` and `/` both separate a path's names, as in Node.js.
+- On Windows, paths take the forms Node.js's `path.win32` reads, with `\`
+  and `/` both separating names: a drive (`C:\work`, `c:/work`), a share
+  (`\\server\share\work`), a rooted path (`\x`, on the volume of `Cwd`),
+  a drive-relative path (`C:x`, relative to `Cwd` on its drive, to the
+  drive's root on another) and a relative path. `Mount` and `Cwd` take
+  the same forms; a `Mount` without a volume, such as `/workspace`, works
+  as on Linux. `.` and `..` are cleaned before the path is checked against
+  `Mount`, as Windows does, and the check ignores case. A `\\?\` or `\\.\`
+  path is the drive's or share's path it names (`\\?\C:\x`,
+  `\\?\UNC\server\share\x`), any other device path fails with `EACCES`.
+  The paths the package makes (`realpath`, `readlink`, the names of a
+  recursive `readdir`, a `Dirent`'s `parentPath`, `glob`'s matches, what
+  `mkdir` with `recursive` returns, the paths the hook gets) have `\` and
+  `Mount`'s spelling; those the program gave stay as it gave them. A
+  `file:` URL with a host names a share, one without a host needs a drive.
+  The error codes are those libuv gives Windows' errors: `rmdir` of a file
+  is `ENOENT`, `unlink` of a directory and `rename` onto a directory are
+  `EPERM`, and `errno` has libuv's Windows numbers.
 - On Linux, a stat, an open or a listing of a name in a directory the
   package resolved within the last millisecond takes one system call: the
   package keeps a descriptor of the directory, opened beneath the root,
@@ -1710,6 +1789,11 @@ in the synchronous forms as in the others.
   `byteOffset` is 0 but for a slice, and `allocUnsafe` returns zeroed
   memory. `buffer.kMaxLength` is moejs's largest `ArrayBuffer`, 2 GiB - 1.
 - `fs.constants` holds Linux's values.
+- On Windows and macOS, `glob` matches case as written, where Node.js
+  ignores it.
+- On Windows, `mkdir` with `recursive` returns `\\?\C:\...` as Node.js
+  does, but for a `Mount` without a volume, where it returns the plain
+  path.
 - Base64 runs at about a gigabyte a second; Node.js, with SIMD, is about
   four times faster on large inputs.
 

@@ -63,7 +63,8 @@ func (r *Realm) ReleaseCallData() {
 // JavaScript can observe: the registers and frame records above the live
 // frames, which keep the values the calls used, and the functions they ran
 // with their scopes, reachable for Go's collector until later calls
-// overwrite them, and the RegExp working copies of their subjects. Calls
+// overwrite them, the RegExp working copies of their subjects and the
+// native matcher's buffers. Calls
 // do not do it themselves, which would tax every call: a host that keeps
 // a realm after the code it ran is done calls it, as package eventloop
 // does at the end of a run of its loop, or ReleaseCallData, which does it
@@ -102,5 +103,9 @@ func (r *Realm) releaseScratch() {
 	if rs := r.regexps; rs != nil {
 		rs.subjNext = 0
 		clear(rs.subjects[:])
+		rs.nat = natMachine{}
+	}
+	if lz := r.lazy; lz != nil && lz.sites != nil {
+		lz.sites.flush()
 	}
 }

@@ -197,7 +197,7 @@ func TestRegCheckKindOperands(t *testing.T) {
 			str, bytecode.EncodeAsBx(bytecode.LoadInt, 1, 0), bytecode.EncodeABx(bytecode.NewObject, 2, 0), bytecode.EncodeAsBx(bytecode.ForInNext, 0, 0), ret}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			fn := &bytecode.Function{Name: "f", NumRegs: 8, Strict: true, Code: c.code}
+			fn := &bytecode.Function{Name: "f", NumRegs: 8, Strict: true, ICCount: 1, Consts: []bytecode.Const{{Kind: bytecode.ConstString, Str: "x", IsASCII: true, Key: true}}, Code: c.code}
 			require.ErrorContains(t, bytecode.VerifyRegisters(fn), "reads register 0 as an")
 			r := NewRealm()
 			f := unverifiedClosure(r, fn)
@@ -236,8 +236,10 @@ func TestRegCheckWrites(t *testing.T) {
 			breakRow(bytecode.Move, func(uint32, func(r, k int, kind bytecode.RegKind)) {})},
 		{"IterClose keeping its record", `for (var v of [1, 2]) break;`, "IterClose at",
 			breakRow(bytecode.IterClose, func(uint32, func(r, k int, kind bytecode.RegKind)) {})},
-		{"NewObject making an array", `({a: 1}).a`, "a value that is not an array",
+		{"NewObject making an array", `var o = {}; o.a = 1; o.a`, "a value that is not an array",
 			breakRow(bytecode.NewObject, func(w uint32, write func(r, k int, kind bytecode.RegKind)) { write(a(w), 1, bytecode.RegArray) })},
+		{"NewObjectLit making an array", `({a: 1, b: 2}).a`, "a value that is not an array",
+			breakRow(bytecode.NewObjectLit, func(w uint32, write func(r, k int, kind bytecode.RegKind)) { write(a(w), 1, bytecode.RegArray) })},
 		{"LoadInt making an object", `var n = 1; n`, "a value that is not an object",
 			breakRow(bytecode.LoadInt, func(w uint32, write func(r, k int, kind bytecode.RegKind)) { write(a(w), 1, bytecode.RegObject) })},
 	}

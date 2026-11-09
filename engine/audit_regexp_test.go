@@ -501,7 +501,7 @@ func TestAuditRegExpSimpleClassUModeSurrogate(t *testing.T) {
 	for _, p := range []struct {
 		src, flags string
 		fast       bool
-	}{{`[\u0080-\uffff]+`, "gu", false}, {`[\u0080-\uffff]+`, "g", true}, {`[a-z\u00e9]+`, "gu", true}, {`[\ud800-\udfff]+`, "gu", false}, {`[\ud800-\udfff]+`, "g", false}, {`[\u0080-\ud7ff\ue000-\uffff]+`, "gu", true}, {`[^a-z]+`, "gu", false}, {`\s+`, "gu", true}} {
+	}{{`[\u0080-\uffff]+`, "gu", false}, {`[\u0080-\uffff]+`, "g", true}, {`[a-z\u00e9]+`, "gu", true}, {`[\ud800-\udfff]+`, "gu", false}, {`[\ud800-\udfff]+`, "g", true}, {`[\u0080-\ud7ff\ue000-\uffff]+`, "gu", true}, {`[^a-z]+`, "gu", false}, {`\s+`, "gu", true}} {
 		rx, err := r.NewRegExp(FromGoString(p.src), FromGoString(p.flags))
 		require.NoError(t, err)
 		assert.Equal(t, p.fast, rx.RegExpData().c.simple != nil, "/%s/%s fast path", p.src, p.flags)

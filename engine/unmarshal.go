@@ -216,11 +216,11 @@ func (d *jsonDecoder) kind(v Value) (k int, ok bool) {
 			return 0, false
 		}
 		switch {
-		case o.flags&flagHasLazy != 0:
+		case o.hasLazy():
 			return jkHost, true
 		case o.class == ClassArray:
 			return jkArray, true
-		case len(o.elements) == 0 && (o.dict == nil || o.dict.sparse == nil):
+		case o.elemLen() == 0 && (o.dictTable() == nil || o.dictTable().sparse == nil):
 			return jkObject, true
 		}
 	}
@@ -241,11 +241,11 @@ func togoKind(o *Object) (k int, ok bool) {
 		return jkHost, true
 	}
 	switch {
-	case o.flags&flagHasLazy != 0: // ToGo materializes it
+	case o.hasLazy(): // ToGo materializes it
 	case o.class == ClassArray:
 		return jkArray, true
-	case o.class == ClassObject && (o.internal == nil || o.flags&flagHostNode != 0) &&
-		len(o.elements) == 0 && (o.dict == nil || o.dict.sparse == nil):
+	case o.class == ClassObject && (o.pkind == 0 || o.flags&flagHostNode != 0) &&
+		o.elemLen() == 0 && (o.dictTable() == nil || o.dictTable().sparse == nil):
 		return jkObject, true
 	}
 	return 0, false
@@ -660,13 +660,13 @@ func (d *jsonDecoder) plain(v Value, depth int) bool {
 		})
 	case k == jkArray:
 		a := v.AsObject()
-		if int(a.internal.(*ArrayData).length) != len(a.elements) || a.dict != nil && len(a.dict.sparse) != 0 {
+		if int(a.arrayLen()) != a.elemLen() || a.dictTable() != nil && len(a.dictTable().sparse) != 0 {
 			return false
 		}
-		if !d.within(2 + int64(len(a.elements))) {
+		if !d.within(2 + int64(a.elemLen())) {
 			return false
 		}
-		for _, e := range a.elements {
+		for _, e := range a.elemsReadOnly() {
 			if e.IsHole() || !d.plain(e, depth+1) {
 				return false
 			}
@@ -777,9 +777,9 @@ func (d *jsonDecoder) hostAny(o *Object, depth int) (any, bool) {
 // an accessor.
 func jsonMembers(o *Object, f func(key PropertyKey, v Value) bool) bool {
 	if o.flags&flagDict != 0 {
-		for i := range o.dict.entries {
-			e := &o.dict.entries[i]
-			if !e.live || e.cell.attrs&attrEnumerable == 0 || !e.key.IsString() {
+		for i := range o.dictTable().entries {
+			e := &o.dictTable().entries[i]
+			if !e.live() || e.cell.attrs&attrEnumerable == 0 || !e.key.IsString() {
 				continue
 			}
 			if e.cell.attrs&attrAccessor != 0 || !f(e.key, e.cell.value) {
@@ -803,14 +803,14 @@ func jsonMembers(o *Object, f func(key PropertyKey, v Value) bool) bool {
 // Unmarshal's array does: a slice grows by Grow(1) and keeps the elements
 // in its backing array, which are decoded into.
 func (d *jsonDecoder) array(a *Object, rv reflect.Value, depth int) bool {
-	n := int(a.internal.(*ArrayData).length)
-	if n != len(a.elements) || a.dict != nil && len(a.dict.sparse) != 0 {
+	n := int(a.arrayLen())
+	if n != a.elemLen() || a.dictTable() != nil && len(a.dictTable().sparse) != 0 {
 		return false
 	}
 	slice := rv.Kind() == reflect.Slice
 	i := 0
 	for ; i < n; i++ {
-		e := a.elements[i]
+		e := a.elemsReadOnly()[i]
 		if e.IsHole() {
 			return false
 		}
@@ -839,7 +839,7 @@ func (d *jsonDecoder) array(a *Object, rv reflect.Value, depth int) bool {
 	if n == 0 && slice {
 		rv.Set(reflect.MakeSlice(rv.Type(), 0, 0))
 	}
-	return len(a.elements) == n
+	return a.elemLen() == n
 }
 
 // any is the value Unmarshal stores in an empty interface: map[string]any,
@@ -865,12 +865,12 @@ func (d *jsonDecoder) any(v Value, k int, depth int) (any, bool) {
 	}
 	o := v.AsObject()
 	if k == jkArray {
-		n := int(o.internal.(*ArrayData).length)
-		if n != len(o.elements) || o.dict != nil && len(o.dict.sparse) != 0 || !d.tick(n) {
+		n := int(o.arrayLen())
+		if n != o.elemLen() || o.dictTable() != nil && len(o.dictTable().sparse) != 0 || !d.tick(n) {
 			return nil, false
 		}
 		out := make([]any, n)
-		for i, e := range o.elements {
+		for i, e := range o.elemsReadOnly() {
 			if e.IsHole() {
 				return nil, false
 			}

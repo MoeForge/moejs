@@ -96,7 +96,7 @@ func intlSegmenterConstruct(r *Realm, args []Value, newTarget *Object) (Value, e
 	}
 	r.markPrototype(proto)
 	o := r.newObject(ClassIntlSegmenter, r.rootShapeFor(proto))
-	o.internal = s
+	setExtData(o, kindIntlSegmenter, s)
 	return ObjectValue(o), nil
 }
 
@@ -139,7 +139,7 @@ func intlSegmenterSegment(r *Realm, this Value, args []Value) (Value, error) {
 		sg.text.u = str.UTF16()
 	}
 	o := r.newObject(ClassIntlSegments, r.rootShapeFor(r.intlIntr().SegmentsPrototype))
-	o.internal = sg
+	setExtData(o, kindIntlSegments, sg)
 	return ObjectValue(o), nil
 }
 
@@ -182,7 +182,7 @@ func intlSegmentsIterator(r *Realm, this Value, args []Value) (Value, error) {
 	it.pos = 0
 	it.data, it.wordData = nil, nil
 	o := r.newObject(ClassIntlSegmentIterator, r.rootShapeFor(r.intlIntr().SegmentIteratorPrototype))
-	o.internal = &it
+	setExtData(o, kindIntlSegments, &it)
 	return ObjectValue(o), nil
 }
 
@@ -222,11 +222,9 @@ func (it *intlSegments) step(r *Realm) (Value, bool) {
 // is next, when next is the original: stepping it directly is
 // unobservable (iterStep).
 func (r *Realm) segmentIterator(it, next Value) *intlSegments {
-	if it.IsObject() && next.IsObject() {
-		if o := it.AsObject(); o.class == ClassIntlSegmentIterator {
-			if x := r.intl; x != nil && next.AsObject() == x.segmentIterNextFn {
-				return o.internal.(*intlSegments)
-			}
+	if x := r.intl; x != nil && it.IsObject() && next == ObjectValue(x.segmentIterNextFn) {
+		if o := it.AsObject(); o.class == ClassIntlSegmentIterator && o.pkind == payloadKind(kindIntlSegments) {
+			return (*intlSegments)(o.extPayload())
 		}
 	}
 	return nil
@@ -314,7 +312,6 @@ func (r *Realm) segmentData(sg *intlSegments, start, end int, wordLike bool) Val
 		o.slots = d.slots[:]
 	}
 	o.shape = sg.shape
-	o.proto = r.ObjectPrototype
 	o.class = ClassObject
 	o.flags = flagExtensible
 	var seg *String

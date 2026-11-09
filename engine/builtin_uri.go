@@ -1,6 +1,10 @@
 package engine
 
-import "unicode/utf8"
+import (
+	"unicode/utf8"
+
+	"github.com/MoeForge/moego/base64"
+)
 
 // URI functions: encodeURIComponent, decodeURIComponent,
 // encodeURI and decodeURI with the spec's reserved sets. Malformed input
@@ -392,7 +396,8 @@ func (r *Realm) invalidCharacterError(message string) error {
 
 // globalAtob implements atob(data) with forgiving-base64 decode: ASCII
 // whitespace is skipped, the padding is optional, and each decoded byte
-// becomes one code unit.
+// becomes one code unit. The result is charged to the memory limit as it
+// is made, a byte per unit when all are ASCII and two otherwise.
 func globalAtob(r *Realm, this Value, args []Value) (Value, error) {
 	if len(args) == 0 {
 		return Undefined(), r.TypeError("atob requires 1 argument")
@@ -401,6 +406,67 @@ func globalAtob(r *Realm, this Value, args []Value) (Value, error) {
 	if err != nil {
 		return Undefined(), err
 	}
+	if a, ok := s.ASCII(); ok {
+		b, ok, err := atobFast(r, a)
+		if err != nil {
+			return Undefined(), err
+		}
+		if ok && isASCII(bytesToString(b)) {
+			r.chargeString(len(b))
+			return StringValue(asciiString(bytesToString(b))), nil
+		}
+		if ok {
+			r.chargeString(2 * len(b))
+			u := make([]uint16, len(b))
+			for i, c := range b {
+				u[i] = uint16(c)
+			}
+			return StringValue(utf16String(u)), nil
+		}
+	}
+	return atobSlow(r, s)
+}
+
+// atobFast decodes a, an ASCII string, with moego's encoding/base64
+// decoder: padded when a ends in '=', else unpadded. What that decoder
+// takes, forgiving-base64 takes and decodes to the same bytes: the CR and
+// LF it skips are whitespace, and it ignores the bits past the last byte
+// too. ok is false for the rest, which atobSlow decides. Inputs past
+// copyBytesChunk go a chunk at a time, honouring the interrupt flag
+// between chunks; a chunk before the last must decode to all its bytes,
+// which leaves out a CR or LF that would shift the chunks after it.
+func atobFast(r *Realm, a string) (b []byte, ok bool, err error) {
+	enc := base64.RawStdEncoding
+	if len(a) > 0 && a[len(a)-1] == '=' {
+		enc = base64.StdEncoding
+	}
+	if len(a) <= copyBytesChunk {
+		b, err := enc.DecodeString(a)
+		return b, err == nil, nil
+	}
+	src := asciiBytes(a)
+	out := make([]byte, enc.DecodedLen(len(src)))
+	n := 0
+	for len(src) > copyBytesChunk {
+		m, err := base64.RawStdEncoding.Decode(out[n:], src[:copyBytesChunk])
+		if err != nil || m != copyBytesChunk/4*3 {
+			return nil, false, nil
+		}
+		n, src = n+m, src[copyBytesChunk:]
+		if err := r.CheckInterrupt(); err != nil {
+			return nil, false, err
+		}
+	}
+	m, err := enc.Decode(out[n:], src)
+	if err != nil {
+		return nil, false, nil
+	}
+	return out[:n+m], true, nil
+}
+
+// atobSlow is atob's forgiving-base64 decode of s one code unit at a time,
+// for what atobFast does not take.
+func atobSlow(r *Realm, s *String) (Value, error) {
 	n := s.Len()
 	data := make([]byte, 0, n)
 	for i := range n {
@@ -450,12 +516,14 @@ func globalAtob(r *Realm, this Value, args []Value) (Value, error) {
 		ascii = ascii && acc>>2&0x8080 == 0
 	}
 	if ascii {
+		r.chargeString(len(out))
 		b := make([]byte, len(out))
 		for i, u := range out {
 			b[i] = byte(u)
 		}
 		return StringValue(asciiString(bytesToString(b))), nil
 	}
+	r.chargeString(2 * len(out))
 	return StringValue(FromUTF16(out)), nil
 }
 
@@ -475,27 +543,38 @@ func globalBtoa(r *Realm, this Value, args []Value) (Value, error) {
 		return Undefined(), r.invalidStringLength()
 	}
 	r.chargeString(size)
-	out := make([]byte, 0, size)
-	for i := 0; i < n; i += 3 {
-		if err := interruptEvery(r, int64(i)); err != nil {
-			return Undefined(), err
+	out, dst := newASCIIBuf(size)
+	if a, ok := s.ASCII(); ok {
+		src := asciiBytes(a)
+		for len(src) > encodeChunk {
+			base64.StdEncoding.Encode(dst, src[:encodeChunk])
+			dst, src = dst[encodeChunk/3*4:], src[encodeChunk:]
+			if err := r.CheckInterrupt(); err != nil {
+				return Undefined(), err
+			}
 		}
-		var acc uint32
-		k := min(3, n-i)
-		for j := range k {
-			c := s.At(i + j)
+		base64.StdEncoding.Encode(dst, src)
+		return StringValue(out), nil
+	}
+	// The code units go to the encoder as bytes, through buf.
+	var buf [btoaChunk]byte
+	for u := s.UTF16(); len(u) > 0; {
+		b := buf[:min(len(u), len(buf))]
+		for i, c := range u[:len(b)] {
 			if c > 0xFF {
 				return Undefined(), r.invalidCharacterError("Invalid character")
 			}
-			acc |= uint32(c) << (16 - 8*j)
+			b[i] = byte(c)
 		}
-		out = append(out, base64Alphabet[acc>>18], base64Alphabet[acc>>12&63], '=', '=')
-		if k > 1 {
-			out[len(out)-2] = base64Alphabet[acc>>6&63]
-		}
-		if k > 2 {
-			out[len(out)-1] = base64Alphabet[acc&63]
+		base64.StdEncoding.Encode(dst, b)
+		dst, u = dst[len(b)/3*4:], u[len(b):]
+		if err := r.CheckInterrupt(); err != nil {
+			return Undefined(), err
 		}
 	}
-	return StringValue(asciiString(bytesToString(out))), nil
+	return StringValue(out), nil
 }
+
+// btoaChunk is how many code units of a string that is not ASCII btoa
+// encodes at a time, a multiple of 3 so that the chunks need no padding.
+const btoaChunk = 3 << 10

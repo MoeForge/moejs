@@ -17,18 +17,21 @@ import (
 // does not understand returns nil and the translated RE2 program is used,
 // so the accepted subset is the only thing that has to be exact.
 //
-// Accepted: one literal character (not a syntax character or a surrogate)
-// or an identity escape of a syntax character or '/', `\d \D \s \S \w \W`,
-// or a bracket class of literal code units,
+// Accepted: one literal character (not a syntax character, nor a surrogate
+// in u mode) or an identity escape of a syntax character or '/',
+// `\d \D \s \S \w \W`, or a bracket class of literal code units,
 // ranges between literals, the class escapes above, `\t \n \v \f \r \0 \b`
 // (backspace), `\xHH`, `\uHHHH` and identity escapes of syntax characters;
 // followed by nothing, `+`, `{n}`, `{n,}` or `{n,m}` with n >= 1. Rejected:
 // the i flag (case folding), lazy quantifiers, anything that can match the
-// empty string, literal surrogate code units in the class (their per-unit
-// versus per-code-point treatment differs between modes), and in u mode
-// negated classes and classes whose ranges reach into the surrogate area
-// (an astral code point is one character there, outside any BMP range, but
-// its two halves are units this matcher would see).
+// empty string, and in u mode surrogate code units in the class, literal or
+// escaped, negated classes and classes whose ranges reach into the
+// surrogate area (an astral code point is one character there, outside any
+// BMP range, but its two halves are units this matcher would see). Without
+// u a pattern is code units, as this matcher reads the subject: a
+// surrogate, alone or in a range (seroval's
+// `[\x00-\x07\x0b\x0e-\x1f<\u2028\u2029\ud800-\udfff]`), matches each unit
+// of a pair on its own.
 
 // unitSet is a set of BMP code units: an ASCII bitmap plus sorted,
 // non-overlapping ranges above 0x7F, optionally complemented.
@@ -109,6 +112,35 @@ func (s *unitSet) has(c uint16) bool {
 		in = s.hasRange(c)
 	}
 	return in != s.negate
+}
+
+// asciiMembers returns the units below 0x80 that are in the set, as the
+// bits of the units 0-63 and 64-127.
+func (s *unitSet) asciiMembers() (m0, m1 uint64) {
+	m0, m1 = s.ascii[0], s.ascii[1]
+	if s.negate {
+		m0, m1 = ^m0, ^m1
+	}
+	return m0, m1
+}
+
+// scanASCII returns the first index from i below to whose byte of the
+// ASCII string str has its bit set in m0 (bytes 0-63) or m1 (64-127), or
+// to: find's scans of ASCII strings, where has would call hasRange for the
+// units above 0x80. Inlined, the masks and the string stay in registers.
+func scanASCII(str string, i, to int, m0, m1 uint64) int {
+	t := str[i:to]
+	for k := 0; k < len(t); k++ {
+		c := t[k]
+		m := m0
+		if c >= 64 {
+			m = m1
+		}
+		if m>>(c&63)&1 != 0 {
+			return i + k
+		}
+	}
+	return to
 }
 
 func (s *unitSet) hasRange(c uint16) bool {
@@ -252,8 +284,8 @@ func (p *simpleParser) class() (unitSet, bool) {
 }
 
 // literal consumes one literal character (a set of one unit): a character
-// that is not a syntax character or a surrogate, or an identity escape of a
-// syntax character or '/'.
+// that is not a syntax character, nor a surrogate in u mode, or an identity
+// escape of a syntax character or '/'.
 func (p *simpleParser) literal() (uint16, bool) {
 	c, ok := p.peek()
 	if !ok {
@@ -274,7 +306,7 @@ func (p *simpleParser) literal() (uint16, bool) {
 	case '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|':
 		return 0, false
 	}
-	if c >= 0xD800 && c < 0xE000 {
+	if c >= 0xD800 && c < 0xE000 && p.unicode {
 		return 0, false
 	}
 	p.pos += n
@@ -286,7 +318,7 @@ func (p *simpleParser) literal() (uint16, bool) {
 func (p *simpleParser) classAtom(set *unitSet) (unit uint16, escape bool, ok bool) {
 	c := p.src[p.pos]
 	p.pos++
-	if c >= 0xD800 && c < 0xE000 {
+	if c >= 0xD800 && c < 0xE000 && p.unicode {
 		return 0, false, false
 	}
 	if c != '\\' {
@@ -322,7 +354,7 @@ func (p *simpleParser) classAtom(set *unitSet) (unit uint16, escape bool, ok boo
 		return v, false, ok
 	case 'u':
 		v, ok := p.hex(4)
-		if !ok || (v >= 0xD800 && v < 0xE000) {
+		if !ok || (v >= 0xD800 && v < 0xE000 && p.unicode) {
 			return 0, false, false
 		}
 		return v, false, true
@@ -419,9 +451,8 @@ func (c *simpleClass) find(s *String, from int) (start, end int, ok bool) {
 			}
 			i += k
 		} else if f.kind == strASCII {
-			for i < n && !c.set.has(uint16(f.s[i])) {
-				i++
-			}
+			m0, m1 := c.set.asciiMembers()
+			i = scanASCII(f.s, i, n, m0, m1)
 		} else {
 			u := f.units()
 			for i < n && !c.set.has(u[i]) {
@@ -440,9 +471,8 @@ func (c *simpleClass) find(s *String, from int) (start, end int, ok bool) {
 		}
 		j := i + 1
 		if f.kind == strASCII {
-			for j < limit && c.set.has(uint16(f.s[j])) {
-				j++
-			}
+			m0, m1 := c.set.asciiMembers()
+			j = scanASCII(f.s, j, limit, ^m0, ^m1)
 		} else {
 			u := f.units()
 			for j < limit && c.set.has(u[j]) {

@@ -221,7 +221,7 @@ func (r *Realm) newAsyncFromSyncIterator(it, next Value) Value {
 	r.chargeObject(unsafe.Sizeof(asyncFromSyncIter{}))
 	proto := r.asyncIntr().AsyncFromSyncIteratorPrototype
 	o := initObject(&w.obj, ClassObject, r.rootShapeFor(proto))
-	o.internal = w
+	setExtData(o, kindAsyncFromSync, w)
 	return ObjectValue(o)
 }
 
@@ -231,7 +231,7 @@ func (r *Realm) newAsyncFromSyncIterator(it, next Value) Value {
 // program can call them on another this, which is an internal error.
 func (r *Realm) asyncFromSyncThis(this Value) (*asyncFromSyncIter, error) {
 	if this.IsObject() {
-		if s, ok := this.AsObject().internal.(*asyncFromSyncIter); ok {
+		if s, ok := extDataOk(this.AsObject(), kindAsyncFromSync); ok {
 			return s, nil
 		}
 	}

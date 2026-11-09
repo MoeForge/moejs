@@ -173,6 +173,9 @@ func TestAuditB_ConcatRopeFlattenPanics(t *testing.T) {
 // so the operands are ropes built by doubling: they reach the limit without
 // allocating 512 MiB flat strings (20 s under -race).
 func TestAuditB_ConcatJustAboveMaxAccepted(t *testing.T) {
+	if !is64 {
+		t.Skip("builds a string of MaxStringLength, 1 GiB, past what a 32-bit process can allocate beside its parts")
+	}
 	const rope = `function rope(n) { let r = "", p = "x"; for (; n > 0; n >>= 1) { if (n & 1) r = r + p; if (n > 1) p = p + p; } return r; } `
 	_, v, err := auditBRun(t, rope+`let s = rope(1 << 29); let u = s + s; return u.length;`)
 	require.Error(t, err, "expected RangeError, got length %v", v)
@@ -888,7 +891,7 @@ func TestAuditB_SpecDate(t *testing.T) {
 		{`new Date(-0.5).getTime()`, "0"},
 		{`1 / new Date(-0).getTime()`, "Infinity"},
 		{`typeof Date.now()`, `"number"`},
-		{`Date.now() === Math.floor(Date.now())`, "true"},
+		{`(t => t === Math.floor(t))(Date.now())`, "true"}, // one read: two straddle a millisecond now and then
 		{`new Date(new Date(5)).getTime()`, "5"},
 		{`new Date(new Date(NaN)).getTime()`, "NaN"},
 		{`typeof Date()`, `"string"`},

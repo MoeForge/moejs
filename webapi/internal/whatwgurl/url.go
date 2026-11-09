@@ -14,6 +14,7 @@ package whatwgurl
 
 import (
 	"errors"
+	"math"
 	"strings"
 )
 
@@ -115,20 +116,27 @@ func removeTabOrNewline(s string) string {
 }
 
 // hrefWriter writes a serialization, or compares it with cmp when sb is nil.
+// The length n is int64 so that the components of a record, each a string,
+// cannot sum past it on 32-bit systems.
 type hrefWriter struct {
 	sb  *strings.Builder
 	cmp string
-	n   int
+	n   int64
 	eq  bool
 }
+
+// maxHref bounds a serialization: its offsets are uint32, and on 32-bit
+// systems a string holds at most math.MaxInt bytes.
+const maxHref = min(1<<32-1, math.MaxInt)
 
 func (w *hrefWriter) put(s string) {
 	if w.sb != nil {
 		w.sb.WriteString(s)
 	} else if w.eq {
-		w.eq = w.n+len(s) <= len(w.cmp) && w.cmp[w.n:w.n+len(s)] == s
+		end := w.n + int64(len(s))
+		w.eq = end <= int64(len(w.cmp)) && w.cmp[w.n:end] == s
 	}
-	w.n += len(s)
+	w.n += int64(len(s))
 }
 
 // serialize runs the URL serializer on r into w and records the offsets in
@@ -186,19 +194,19 @@ func (u *URL) serialize(r *record, w *hrefWriter) {
 
 // set makes r u's record, reusing in for the serialization when it is the
 // same. It reports false, leaving u as it was, when the serialization is
-// too long for the offsets.
+// longer than maxHref.
 func (u *URL) set(r *record, in string) bool {
 	nu := URL{opts: u.opts}
 	w := hrefWriter{cmp: in, eq: true}
 	nu.serialize(r, &w)
-	if w.n > 1<<32-1 {
+	if w.n > maxHref {
 		return false
 	}
-	if w.eq && w.n == len(in) {
+	if w.eq && w.n == int64(len(in)) {
 		nu.href = in
 	} else {
 		var sb strings.Builder
-		sb.Grow(w.n)
+		sb.Grow(int(w.n))
 		nu.serialize(r, &hrefWriter{sb: &sb})
 		nu.href = sb.String()
 	}

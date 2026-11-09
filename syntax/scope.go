@@ -67,6 +67,14 @@ type Binding struct {
 	// (Annex B.3.2); on a script-scope var binding, that only such
 	// declarations create it.
 	AnnexB bool
+	// Assigned marks a binding that code other than its own declaration
+	// may write: an assignment or update, a destructuring or for-in/of
+	// target, a var declaration with an initializer or a function
+	// declaration of the same name (eval code, which may write any binding
+	// in reach, is HasDirectEval on the functions around it). The compiler
+	// lets the arguments object of a function none of whose parameters is
+	// Assigned alias them lazily (MapArguments).
+	Assigned bool
 
 	initEnd int // end offset of the initialising declarator (lexical bindings)
 }
@@ -343,6 +351,9 @@ func (r *resolver) declare(s *Scope, id *Ident, kind BindKind, initEnd int) *Bin
 		if !funcLike || s.Kind == ScopeFunction || s.Kind == ScopeScript {
 			if kind == BindFunction && existing.Kind == BindVar {
 				existing.Kind = BindFunction
+			}
+			if kind == BindFunction && existing.Kind == BindParam {
+				existing.Assigned = true // the function initializes the parameter
 			}
 			return existing
 		}
@@ -724,6 +735,7 @@ func (r *resolver) stmt(s Stmt) {
 		for _, d := range s.Decls {
 			r.declPattern(d.Target)
 			if d.Init != nil {
+				markAssigned(d.Target)
 				r.expr(d.Init)
 			}
 		}
@@ -1134,11 +1146,30 @@ func (r *resolver) declPattern(pat Pattern) {
 	}
 }
 
+// markAssigned marks the bindings that the declaration pattern pat,
+// resolved, names Assigned.
+func markAssigned(pat Pattern) {
+	if id, ok := pat.(*Ident); ok {
+		if id.Binding != nil {
+			id.Binding.Assigned = true
+		}
+		return
+	}
+	for _, id := range boundNames(pat, nil) {
+		if id.Binding != nil {
+			id.Binding.Assigned = true
+		}
+	}
+}
+
 // assignTarget resolves an assignment target.
 func (r *resolver) assignTarget(pat Pattern) {
 	switch pat := pat.(type) {
 	case *Ident:
 		r.ident(pat)
+		if pat.Binding != nil {
+			pat.Binding.Assigned = true
+		}
 	case *MemberExpr:
 		r.expr(pat)
 	case *CallExpr:
@@ -1203,6 +1234,7 @@ func (r *resolver) forInOf(s *ForInOfStmt) {
 	case *VarDecl:
 		if left.Kind == DeclVar {
 			r.declPattern(left.Decls[0].Target)
+			markAssigned(left.Decls[0].Target)
 			if init := left.Decls[0].Init; init != nil {
 				r.expr(init)
 			}

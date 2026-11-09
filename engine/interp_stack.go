@@ -79,7 +79,7 @@ func captureStackInto(r *Realm, buf []StackFrame, skip *Object, limit int) []Sta
 		return nil
 	}
 	w := stackWalk{skip: skip, limit: limit}
-	if callee, recv, flags, ok := r.callSite(n - 1); ok && callee.internal.(*FunctionData).isNative() {
+	if callee, recv, flags, ok := r.callSite(n - 1); ok && callee.funcData().isNative() {
 		w.add(StackFrame{Fn: callee, Recv: recv, Flags: flags})
 	}
 	for j := n - 1; j >= 0 && !w.full(); j-- {
@@ -91,7 +91,7 @@ func captureStackInto(r *Realm, buf []StackFrame, skip *Object, limit int) []Sta
 				switch {
 				case callee == fr.fn:
 					f.Recv, f.Flags = recv, flags
-				case callee.internal.(*FunctionData).isNative():
+				case callee.funcData().isNative():
 					native = StackFrame{Fn: callee, Recv: recv, Flags: flags}
 				}
 			}
@@ -103,7 +103,7 @@ func captureStackInto(r *Realm, buf []StackFrame, skip *Object, limit int) []Sta
 			w.add(native)
 		}
 	}
-	if w.n == 0 || w.skip != nil && w.skip.class == ClassFunction && !w.skip.internal.(*FunctionData).isNative() {
+	if w.n == 0 || w.skip != nil && w.skip.class == ClassFunction && !w.skip.funcData().isNative() {
 		return nil
 	}
 	if cap(buf) < w.n {
@@ -157,14 +157,19 @@ func (r *Realm) callSite(i int) (callee, recv *Object, flags uint32, ok bool) {
 	if fr.fn == nil {
 		return nil, nil, 0, false
 	}
-	code := fr.fn.internal.(*FunctionData).code
+	code := fr.fn.funcData().code
 	if code == nil || int(fr.pc) >= len(code.Code) {
 		return nil, nil, 0, false
 	}
 	w := code.Code[fr.pc]
 	op := bytecode.Op(w)
 	construct := false
+	// ApplyArguments is a Call of 2 with R[A+3] set before a call through
+	// %Function.prototype.apply% or another callee.
+	call, argc := op == bytecode.Call, int(uint8(w>>16))
 	switch op {
+	case bytecode.ApplyArguments:
+		call, argc = true, 2
 	case bytecode.Call, bytecode.CallSpread:
 	case bytecode.New, bytecode.NewSpread, bytecode.SuperCall, bytecode.SuperCallSpread:
 		construct = true
@@ -181,33 +186,32 @@ func (r *Realm) callSite(i int) (callee, recv *Object, flags uint32, ok bool) {
 		return nil, nil, 0, false
 	}
 	this := st.stack[a+1]
-	if op == bytecode.Call && w>>24 == bytecode.CallUndefThis {
+	if op == bytecode.Call && w>>24&bytecode.CallUndefThis != 0 {
 		this = Undefined()
 	}
-	if op == bytecode.Call && r.isCallOrApply(callee, fd) {
+	if call && r.isCallOrApply(callee, fd) {
 		// f.call(t, ...) and f.apply(t, args) enter f with this t, and V8
 		// shows no frame of their own.
 		if !this.IsObject() || this.AsObject().FunctionData() == nil {
 			return nil, nil, 0, false
 		}
 		callee = this.AsObject()
-		fd = callee.internal.(*FunctionData)
+		fd = callee.funcData()
 		this = Undefined()
-		if uint8(w>>16) > 0 && a+2 < len(st.stack) {
+		if argc > 0 && a+2 < len(st.stack) {
 			this = st.stack[a+2]
 		}
 	}
-	if op == bytecode.Call && r.isReflectCall(callee, fd) {
+	if call && r.isReflectCall(callee, fd) {
 		// Reflect.apply(f, t, args) enters f with this t and
 		// Reflect.construct(F, args) constructs F; V8 shows no frame of
 		// their own either, not even when they throw.
 		construct = fd.name == AtomConstruct
-		argc := int(uint8(w >> 16))
 		if argc == 0 || a+2 >= len(st.stack) || !st.stack[a+2].IsObject() || st.stack[a+2].AsObject().FunctionData() == nil {
 			return nil, nil, 0, false
 		}
 		callee = st.stack[a+2].AsObject()
-		fd = callee.internal.(*FunctionData)
+		fd = callee.funcData()
 		this = Undefined()
 		if argc > 1 && a+3 < len(st.stack) {
 			this = st.stack[a+3]
@@ -215,7 +219,7 @@ func (r *Realm) callSite(i int) (callee, recv *Object, flags uint32, ok bool) {
 	}
 	for fd.kind == FuncBound {
 		callee, this = fd.bound().target, fd.thisValue
-		fd = callee.internal.(*FunctionData)
+		fd = callee.funcData()
 	}
 	if construct {
 		if !fd.IsConstructor() {
@@ -244,7 +248,7 @@ func (r *Realm) isReflectCall(fn *Object, fd *FunctionData) bool {
 // atCtorEntry reports whether frame fr is at the CtorEntry of a class
 // constructor, which throws when the class is called without new.
 func atCtorEntry(fr *frameInfo) bool {
-	code := fr.fn.internal.(*FunctionData).code
+	code := fr.fn.funcData().code
 	return code != nil && int(fr.pc) < len(code.Code) && bytecode.Op(code.Code[fr.pc]) == bytecode.CtorEntry
 }
 
@@ -456,7 +460,7 @@ func (r *Realm) stackTypeName(f StackFrame) string {
 // engine does not record; for objects made by `new F` the chain gives the
 // same F unless F.prototype.constructor was changed.
 func (r *Realm) constructorName(start, self *Object, class Class) string {
-	for obj := start; obj != nil; obj = obj.proto {
+	for obj := start; obj != nil; obj = obj.Proto() {
 		if tag := r.intrinsicToStringTag(obj); tag != "" {
 			return tag
 		}
@@ -503,7 +507,7 @@ func (r *Realm) stackMethodName(f StackFrame, steps *int) string {
 	}
 	if name != "" {
 		key := r.KeyFromString(FromGoString(name))
-		for obj := f.Recv; obj != nil; obj = obj.proto {
+		for obj := f.Recv; obj != nil; obj = obj.Proto() {
 			if r.stackStep(steps) {
 				return ""
 			}
@@ -526,7 +530,7 @@ func (r *Realm) stackMethodName(f StackFrame, steps *int) string {
 func (r *Realm) inferMethodName(start, fn *Object, steps *int) string {
 	var found PropertyKey
 	have := false
-	for obj := start; obj != nil; obj = obj.proto {
+	for obj := start; obj != nil; obj = obj.Proto() {
 		if obj.flags&flagDict == 0 {
 			for i, p := range obj.shape.Props() {
 				if r.stackStep(steps) {
@@ -544,12 +548,12 @@ func (r *Realm) inferMethodName(start, fn *Object, steps *int) string {
 			}
 			continue
 		}
-		for i := range obj.dict.entries {
+		for i := range obj.dictTable().entries {
 			if r.stackStep(steps) {
 				return ""
 			}
-			e := &obj.dict.entries[i]
-			if !e.live || e.cell.attrs&attrEnumerable == 0 || !e.key.IsString() {
+			e := &obj.dictTable().entries[i]
+			if !e.live() || e.cell.attrs&attrEnumerable == 0 || !e.key.IsString() {
 				continue
 			}
 			if holdsFunction(e.cell, fn) {

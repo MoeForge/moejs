@@ -87,7 +87,7 @@ func calleeTable(fn *bytecode.Function) map[uint32]string {
 	for pc := 0; pc < len(fn.Code); {
 		op := bytecode.DecodeOp(fn.Code[pc])
 		switch op {
-		case bytecode.Call, bytecode.CallSpread, bytecode.CallEval, bytecode.New, bytecode.NewSpread:
+		case bytecode.Call, bytecode.CallSpread, bytecode.CallEval, bytecode.New, bytecode.NewSpread, bytecode.ApplyArguments:
 			line, col := fn.Position(uint32(pc))
 			k := siteKey{op == bytecode.New || op == bytecode.NewSpread, line, col}
 			pcs[k] = append(pcs[k], uint32(pc))

@@ -159,7 +159,7 @@ func TestUint8ArrayDecodeInPlace(t *testing.T) {
 		name string
 		f    func() (int, int, bool, error)
 	}{
-		{"base64", func() (int, int, bool, error) { return r.decodeBase64(dst, s, false, base64Loose) }},
+		{"base64", func() (int, int, bool, error) { return r.decodeBase64(dst, s, false, base64Loose, true) }},
 		{"hex", func() (int, int, bool, error) { return r.decodeHex(dst, s) }},
 	} {
 		allocs := testing.AllocsPerRun(20, func() {

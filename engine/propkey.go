@@ -1,6 +1,9 @@
 package engine
 
-import "strconv"
+import (
+	"strconv"
+	"unsafe"
+)
 
 // maxArrayIndex is the largest canonical array index (2^32 - 2).
 const maxArrayIndex = 1<<32 - 2
@@ -103,19 +106,21 @@ func parseArrayIndex(s string) (uint32, bool) {
 }
 
 // KeyFromString converts a string to a PropertyKey: canonical array indices
-// become index keys, everything else is interned.
+// become index keys, everything else is interned. The key of a string that
+// is not an atom comes from the realm's key memo when the string was used
+// as a key before (keyMemo).
 func (r *Realm) KeyFromString(s *String) PropertyKey {
 	if s.atom == 0 {
-		f := s // s is interned below, f never: a view stays on the stack
-		if s.needsFlat() {
-			f = s.flat(new(String))
-		}
-		if f.kind == strASCII {
-			if i, ok := parseArrayIndex(f.s); ok {
-				return IndexKey(i)
+		if lz := r.lazy; lz != nil && lz.keys != nil {
+			set := &lz.keys[keyMemoSlot(s)]
+			if set[0].s == s {
+				return set[0].k
+			}
+			if set[1].s == s {
+				return set[1].k
 			}
 		}
-		return StringKey(r.Intern(s)) // Intern may return what it is given
+		return r.keyFromString(s)
 	}
 	// indexString interns the small index strings (so for-in and
 	// Object.keys hand out atoms like "0"), and the intern table is global,
@@ -126,6 +131,101 @@ func (r *Realm) KeyFromString(s *String) PropertyKey {
 		}
 	}
 	return PropertyKey{StringValue(s)}
+}
+
+// keyFromString is KeyFromString for a string that is not an atom: an index
+// key, or the atom of the string's content, which takes a lookup in the
+// static atoms and one in the realm's cache or the process-wide table. It
+// remembers the key in the key memo.
+func (r *Realm) keyFromString(s *String) PropertyKey {
+	f := s // s is interned below, f never: a view stays on the stack
+	if s.needsFlat() {
+		f = s.flat(new(String))
+	}
+	if f.kind == strASCII {
+		if i, ok := parseArrayIndex(f.s); ok {
+			return IndexKey(i)
+		}
+	}
+	k := StringKey(r.Intern(s)) // Intern may return what it is given
+	r.rememberKey(s, k)
+	return k
+}
+
+// keyMemo maps strings that are not atoms to their keys, by the String: a
+// string constant whose content a realm interned from its data before the
+// code first ran keeps its own String (constASCIIAtom), as do the pieces of
+// a split, so a bundle that keeps property names in an array of literals
+// reads obj[name] with the same String that is not an atom every time, and
+// a memo hit costs a load and a comparison where interning costs a lookup
+// in the static atoms and one in the realm's cache, each hashing the
+// content. It has two ways a set, the set by address, and holds each
+// String it maps: the String cannot be collected while its entry stands,
+// so another String at its address can never be taken for it, and the atom
+// stays the process-wide one for its content (the intern table's entry is
+// weak only while nothing holds the atom).
+//
+// One way a set made two names a loop reads in turn (an Intl polyfill's
+// option names, read some 60 000 times a render each) miss every time
+// when their Strings fell in one slot, and which did turned on where the
+// allocator put them: a render's instructions moved by 4 % from one run
+// to the next, and with any change that moved its strings. Two ways keep
+// both: a dozen such names put two in one of 64 slots in two layouts of
+// three, and three in one of 64 sets in one layout of twenty.
+type keyMemo [keyMemoSets][keyMemoWays]keyMemoEntry
+
+type keyMemoEntry struct {
+	s *String
+	k PropertyKey
+}
+
+// The memo's 128 entries take 3 KiB, allocated when a realm with lazy
+// state has converted keyMemoAfter strings that the memo takes, as a realm
+// creates its intern caches after internCacheAfter names: a runtime that
+// converts a few, a plugin's, pays nothing.
+const (
+	keyMemoBits  = 6
+	keyMemoSets  = 1 << keyMemoBits
+	keyMemoWays  = 2
+	keyMemoAfter = 1024
+)
+
+// keyMemoSlot is the memo set of s, by its address (Fibonacci hashing of
+// the 16-byte granules, so Strings next to each other in a span or a slab
+// spread over the sets).
+func keyMemoSlot(s *String) uint32 {
+	return uint32(uintptr(unsafe.Pointer(s))>>4) * 0x9e3779b9 >> (32 - keyMemoBits)
+}
+
+// rememberKey puts s and its key k first in its set of the realm's key
+// memo, where the set's first entry moves second and its second goes. Only
+// a string that keeps nothing but its own units alive goes in, so that the
+// memo holds at most keyMemoSets*keyMemoWays short strings, which
+// the live measurement (memlive.go) does not count, as the intern caches
+// keep only short names: a flat string of at most maxSharedDataKey units
+// that shares no other string's units (right, shareRoot), does not start an
+// append buffer (strInBuf), was not carved from a host conversion's slab
+// (strHost) and is not a slice of a JSON text (strSlice). A lazy string,
+// whose source may be a slice of a JSON text or a host's Go text, is not
+// flat. Until the memo exists it counts such strings instead
+// (keyMemoAfter).
+func (r *Realm) rememberKey(s *String, k PropertyKey) {
+	if s.needsFlat() || s.n > maxSharedDataKey || s.right != nil || s.flags&(strInBuf|strHost|strSlice) != 0 {
+		return
+	}
+	lz := r.lazy
+	if lz == nil {
+		return
+	}
+	if lz.keys == nil {
+		if lz.keyMisses < keyMemoAfter {
+			lz.keyMisses++
+			return
+		}
+		lz.keys = new(keyMemo)
+	}
+	set := &lz.keys[keyMemoSlot(s)]
+	set[1], set[0] = set[0], keyMemoEntry{s, k}
 }
 
 // KeyFromGoString converts a Go string to a PropertyKey.

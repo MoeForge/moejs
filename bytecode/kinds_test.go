@@ -59,7 +59,7 @@ func TestKindOperands(t *testing.T) {
 	assert.Equal(t, []use{{3, RegArray}}, uses(ArrayPush))
 	assert.Equal(t, []use{{3, RegObject}, {4, RegIndex}}, uses(ForInNext))
 
-	kinds := map[Op][]use{NewObject: {{3, RegObject}}, ToObject: {{3, RegObject}}, NewArray: {{3, RegArray}},
+	kinds := map[Op][]use{NewObject: {{3, RegObject}}, NewObjectLit: {{3, RegObject}}, ToObject: {{3, RegObject}}, NewArray: {{3, RegArray}}, NewArrayK: {{3, RegArray}},
 		ForInInit: {{3, RegObject}, {4, RegIndex}}, ForInNext: {{4, RegIndex}}}
 	for op := Op(0); int(op) < OpCount; op++ {
 		var got []use
@@ -174,7 +174,7 @@ func TestVerifyKinds(t *testing.T) {
 		{"a for-in record no ForInInit made", cat(obj(0), num(1), asbx(ForInNext, 0, 0), ret), nil, 0, false},
 	}
 	for _, c := range cases {
-		fn := &Function{Name: "f", NumRegs: 8, Code: c.code, Handlers: c.handlers}
+		fn := &Function{Name: "f", NumRegs: 8, Consts: nameConst, ICCount: 1, Code: c.code, Handlers: c.handlers}
 		if c.bodyPC != 0 {
 			fn.Module = &Module{BodyPC: c.bodyPC}
 		}
@@ -197,12 +197,33 @@ func TestVerifyKindsWideFrames(t *testing.T) {
 	}
 }
 
+// TestVerifyKindsRanges checks that a span of writes clears only its
+// registers' kind facts, including spans crossing a word boundary.
+func TestVerifyKindsRanges(t *testing.T) {
+	for _, start := range []int{0, 1, 62, 63, 64, 126, 127, 128, 254} {
+		for _, count := range []int{0, 1, 2, 3, 64} {
+			count = min(count, 256-start)
+			for _, r := range []uint8{0, 1, 61, 62, 63, 64, 65, 126, 127, 128, 129, 254, 255} {
+				fn := &Function{Name: "f", NumRegs: 256, Consts: nameConst, ICCount: 1, Code: []uint32{
+					EncodeABx(NewObject, r, 0), EncodeABC(UndefRange, uint8(start), uint8(count), 0),
+					EncodeABC(DefineField, r, 1, 0), 0, EncodeABC(RetUndef, 0, 0, 0)}}
+				err := VerifyRegisters(fn)
+				if int(r) >= start && int(r) < start+count {
+					assert.ErrorContains(t, err, "which a path to it leaves another value in", "R[%d], writes %d..%d", r, start, start+count)
+				} else {
+					assert.NoError(t, err, "R[%d], writes %d..%d", r, start, start+count)
+				}
+			}
+		}
+	}
+}
+
 // TestVerifyKindsAllocations bounds what the proof allocates: nothing for
 // a function of a few dozen blocks, and at the widest frame (256
 // registers, every one a kind operand's) with every instruction starting
 // a block, under 512 bytes per word of code.
 func TestVerifyKindsAllocations(t *testing.T) {
-	small := &Function{Name: "f", NumRegs: 8, Code: []uint32{
+	small := &Function{Name: "f", NumRegs: 8, Consts: nameConst, ICCount: 1, Code: []uint32{
 		EncodeABx(NewObject, 0, 0), EncodeAsBx(JmpT, 1, 1), EncodeABx(NewObject, 0, 0), EncodeABC(DefineField, 0, 1, 0), 0, EncodeABC(RetUndef, 0, 0, 0)}}
 	require.NoError(t, VerifyRegisters(small))
 	assert.Zero(t, testing.AllocsPerRun(100, func() { _ = VerifyRegisters(small) }))
@@ -218,7 +239,7 @@ func TestVerifyKindsAllocations(t *testing.T) {
 		code = append(code, EncodeABC(DefineField, uint8(r), 0, 0), 0)
 	}
 	code = append(code, EncodeABC(RetUndef, 0, 0, 0))
-	wide := &Function{Name: "f", NumRegs: 256, Code: code}
+	wide := &Function{Name: "f", NumRegs: 256, Consts: nameConst, ICCount: 1, Code: code}
 	require.NoError(t, VerifyRegisters(wide))
 	var m0, m1 runtime.MemStats
 	runtime.ReadMemStats(&m0)

@@ -70,11 +70,10 @@ func (r *Realm) newIteratorObject(proto *Object, class Class, target Value, kind
 	r.chargeObject(unsafe.Sizeof(arrayIteratorObject{}))
 	o := &it.obj
 	o.shape = r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = class
 	o.flags = flagExtensible
 	it.data = IteratorData{Target: target, Kind: kind}
-	o.internal = &it.data
+	setData(o, kindIterator, &it.data)
 	return o
 }
 
@@ -127,7 +126,6 @@ func (r *Realm) createIterResult(value Value, done bool) Value {
 	r.chargeObject(unsafe.Sizeof(iterResultObject{}))
 	o := &res.obj
 	o.shape = r.iterResultShape()
-	o.proto = r.ObjectPrototype
 	o.class = ClassObject
 	o.flags = flagExtensible
 	res.slots = [2]Value{value, Bool(done)}
@@ -139,7 +137,7 @@ func (r *Realm) createIterResult(value Value, done bool) Value {
 // it checks the receiver's class and steps its IteratorData.
 func iteratorNext(r *Realm, this Value, class Class) (Value, error) {
 	if this.IsObject() && this.AsObject().class == class {
-		if d, ok := this.AsObject().internal.(*IteratorData); ok {
+		if d, ok := dataOk(this.AsObject(), kindIterator); ok {
 			v, done, err := d.Next(r)
 			if err != nil {
 				return Undefined(), err

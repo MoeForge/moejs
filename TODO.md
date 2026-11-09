@@ -203,6 +203,25 @@ These run, with a result that differs from the specification:
   `..` that leaves the mount after other names (`/w/a/../../w/b.txt`) is
   EACCES, where Node.js resolves it outside and back in; one right after
   the mount (`/w/../w/b.txt`) is read lexically.
+- `node` on Windows: the Windows path forms and error codes are tested
+  on Linux, through the package's test hook, and the package
+  cross-compiles for Windows, but nothing has run on Windows itself yet:
+  `os.Root`'s errors there (the rename onto a directory, `ERROR_DIRECTORY`,
+  a listing of a file), links and junctions, 8.3 short names (a `Mount`
+  given as `C:\PROGRA~1` does not match `C:\Program Files`), trailing dots
+  and spaces that Windows drops from a name, and reserved names such as
+  `NUL`. `glob` matches case as written, where Node.js ignores it (there
+  and on macOS).
+  `mkdir` with `recursive` returns the plain path for a `Mount` without a
+  volume, where Node.js has no such mount.
+- `node` on js/wasm, WASI (`wasip1`) and Plan 9: the package compiles
+  there, but nothing has run on them yet. Opens block (no `O_NONBLOCK`),
+  so a FIFO without a writer blocks the open; `access` checks the owner's
+  permission bits, as if the process owned every file. Plan 9 has no
+  errnos: an error's code comes from syscall's error values and the words
+  of the kernel's message, `UNKNOWN` otherwise, and `errno` is libuv's
+  number for a system without one (its Windows number); `fetch` errors
+  there have no `ECONNREFUSED` or `ECONNRESET` code.
 - `node` Buffer, against Node.js 24: no `readBigInt64LE` and the other
   BigInt reads and writes, no `copyBytesFrom`, no `asciiSlice`,
   `utf8Write` and the other `*Slice` and `*Write` methods, no `Blob`,
@@ -221,6 +240,10 @@ These run, with a result that differs from the specification:
 
 ## Host API
 
+- An idle hook for the synchronous calls of `node:fs` (`readFileSync` and
+  the others): they block the loop inside JavaScript, between an `OnWake`
+  and the next `OnIdle` of `eventloop.Options`, so a host's watchdog counts
+  the time they wait for the file system
 - `ParseJSON` straight from the bytes (it copies them into a string first)
 - Source maps
 - The outcome of a module's top-level `await` that settles after `Load`
@@ -231,3 +254,34 @@ These run, with a result that differs from the specification:
   result costs the host: a value that repeats one object many times, whose
   text and `Unmarshal` copies are as large as if it did not, and the buffer
   `AppendJSON` reserves from its last output
+
+## Performance
+
+- Exact slots for object literals of one, three, five and seven
+  properties: such a literal takes the slots of the next even count, whose
+  spare slot holds the property a program often adds right after it.
+  Exact sizes would save 1.6 to 2.1 % of the bytes a server render
+  allocates, but cost an allocation wherever a property follows the
+  literal. Telling the two apart takes feedback per literal, which pays
+  only once a literal can find its feedback with one load, as with a
+  feedback index the compiler assigns. The same feedback would size the
+  `{}` objects a program fills key by key in a for-in loop: their storage
+  grows, which is 3.9 % of the bytes of a React server render.
+
+## Optimizations measured and not taken
+
+- A long `join` of mostly ASCII pieces with a few UTF-16 ones as a rope of
+  leaves. Today the result is one string of UTF-16 units, two bytes for
+  each ASCII unit, as soon as one piece is UTF-16, which a server-rendered
+  page usually has. Leaves of ASCII bytes alternating with leaves of units,
+  each at least 256 units long, joined as a balanced rope, saved about
+  1.1 to 1.3 % of the bytes React server renders allocate, and 0.6 to
+  1.2 % of the instructions with the collector off;
+  with the collector on, the instructions and the mark work per run fell
+  by less than their run-to-run spread. It needs slices to descend 16
+  levels into a rope instead of 4, so that a slice of the page reaches a
+  leaf, and then a slice across the boundaries of a rope that appends
+  built keeps a flat copy of each of up to 16 of its nodes; and `indexOf`
+  and `includes` walk the long leaves instead of flattening the rope, so
+  more of the code that reads strings sees ropes. Not taken for about 1 %
+  of the bytes.

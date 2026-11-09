@@ -19,7 +19,7 @@ const (
 // Type returns the coarse type of v.
 func (v Value) Type() Type {
 	if v.ptr == nil {
-		if v.bits&reservedMask != reservedPrefix {
+		if v.bits>>48 != reservedPrefix>>48 {
 			return TypeNumber
 		}
 		switch v.bits {

@@ -9,8 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// is64 reports a 64-bit system: the sizes and size classes that tests pin
+// are those of its layouts.
+const is64 = unsafe.Sizeof(uintptr(0)) == 8
+
 func TestValueSize(t *testing.T) {
-	assert.Equal(t, uintptr(16), unsafe.Sizeof(Value{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(16), unsafe.Sizeof(Value{}))
+	}
 }
 
 func TestValuePredicates(t *testing.T) {
@@ -75,6 +81,35 @@ func TestNaNCanonicalization(t *testing.T) {
 	nz := NumberValue(math.Copysign(0, -1))
 	assert.True(t, math.Signbit(nz.AsNumber()))
 	assert.NotEqual(t, nz.Bits(), NumberValue(0).Bits())
+}
+
+// TestScalarFloatNaN checks what run's arithmetic relies on (scalarFloat):
+// every scalar that is not a number reads as a NaN, and so does an
+// operator's result on it, whatever the other operand.
+func TestScalarFloatNaN(t *testing.T) {
+	others := []Value{Undefined(), Null(), True(), False(), Hole()}
+	nums := []float64{0, math.Copysign(0, -1), 1, -1, 0.5, 1 << 53, math.MaxFloat64, math.SmallestNonzeroFloat64, math.Inf(1), math.Inf(-1), math.NaN()}
+	for _, v := range others {
+		require.True(t, v.isScalar())
+		f := v.scalarFloat()
+		require.True(t, math.IsNaN(f), "%v", v)
+		for _, n := range nums {
+			for _, r := range []float64{f + n, n + f, f - n, n - f, f * n, n * f, f / n, n / f, f + 1, f - 1} {
+				assert.True(t, math.IsNaN(r), "%v and %v", v, n)
+			}
+			assert.False(t, f < n || f <= n || f > n || f >= n || n < f || n <= f || n > f || n >= f, "%v and %v", v, n)
+		}
+		i, i32 := int(f), int32(f)
+		assert.False(t, float64(i) == f || float64(i32) == f, "%v", v)
+	}
+	for _, n := range nums {
+		v := NumberValue(n)
+		assert.True(t, v.isScalar())
+		assert.Equal(t, v.Bits(), math.Float64bits(v.scalarFloat()))
+	}
+	for _, v := range []Value{StringValue(FromGoString("s")), ObjectValue(NewRealm().NewObject())} {
+		assert.False(t, v.isScalar())
+	}
 }
 
 func TestValueIntHelpers(t *testing.T) {

@@ -8,8 +8,9 @@ import (
 )
 
 // lazyStringMode fixes how retained bytes are decoded. Reads may populate
-// caches, but never change the mode or the retained bytes. The text modes
-// come first (String.lazyTextMode).
+// caches, but never change the mode or the retained bytes. A lazy string's
+// kind is strLazy plus its mode. The text modes come first
+// (String.lazyTextMode).
 type lazyStringMode uint8
 
 const (
@@ -47,8 +48,8 @@ const (
 // lazyStringData makes concurrent readers of a lazy string decode it once
 // (resolved), which publishes the decoded String in the String's right
 // field, and facts holds what is known of its source; the String's hash
-// field caches its hash atomically. The String's n and flags, set when it
-// is made, hold its length, mode and whether it decodes to UTF-16
+// field caches its hash atomically. The String's n, kind and flags, set
+// when it is made, hold its length, mode and whether it decodes to UTF-16
 // (strLazyWide). Without a share root (strLazyRooted), the String and its
 // data take one 64-byte allocation.
 type lazyStringData struct {
@@ -56,7 +57,7 @@ type lazyStringData struct {
 	facts atomic.Uint32
 }
 
-func (s *String) lazyMode() lazyStringMode { return lazyStringMode(s.flags >> lazyModeShift & 3) }
+func (s *String) lazyMode() lazyStringMode { return lazyStringMode(s.kind - strLazy) }
 func (s *String) lazyTextMode() bool       { return s.lazyMode() <= lazyWTF8 }
 
 // validLazyUTF8 reports whether text, the retained bytes, is the UTF-8 of
@@ -208,17 +209,18 @@ func newLazyStringSized(text string, mode lazyStringMode, rooted bool, n int, wi
 	if len(text) == 0 {
 		return emptyString
 	}
-	flags := uint8(mode) << lazyModeShift
+	kind := strLazy + uint8(mode)
+	var flags uint8
 	if wide {
-		flags |= strLazyWide
+		flags = strLazyWide
 	}
 	if rooted {
 		b := &rootedLazyStringBlock{}
-		b.value = String{s: text, p: unsafe.Pointer(&b.data), n: int32(n), kind: strLazy, flags: flags | strLazyRooted}
+		b.value = String{s: text, p: unsafe.Pointer(&b.data), n: int32(n), kind: kind, flags: flags | strLazyRooted}
 		return &b.value
 	}
 	b := &lazyStringBlock{}
-	b.value = String{s: text, p: unsafe.Pointer(&b.data), n: int32(n), kind: strLazy, flags: flags}
+	b.value = String{s: text, p: unsafe.Pointer(&b.data), n: int32(n), kind: kind, flags: flags}
 	return &b.value
 }
 
@@ -233,7 +235,7 @@ func newHostLazyString(text string) *String {
 	return s
 }
 
-func (s *String) isLazy() bool { return s.kind == strLazy }
+func (s *String) isLazy() bool { return s.kind >= strLazy }
 
 func (s *String) lazyData() *lazyStringData { return (*lazyStringData)(s.p) }
 
@@ -258,6 +260,16 @@ func (s *String) lazyBlockSize() int {
 		return int(unsafe.Sizeof(rootedLazyStringBlock{}))
 	}
 	return int(unsafe.Sizeof(lazyStringBlock{}))
+}
+
+// plainView returns a flat ASCII String of the source of the lazy s, known
+// plain (plainLazyJSON), without decoding s: its decoding if one was
+// published, else the String decoding would publish, which s does not keep.
+func (s *String) plainView() *String {
+	if f := s.lazyPublished(); f != nil {
+		return f
+	}
+	return &String{s: s.s, n: s.n, kind: strASCII, json: jsonPlain}
 }
 
 // sourceUTF8 returns the retained bytes of a lazy string when they are the

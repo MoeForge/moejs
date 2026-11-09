@@ -89,14 +89,14 @@ func (o *Object) privateSlot(pn *PrivateName) *Value {
 		pn.shape, pn.slot = o.shape, slot
 		return &o.slots[slot]
 	}
-	if o.dict == nil {
+	if o.dictTable() == nil {
 		// A host placeholder (hostlazy.go), which has no private elements:
 		// addPrivate materializes it. One that became a prototype or a
 		// WeakMap key has a dictProps (its root, its weak entries) without
 		// properties, and the lookup below finds nothing either.
 		return nil
 	}
-	c, ok := o.dict.lookup(PrivateKey(pn))
+	c, ok := o.dictTable().lookup(PrivateKey(pn))
 	if !ok {
 		return nil
 	}
@@ -128,9 +128,12 @@ func (r *Realm) addPrivate(o *Object, pn *PrivateName, v Value, attrs uint8) err
 	if o.flags&flagShared != 0 {
 		return r.TypeError("Cannot define private member %s on shared intrinsic %s", pn.desc.GoString(), o.debugString())
 	}
-	o.materializeHost() // a host placeholder (hostlazy.go) has no storage yet
+	if o.flags&flagHasLazy != 0 {
+		o.materializeHost() // a host placeholder (hostlazy.go) has no storage yet
+		o.makePendingDescs()
+	}
 	if o.flags&flagDict == 0 && o.shape.shared {
-		o.toDictionary(r)
+		o.toDictionary(r, 1)
 	}
 	o.addNamed(r, PrivateKey(pn), propCell{value: v, attrs: attrs})
 	return nil

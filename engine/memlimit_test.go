@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -58,8 +59,10 @@ func TestMemoryLimitRopeFlatten(t *testing.T) {
 		assert.Equal(t, int64(units*5001), r.Stats().RequestAllocatedBytes-before, src)
 		assert.Equal(t, "y", rope.Substring(0, 1).GoString())
 	}
-	assert.Equal(t, uintptr(48), unsafe.Sizeof(String{}))
-	assert.Equal(t, uintptr(56), unsafe.Sizeof(ropeNode{}), "a ropeNode stays in the 64-byte class")
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(48), unsafe.Sizeof(String{}))
+		assert.Equal(t, uintptr(56), unsafe.Sizeof(ropeNode{}), "a ropeNode stays in the 64-byte class")
+	}
 }
 
 // TestMemoryLimitRopeBeforeLimit: a rope made before the realm had a limit
@@ -111,6 +114,7 @@ func TestMemoryLimitPreChecks(t *testing.T) {
 		{`new Uint8Array(1 << 22).length`, "RangeError: Invalid typed array length: 4194304"},
 		{`new Float64Array(1 << 20).length`, "RangeError: Invalid typed array length: 1048576"},
 		{`btoa("x".repeat(3 << 19))`, "RangeError: Invalid string length"},
+		{`const a = new Array(1 << 16).fill(0); a.concat(a, a, a).length`, "RangeError: Invalid array length"},
 	}
 	for _, c := range cases {
 		r := NewRealmWith(RealmOptions{MemoryLimit: 2 << 20})
@@ -126,6 +130,26 @@ func TestMemoryLimitPreChecks(t *testing.T) {
 	assert.Less(t, r.Stats().RequestAllocatedBytes, int64(200<<20), "fill stopped before it allocated")
 	_, ok := r.Global.GetOwnDataValue(key(r, "ran"))
 	assert.False(t, ok)
+}
+
+// TestMemoryLimitConcat: concat of plain arrays, whose items may name one
+// array any number of times, allocates its result at once only up to
+// concatExactLimit elements and within the budget; a longer result grows
+// as it is written, so the limit stops it, and one past maxConcatLength
+// throws a RangeError, with or without a limit, before it allocates.
+func TestMemoryLimitConcat(t *testing.T) {
+	r := NewRealmWith(RealmOptions{MemoryLimit: 64 << 20})
+	_, err := runScriptValue(t, r, `const a = new Array(1 << 20).fill(0); a.concat(...new Array(20).fill(a)).length`)
+	require.ErrorIs(t, err, ErrMemoryLimit)
+	assert.Less(t, r.Stats().RequestAllocatedBytes, int64(512<<20), "concat stopped before it allocated")
+
+	const huge = `const a = new Array(1e6).fill(0); try { a.concat(...new Array(4000).fill(a)).length } catch (e) { e.name + ": " + e.message }`
+	for _, limit := range []int64{0, 64 << 20} {
+		r := NewRealmWith(RealmOptions{MemoryLimit: limit})
+		v, err := runScriptValue(t, r, huge)
+		require.NoError(t, err, limit)
+		assert.Equal(t, "RangeError: Invalid array length", v.String(), limit)
+	}
 }
 
 // TestMemoryLimitCoverage: each kind of storage a script can grow without
@@ -289,6 +313,32 @@ keep.length`)
 	assert.True(t, errors.Is(err, ErrMemoryLimit), "300 stacks of 1 MB fit a 32 MB limit: %v", err)
 }
 
+// TestMemoryLimitBase64: the strings and bytes base64 and hex make are
+// charged, atob's on both its decoders and as ASCII or Latin-1, so 300
+// kept results of about 1 MB do not fit a 32 MB limit.
+func TestMemoryLimitBase64(t *testing.T) {
+	for _, c := range []struct{ input, result string }{
+		{`"QUFB".repeat(1 << 18)`, `atob(big)`},
+		{`"6enp".repeat(1 << 18)`, `atob(big)`},
+		{`"QUFB ".repeat(1 << 18)`, `atob(big)`},
+		{`"6enp ".repeat(1 << 18)`, `atob(big)`},
+		{`"x".repeat(3 << 18)`, `btoa(big)`},
+		{`"\xe9".repeat(3 << 18)`, `btoa(big)`},
+		{`new Uint8Array(3 << 18)`, `big.toBase64()`},
+		{`new Uint8Array(1 << 19)`, `big.toHex()`},
+		{`"QUFB".repeat(1 << 18)`, `Uint8Array.fromBase64(big)`},
+		{`"41".repeat(1 << 19)`, `Uint8Array.fromHex(big)`},
+	} {
+		t.Run(c.input+" "+c.result, func(t *testing.T) {
+			r := NewRealmWith(RealmOptions{MemoryLimit: 32 << 20})
+			_, err := runScriptValue(t, r, `const big = `+c.input+`; const keep = [];
+for (let i = 0; i < 300; i++) keep.push(`+c.result+`)
+keep.length`)
+			assert.True(t, errors.Is(err, ErrMemoryLimit), "300 results of about 1 MB fit a 32 MB limit: %v", err)
+		})
+	}
+}
+
 // TestMemoryLimitErrorsPastLimit: errors made once the limit is
 // exceeded, from the script and from Go (NewError, a host function's Go
 // error), neither recurse nor panic; the run stops with the
@@ -323,4 +373,26 @@ for (let i = 0; i < 100; i++) { for (const f of [() => null[big], () => hostFail
 	r.SetMemoryLimit(64 << 20)
 	_, err = runScriptValue(t, r, `1`)
 	require.NoError(t, err)
+}
+
+// TestMemoryLimitRegisterStack: the register stack's growth is charged,
+// so a recursion whose frames take many registers stops at a small limit
+// and runs under a larger one, and a measurement counts the stack the
+// realm keeps.
+func TestMemoryLimitRegisterStack(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("function f(n) { ")
+	for i := range 200 {
+		fmt.Fprintf(&b, "let v%d = n + %d; ", i, i)
+	}
+	b.WriteString("return n === 0 ? v0 : f(n - 1) + v199; } f(3000)")
+	r := NewRealmWith(RealmOptions{MemoryLimit: 2 << 20})
+	_, err := runScriptValue(t, r, b.String())
+	require.ErrorIs(t, err, ErrMemoryLimit)
+	r = NewRealmWith(RealmOptions{MemoryLimit: 64 << 20})
+	_, err = runScriptValue(t, r, b.String())
+	require.NoError(t, err)
+	stack := r.Stats().RegisterStackBytes
+	require.Greater(t, stack, int64(8<<20), "3000 frames of 200 registers")
+	assert.GreaterOrEqual(t, r.MeasureLive(nil), stack, "the stack counts")
 }

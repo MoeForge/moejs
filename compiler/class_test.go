@@ -49,7 +49,7 @@ export class C extends A {}
 	assert.Contains(t, ops(c), bytecode.SuperCallSpread)
 
 	fn = compileModule(t, `export class D { constructor(x) { this.x = x; } }`)
-	assert.Equal(t, []bytecode.Op{bytecode.CtorEntry, bytecode.LoadThis, bytecode.Move, bytecode.SetProp, bytecode.RetUndef}, ops(child(t, fn, "D")),
+	assert.Equal(t, []bytecode.Op{bytecode.CtorEntry, bytecode.LoadThis, bytecode.SetProp, bytecode.RetUndef}, ops(child(t, fn, "D")),
 		"a class without instance fields calls no initializer")
 }
 

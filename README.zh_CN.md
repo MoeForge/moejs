@@ -20,12 +20,18 @@ moejs 支持 ES 模块、类、async/await、Proxy、BigInt 等现代 JavaScript
 ## 性能
 
 <p align="center">
-  <img src="docs/assets/plugin-bench.zh.png" alt="moejs 插件场景基准：小请求、10 万 token agent 请求和 8 MiB 图片请求的吞吐，以及 32 并发时真正占用的内存">
+  <img src="docs/assets/plugin-bench.zh.png" alt="moejs 插件场景基准：小请求、10 万 token agent 请求和单张 8 MiB 图片在 8 并发下的每秒请求数，以及 32 并发时真正占用的内存；引擎为 moejs、Sobek、modernc 和 quickjs-go，C 直接调用的 QuickJS 和 quickjs-ng 作为参考">
 </p>
 
-这张图在 Go 程序能嵌入的几个引擎上跑 new-api 的插件负载：任务插件的小请求、插件改写后发往上游的 10 万 token 编码 agent 请求，以及带一张 8 MiB 图片的请求。灰底里是 C 直接调用 QuickJS 的结果，作为参考。数据于 2026-10-21 测量，moejs 为 v0.1.0-alpha.9，机器是 Intel Xeon E5-2667 v4 的 8 个 vCPU，测量方法见 [docs/performance.zh_CN.md](docs/performance.zh_CN.md#插件场景)。
+这张图在 Go 程序能嵌入的几个引擎上跑 new-api 的插件负载：任务插件的小请求、插件改写后发往上游的 10 万 token 编码 agent 请求，以及带一张 8 MiB 图片的请求。每个引擎一行，每种负载一栏，给出 8 并发下的每秒请求数，最后一栏是 32 并发时真正占用的内存。moejs 有两行：一行用 `ParseJSONString` 直接读调用方的字符串，另一行用 `ParseJSON` 先拷贝一份输入。C 直接调用的 QuickJS 和 quickjs-ng 画成斜线条纹，作为参考；小请求上 C QuickJS 比 moejs 快约 7%。数据于 2026-11-08 测量，moejs 为 2026-11-07 的源码，机器是 Intel Xeon E5-2699A v4 KVM 虚拟机，绑定 24 个 vCPU 中的 8 个，Go 1.26.6。测量方法以及 1 并发、32 并发和 8 张 1 MiB 图的表格见 [docs/performance.zh_CN.md](docs/performance.zh_CN.md#插件场景)。
 
-下表是单次调用的耗时：测试负载是 new-api 的 10 个任务插件和 269 个录制下来的调用，计时在 Go 调用方进行，包括参数和结果的转换。
+<p align="center">
+  <img src="docs/assets/v8-bench.zh.png" alt="V8 benchmark suite v7：moejs、go-quickjs、modernc、goant、goja 和 Sobek 的总分和 8 个程序各自的得分，C 直接调用的 QuickJS 作为参考">
+</p>
+
+在 [V8 benchmark suite v7](docs/performance.zh_CN.md#通用-javascriptv8-benchmark-suite-v7)（8 个经典 JavaScript 程序）上，moejs 得分为 **1,429**，是 C QuickJS 的 1.35 倍，8 个程序的得分也都是最高。数据于 2026-11-07 测量，moejs 为 2026-11-07 的源码，每个引擎单线程跑在 Xeon E5-2699A v4 KVM 虚拟机自己的一个 vCPU 上。
+
+下表是单次调用的耗时：测试负载是 new-api 的 10 个任务插件和 269 个录制下来的调用，计时在 Go 调用方进行，包括参数和结果的转换。数据测于 2026-10-01（modernc 为 2026-10-08）。
 
 | | moejs | Sobek | QuickJS 纯 Go（modernc） | QuickJS（quickjs-go 默认配置） | V8（v8go） |
 |---|--:|--:|--:|--:|--:|
@@ -42,7 +48,7 @@ Sobek 和 modernc.org/quickjs（翻译成 Go 的 QuickJS）和 moejs 一样是�
 
 ### 纯 Go
 
-可以用 `CGO_ENABLED=0` 编译，交叉编译不需要 C 工具链。引擎就是普通的 Go 代码，pprof 和 race 检测器能看到它内部。
+moejs 自己的代码是纯 Go，没有汇编，也不用 cgo。可以用 `CGO_ENABLED=0` 编译，交叉编译不需要 C 工具链。引擎就是普通的 Go 代码，pprof 和 race 检测器能看到它内部。
 
 ### 和 Go 之间传值
 
@@ -64,12 +70,6 @@ Sobek 和 modernc.org/quickjs（翻译成 Go 的 QuickJS）和 moejs 一样是�
 
 `webapi` 包在带事件循环的运行时上安装 `fetch`、`Headers`、`Request`、`Response`、Streams、`AbortController`、`URL` 和 `performance`，供基于 fetch 的 SDK 使用。fetch 能访问哪些网络由宿主的 `http.Client` 和放行钩子决定：不提供客户端就没有网络，不提供钩子则客户端能访问的地址都放行，所以不受信任的脚本应当给主机列表。响应体是流式的：Go 最多比 JavaScript 已取走的多读一块，每个字节都计入运行时的内存上限。取消和中止会传到 Go 的请求上。详见[指南](docs/guide.zh_CN.md#web-api)。
 
-<p align="center">
-  <img src="docs/assets/webapi-bench.zh.png" alt="moejs 的 Web API 对比 Node.js 24：1 并发和 8 并发的小 JSON 请求 fetch、流式读 256 MiB 响应体和 SSE 事件">
-</p>
-
-这张图在 moejs 和 Node.js 24 里跑同一个 fetch 脚本，服务端在本机回环地址上，2026-10-25 在 Intel Xeon E5-2667 v4 的 8 个 vCPU 上测量。小请求和流式读响应体是 moejs 更快，SSE 是 moejs 更慢的一行。
-
 ### Node.js 文件系统
 
 `node` 包给运行时提供 `node:fs`、`node:fs/promises` 和 `node:buffer`，供读写沙箱文件的程序使用。每个路径都通过 `os.Root`（Linux 上还用带 `RESOLVE_BENEATH` 的 `openat2`）在一个宿主目录内解析，`..` 和链接都出不去。除非宿主允许写入，文件系统是只读的，放行钩子会看到每次访问，程序读到的内容计入它的内存上限。错误带有 Node 的 code 和消息，测试逐个用例与 Node.js 24 比较。详见[指南](docs/guide.zh_CN.md#nodejs-模块)。
@@ -88,7 +88,7 @@ Sobek 和 modernc.org/quickjs（翻译成 Go 的 QuickJS）和 moejs 一样是�
 go get github.com/MoeForge/moejs
 ```
 
-需要 Go 1.25 或更高版本。moejs 只依赖标准库（测试用到 testify）。v0.1.0-alpha.10 及更早版本的模块路径是 `github.com/Calcium-Ion/moejs`，
+需要 Go 1.25 或更高版本。moejs 唯一的依赖是 [moego](https://github.com/MoeForge/moego)，用于 Base64：在 amd64 和 arm64 上用 SIMD，在其他架构上或加 `-tags purego` 时是纯 Go。测试用到 testify。v0.1.0-alpha.10 及更早版本的模块路径是 `github.com/Calcium-Ion/moejs`，
 之后的版本是 `github.com/MoeForge/moejs`，从旧版本升级时改一次导入路径即可。
 
 ```go
@@ -272,7 +272,7 @@ func main() {
 }
 ```
 
-`Call` 直接接收 JSON 文本，因为请求带来的参数通常就是这样。`ParseJSONString` 把文本交给插件时不拷贝，也就是上面图里"moejs（不拷贝）"那条路径。HTTP 处理函数可以把请求体读进 `strings.Builder`，知道 `r.ContentLength` 时先按它预留空间，再传 `b.String()`，这个字符串和 builder 共用同一块内存。`ParseJSON` 接收 `[]byte`，会先拷贝一份。`FromGo` 接收 Go 的 map、切片和结构体。
+`Call` 直接接收 JSON 文本，因为请求带来的参数通常就是这样。`ParseJSONString` 把文本交给插件时不拷贝，也就是上面图里"直接读调用方的字符串"那一行。HTTP 处理函数可以把请求体读进 `strings.Builder`，知道 `r.ContentLength` 时先按它预留空间，再传 `b.String()`，这个字符串和 builder 共用同一块内存。`ParseJSON` 接收 `[]byte`，会先拷贝一份。`FromGo` 接收 Go 的 map、切片和结构体。
 
 服务端照 `Plugin` 这样调用插件，每个请求的开销最小。从池里取一个运行时只是一次 channel 接收，新建运行时并加载最大的插件约需 71 µs。
 运行时池、模块图、TypeScript、值的转换、Promise、错误和事件循环的细节见[使用指南](docs/guide.zh_CN.md)，每个函数的说明见[包文档](https://pkg.go.dev/github.com/MoeForge/moejs)。

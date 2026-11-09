@@ -69,7 +69,17 @@ func (sb *StringBuilder) growFor(s *String, n int) {
 	if s.needsFlat() {
 		f = s.flat(new(String))
 	}
-	if f.kind == strUTF16 && sb.u == nil && sb.b == nil && sb.n == 0 {
+	if f.kind == strUTF16 {
+		sb.growUnits(n)
+		return
+	}
+	sb.Grow(n)
+}
+
+// growUnits reserves n code units for a result known to hold UTF-16: an
+// empty builder starts in UTF-16 storage of that capacity.
+func (sb *StringBuilder) growUnits(n int) {
+	if sb.u == nil && sb.b == nil && sb.n == 0 {
 		sb.u = make([]uint16, 0, n)
 		return
 	}

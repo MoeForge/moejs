@@ -26,14 +26,15 @@ import (
 // A placeholder is in dictionary mode with no dictionary and has its realm's
 // host sentinel as shape, so every inline cache misses and every shape-mode
 // fast path skips it; flagHasLazy routes the slow paths to resolveHost, which
-// materializes the node. The sentinel is the first field of the realm's
-// hostHeap, which is how a placeholder finds its realm (hostlazy_unsafe.go).
+// materializes the node. A sentinel holds the placeholder's prototype, so a
+// realm has two: an object's, the first field of the realm's hostHeap, and
+// an array's, allocated with the first slice placeholder, which points to
+// the heap. That is how a placeholder finds its realm (hostlazy_unsafe.go).
 // A node of a map is an ordinary Object whose internal holds the Go map (a
 // pointer, so boxing it allocates nothing). A node of a slice is an ordinary
-// array, whose internal must stay the *ArrayData every array path reads; it
-// keeps the address of the boxed Go slice header as the data pointer of its
-// empty slots (hostlazy_unsafe.go) and the slice's type in the ArrayData's
-// spare byte, so it is no larger than an eager array. A placeholder's slots
+// array; it keeps the address of the boxed Go slice header as the data
+// pointer of its empty slots (hostlazy_unsafe.go) and the slice's type in
+// the header's bits (hostSliceKind), so it is no larger than an eager array. A placeholder's slots
 // are unused (it is in dictionary mode), and a materialized array has no named
 // properties until JavaScript adds one, which replaces the slots: from then
 // on the node counts as modified. Map nodes keep their Go value for the
@@ -81,13 +82,12 @@ var hostSentinelKey = PropertyKey{Value{bits: reservedPrefix | 5}}
 // conversions) a root is allocated on its own rather than opening a chunk
 // for one object.
 type hostHeap struct {
-	// sentinel must stay the first field: hostHeapOf maps a placeholder's
-	// shape back to its heap.
-	sentinel Shape
-	r        *Realm
-	// touched is set by a materialization: the next top-level root starts
-	// a new period.
-	touched bool
+	// sentinel, the shape of an object's placeholder, must stay the first
+	// field: hostHeapOf maps a placeholder's shape back to its heap.
+	// arraySentinel is the shape of an array's (arrayShape).
+	sentinel      Shape
+	arraySentinel *hostArraySentinel
+	r             *Realm
 
 	maps    []Object
 	arrays  []arrayObject
@@ -112,7 +112,10 @@ type hostHeap struct {
 	shapes [hostShapeSlots][2]*hostShapeEntry
 	// shapeKeys counts the keys of the entries in Realm.hostShapes
 	// (hostShapeKeysMax).
-	shapeKeys int
+	shapeKeys int32
+	// touched is set by a materialization: the next top-level root starts
+	// a new period.
+	touched bool
 
 	// Pair scratch for materializing maps, kept between calls (cleared of
 	// host data) so steady-state materialization allocates none.
@@ -121,12 +124,19 @@ type hostHeap struct {
 	listPairs []hostPair[[]string]
 }
 
+// hostArraySentinel is the sentinel of a realm's array placeholders, apart
+// from its heap so that a realm converting no slice does not hold it.
+type hostArraySentinel struct {
+	shape Shape // first: hostHeapOf
+	h     *hostHeap
+}
+
 // hostCounts tallies chunk storage by kind.
 type hostCounts struct {
 	maps, arrays, values, strings int
 }
 
-// The Go slice types a host array node converts (ArrayData.host); a
+// The Go slice types a host array node converts (hostSliceKind); a
 // json.RawMessage is the text of an array (hostraw.go).
 const (
 	hostSliceAny uint8 = 1 + iota
@@ -142,12 +152,12 @@ const (
 // rotate through one runtime (a plugin's decodeRequest, then its
 // buildSubmitRequest) mispredict by a few nodes, and a large first chunk
 // wasted more than the extra allocation of a later one costs. Chunks are
-// capped per kind (about 32 KiB) unless a single request is larger.
+// capped per kind (12 to 32 KiB) unless a single request is larger.
 const (
-	minChunkMaps     = 4  // 384 B
-	minChunkArrays   = 4  // 416 B
+	minChunkMaps     = 4  // 192 B
+	minChunkArrays   = 4  // 256 B
 	minChunkValues   = 16 // 256 B
-	minChunkStrings  = 6  // 432 B
+	minChunkStrings  = 6  // 288 B
 	maxChunkMaps     = 256
 	maxChunkArrays   = 256
 	maxChunkValues   = 2048
@@ -163,7 +173,7 @@ func (r *Realm) hostHeap() *hostHeap {
 	h := r.fromGo.heap
 	if h == nil {
 		h = &hostHeap{r: r}
-		h.sentinel = Shape{key: hostSentinelKey, isDict: true}
+		h.sentinel = Shape{proto: r.ObjectPrototype, key: hostSentinelKey, isDict: true}
 		r.fromGo.heap = h
 	}
 	return h
@@ -296,26 +306,33 @@ func (h *hostHeap) str(g string) *String {
 
 // --- placeholders -----------------------------------------------------------------
 
+// arrayShape returns the sentinel of the heap's array placeholders,
+// allocating it with the first.
+func (h *hostHeap) arrayShape() *Shape {
+	if h.arraySentinel == nil {
+		h.arraySentinel = &hostArraySentinel{Shape{proto: h.r.ArrayPrototype, key: hostSentinelKey, isDict: true, slot: 1}, h}
+	}
+	return &h.arraySentinel.shape
+}
+
 // mapNode makes o (zeroed) a placeholder for the non-empty map src.
-func (h *hostHeap) mapNode(o *Object, src any) *Object {
+func (h *hostHeap) mapNode(o *Object, k payloadKind, src any) *Object {
 	o.shape = &h.sentinel
-	o.proto = h.r.ObjectPrototype
 	o.class = ClassObject
 	o.flags = flagExtensible | flagDict | flagHasLazy | flagHostNode
-	o.internal = src
+	o.setPayloadKind(k, src)
 	return o
 }
 
 // sliceNode makes a (zeroed) a placeholder for the non-empty slice src of
 // length n and type kind.
 func (h *hostHeap) sliceNode(a *arrayObject, src any, kind uint8, n int) *Object {
-	o := &a.obj
-	o.shape = &h.sentinel
-	o.proto = h.r.ArrayPrototype
+	o := a.initInline()
+	o.shape = h.arrayShape()
 	o.class = ClassArray
 	o.flags = flagExtensible | flagDict | flagHasLazy | flagHostNode
-	a.ad = ArrayData{length: uint32(n), lengthWritable: true, host: kind}
-	o.internal = &a.ad
+	o.setArrayLen(uint32(n))
+	o.setHostSliceKind(kind)
 	o.slots = boxedSliceOf(src).slots()
 	return o
 }
@@ -324,7 +341,7 @@ func (h *hostHeap) sliceNode(a *arrayObject, src any, kind uint8, n int) *Object
 // for a non-empty one, an ordinary empty object or array otherwise, null for
 // a nil map. It reports false for any other value.
 func (r *Realm) hostRoot(v any) (Value, bool) {
-	n, slice := 0, uint8(0)
+	n, slice, kind := 0, uint8(0), kindHostMap
 	switch x := v.(type) {
 	case map[string]any:
 		if x == nil {
@@ -337,14 +354,14 @@ func (r *Realm) hostRoot(v any) (Value, bool) {
 		if x == nil {
 			return Null(), true
 		}
-		n = len(x)
+		n, kind = len(x), kindHostStrings
 	case []string:
 		n, slice = len(x), hostSliceString
 	case map[string][]string:
 		if x == nil {
 			return Null(), true
 		}
-		n = len(x)
+		n, kind = len(x), kindHostLists
 	case []map[string]any:
 		n, slice = len(x), hostSliceMaps
 	default:
@@ -365,7 +382,7 @@ func (r *Realm) hostRoot(v any) (Value, bool) {
 	if slice != 0 {
 		root = h.sliceNode(h.rootArray(), v, slice, n)
 	} else {
-		root = h.mapNode(h.rootObject(), v)
+		root = h.mapNode(h.rootObject(), kind, v)
 	}
 	h.chargeSince(used)
 	return ObjectValue(root), true
@@ -393,7 +410,7 @@ func (h *hostHeap) child(v any) (Value, error) {
 		if len(x) == 0 {
 			return h.emptyObject(), nil
 		}
-		return ObjectValue(h.mapNode(h.object(), v)), nil
+		return ObjectValue(h.mapNode(h.object(), kindHostStrings, v)), nil
 	case map[string][]string:
 		if x == nil {
 			return Null(), nil
@@ -401,7 +418,7 @@ func (h *hostHeap) child(v any) (Value, error) {
 		if len(x) == 0 {
 			return h.emptyObject(), nil
 		}
-		return ObjectValue(h.mapNode(h.object(), v)), nil
+		return ObjectValue(h.mapNode(h.object(), kindHostLists, v)), nil
 	case []string:
 		return h.sliceChild(v, hostSliceString, len(x)), nil
 	case []map[string]any:
@@ -419,7 +436,7 @@ func (h *hostHeap) mapChild(m map[string]any) Value {
 	if len(m) == 0 {
 		return h.emptyObject()
 	}
-	return ObjectValue(h.mapNode(h.object(), m))
+	return ObjectValue(h.mapNode(h.object(), kindHostMap, m))
 }
 
 // sliceChild converts a slice child already boxed in v.
@@ -515,9 +532,9 @@ func (o *Object) hostSrc() any {
 		if !ok {
 			return nil
 		}
-		return b.slice(o.internal.(*ArrayData).host)
+		return b.slice(o.hostSliceKind())
 	}
-	return o.internal
+	return o.payload()
 }
 
 // materialize converts one level of the placeholder o in place.
@@ -528,7 +545,7 @@ func (h *hostHeap) materialize(o *Object) {
 	if o.class == ClassArray {
 		h.materializeArray(o)
 	} else {
-		switch m := o.internal.(type) {
+		switch m := o.payload().(type) {
 		case map[string]any:
 			materializeMap(h, o, m, &h.anyPairs, hostConvAny{})
 		case map[string]string:
@@ -559,15 +576,15 @@ func (h *hostHeap) chargeSince(used hostCounts) {
 }
 
 func (h *hostHeap) materializeArray(o *Object) {
-	if o.proto == h.r.ArrayPrototype {
+	if o.Proto() == h.r.ArrayPrototype {
 		o.shape = h.r.arrayShape()
 	} else {
-		o.shape = h.r.rootShapeFor(o.proto)
+		o.shape = h.r.rootShapeFor(o.Proto())
 	}
 	switch x := o.hostSrc().(type) {
 	case []any:
 		items := h.valueSlice(len(x))
-		o.elements = items
+		o.setElems(items)
 		for i, e := range x {
 			v, err := h.child(e)
 			if err != nil {
@@ -582,13 +599,13 @@ func (h *hostHeap) materializeArray(o *Object) {
 		for i, m := range x {
 			items[i] = h.mapChild(m)
 		}
-		o.elements = items
+		o.setElems(items)
 	case []string:
 		items := h.valueSlice(len(x))
 		for i, s := range x {
 			items[i] = StringValue(h.str(s))
 		}
-		o.elements = items
+		o.setElems(items)
 	default: // a json.RawMessage
 		h.materializeRaw(o)
 	}
@@ -651,24 +668,18 @@ func materializeMap[V any, C hostConv[V]](h *hostHeap, o *Object, m map[string]V
 			hash = (hash ^ 0xFF) * 1099511628211
 		}
 	}
-	root := r.rootShapeFor(o.proto)
+	root := r.rootShapeFor(o.Proto())
 	o.shape = root
 	if len(named) > maxShapeProps {
 		// Past what a shape holds: a dictionary from the start.
-		d := o.dict
-		if d == nil {
-			d = &dictProps{}
-			o.dict = d
-		}
-		d.index = make(map[PropertyKey]int32, len(named))
-		d.entries = make([]dictEntry, 0, len(named))
+		d := o.ensureDict()
+		d.entries = make([]dictEntry, len(named))
 		for i := range named {
-			d.add(StringKey(r.InternGoString(named[i].k)), h.cellOf(c.conv(h, named[i].v)))
+			d.entries[i] = dictEntry{key: StringKey(r.InternGoString(named[i].k)), cell: h.cellOf(c.conv(h, named[i].v))}
 		}
-		if len(d.index) != len(d.entries) {
-			d.dropShadowed() // keys that decode to one atom (shadowHostKeys)
-		}
-		o.shape, o.slots = dictShape, nil
+		// dropShadowed: keys that decode to one atom (shadowHostKeys).
+		r.charge(len(named)*int(unsafe.Sizeof(dictEntry{})) + d.dropShadowed())
+		o.shape, o.slots = r.dictShapeFor(root.proto), nil
 		o.flags |= flagDict
 		r.bumpEpoch(o)
 	} else if len(named) > 0 {
@@ -784,14 +795,14 @@ func (o *Object) hostUnchanged(depth int) bool {
 }
 
 func (o *Object) hostMapUnchanged(depth int) bool {
-	src := o.internal
+	src := o.payload()
 	// Canonical array-index keys live in the elements (or the sparse map).
 	var sparse map[uint32]propCell
-	if o.dict != nil {
-		sparse = o.dict.sparse
+	if o.dictTable() != nil {
+		sparse = o.dictTable().sparse
 	}
 	indices := len(sparse)
-	for _, v := range o.elements {
+	for _, v := range o.elems() {
 		if !v.IsHole() {
 			indices++
 		}
@@ -812,18 +823,18 @@ func (o *Object) hostMapUnchanged(depth int) bool {
 			}
 		}
 	} else {
-		d := o.dict
-		if d == nil || len(d.entries)-d.dead+indices != hostLen(src) {
+		d := o.dictTable()
+		if d == nil || d.namedCount()+indices != hostLen(src) {
 			return false
 		}
 		for i := range d.entries {
 			e := &d.entries[i]
-			if e.live && !hostPropMatches(src, e.key, e.cell.attrs, e.cell.value) {
+			if e.live() && !hostPropMatches(src, e.key, e.cell.attrs, e.cell.value) {
 				return false
 			}
 		}
 		for i := range d.entries {
-			if e := &d.entries[i]; e.live && !hostChildUnchanged(e.cell.value, depth) {
+			if e := &d.entries[i]; e.live() && !hostChildUnchanged(e.cell.value, depth) {
 				return false
 			}
 		}
@@ -833,7 +844,7 @@ func (o *Object) hostMapUnchanged(depth int) bool {
 	}
 	var buf [10]byte
 	attrs := o.elementAttrs()
-	for i, v := range o.elements {
+	for i, v := range o.elems() {
 		if !v.IsHole() && (!hostEntryMatches(src, string(strconv.AppendUint(buf[:0], uint64(i), 10)), attrs, v) || !hostChildUnchanged(v, depth)) {
 			return false
 		}
@@ -849,10 +860,10 @@ func (o *Object) hostMapUnchanged(depth int) bool {
 func (o *Object) hostSliceUnchanged(depth int) bool {
 	src := o.hostSrc()
 	n := hostLen(src)
-	if src == nil || o.internal.(*ArrayData).length != uint32(n) || len(o.elements) != n || (o.dict != nil && len(o.dict.sparse) != 0) {
+	if src == nil || o.arrayLen() != uint32(n) || o.elemLen() != n || (o.dictTable() != nil && len(o.dictTable().sparse) != 0) {
 		return false
 	}
-	items := o.elements
+	items := o.elems()
 	switch x := src.(type) {
 	case []any:
 		for i, e := range x {
@@ -956,11 +967,11 @@ func hostContainerMatches(v Value, e any, n int, isNil, isArray bool) bool {
 	// elements is not one by itself (dictionary mode is checked below): an
 	// empty object that became a prototype or a WeakMap key has one (its
 	// root, its weak entries) and still matches.
-	if len(c.elements) != 0 || c.dict != nil && len(c.dict.sparse) != 0 {
+	if c.elemLen() != 0 || c.dictTable() != nil && len(c.dictTable().sparse) != 0 {
 		return false
 	}
 	if isArray {
-		return c.class == ClassArray && c.internal.(*ArrayData).length == 0
+		return c.class == ClassArray && c.arrayLen() == 0
 	}
 	return c.class == ClassObject && c.flags&flagDict == 0 && c.shape.count == 0
 }
@@ -981,11 +992,11 @@ func hostStringsMatch(v Value, list []string) bool {
 		return false
 	}
 	a := v.AsObject()
-	if a.class != ClassArray || a.internal.(*ArrayData).length != uint32(len(list)) || len(a.elements) != len(list) || (a.dict != nil && len(a.dict.sparse) != 0) {
+	if a.class != ClassArray || a.arrayLen() != uint32(len(list)) || a.elemLen() != len(list) || (a.dictTable() != nil && len(a.dictTable().sparse) != 0) {
 		return false
 	}
 	for i, s := range list {
-		if !a.elements[i].IsString() || !hostStringEquals(a.elements[i].AsString(), s) {
+		if !a.elems()[i].IsString() || !hostStringEquals(a.elems()[i].AsString(), s) {
 			return false
 		}
 	}

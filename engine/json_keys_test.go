@@ -317,7 +317,7 @@ func TestJSONParseKeyKinds(t *testing.T) {
 					o := jsonParseGo(t, r, c.text).AsObject()
 					assert.Equal(t, c.names, keyNames(o.OwnEnumerableStringKeys()), c.text)
 					assert.Same(t, chainShape(r, c.names...), o.Shape(), c.text)
-					assert.Same(t, r.ObjectPrototype, o.proto, c.text)
+					assert.Same(t, r.ObjectPrototype, o.Proto(), c.text)
 					for i, n := range c.names {
 						assert.Equal(t, c.vals[i], get(o, key(r, n)), "%s: %s", c.text, n)
 					}
@@ -494,5 +494,7 @@ func TestSharedTransitionLookup(t *testing.T) {
 	assert.Nil(t, snap.lookup(key(r, "tl_1_"+run), attrHidden))
 	assert.Nil(t, root.child(key(r, "tl_absent_"+run), attrDefault))
 	assert.Nil(t, root.child(key(r, "tl_1_"+run), attrHidden))
-	assert.Equal(t, uintptr(64), unsafe.Sizeof(sharedTransitions{}))
+	if is64 { // a 64-bit layout
+		assert.Equal(t, uintptr(64), unsafe.Sizeof(sharedTransitions{}))
+	}
 }

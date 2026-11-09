@@ -30,7 +30,7 @@ func TestAggregateErrorNewTarget(t *testing.T) {
 	require.NoError(t, nt.SetProp(r, StringKey(AtomPrototype), ObjectValue(proto)))
 	v, err := aggregateErrorConstruct(r, []Value{ObjectValue(r.NewArray())}, nt)
 	require.NoError(t, err)
-	assert.Equal(t, proto, v.AsObject().proto)
+	assert.Equal(t, proto, v.AsObject().Proto())
 	assert.Equal(t, ClassError, v.AsObject().class)
 }
 

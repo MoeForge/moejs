@@ -10,6 +10,9 @@ import (
 	"syscall"
 )
 
+// oNonblock opens a FIFO without a writer without blocking the open.
+const oNonblock = syscall.O_NONBLOCK
+
 func rawRead(fd uintptr, p []byte) (int, error) {
 	n, err := syscall.Read(int(fd), p)
 	if n < 0 {

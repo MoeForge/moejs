@@ -257,6 +257,25 @@ func (r *Realm) concatValues(a, b *String) (Value, error) {
 	return StringValue(s), nil
 }
 
+// concatTo is concatValues writing the string to *dst, which it leaves as
+// it is on an error: run's Concat, and Add's case of two strings, which
+// write R[A] only once they have a result. Without lazy state there is no
+// concat memo: a short result takes concatShort directly, one call fewer.
+func (r *Realm) concatTo(dst *Value, a, b *String) error {
+	if r.lazy == nil {
+		if n := int(a.n) + int(b.n); n < ropeThreshold {
+			*dst = StringValue(r.concatShort(a, b, n))
+			return nil
+		}
+	}
+	s, err := r.Concat(a, b)
+	if err != nil {
+		return err
+	}
+	*dst = StringValue(s)
+	return nil
+}
+
 // concatNumber is a + b for a string and a number, either way round, when
 // the string is ASCII and the result short enough to be flat: the digits go
 // straight into the result instead of into the string ToString of the
@@ -367,6 +386,14 @@ func TypeOf(v Value) *String {
 // InstanceOf implements InstanceofOperator. A lookup of @@hasInstance that
 // finds the original Function.prototype[@@hasInstance] skips the call.
 func (r *Realm) InstanceOf(v, target Value) (bool, error) {
+	if res, ok := r.instanceOfPlain(v, target); ok {
+		return res, nil
+	}
+	return r.instanceOfSlow(v, target)
+}
+
+// instanceOfSlow is InstanceOf past instanceOfPlain.
+func (r *Realm) instanceOfSlow(v, target Value) (bool, error) {
 	if !target.IsObject() {
 		return false, r.TypeError("Right-hand side of 'instanceof' is not an object")
 	}
@@ -385,6 +412,47 @@ func (r *Realm) InstanceOf(v, target Value) (bool, error) {
 	}
 	return r.OrdinaryHasInstance(target, v)
 }
+
+// instanceOfPlain is InstanceOf(v, target) for a target that is an
+// ordinary function with the shape newClosure gave it (length, name and
+// the writable, lazily created prototype, under Function.prototype) and an
+// object in its prototype slot: such a function has no own @@hasInstance,
+// so it inherits Function.prototype[@@hasInstance], which is non-writable
+// and non-configurable and runs OrdinaryHasInstance. The prototype is read
+// from the slot each time. ok is false for any other target, for the lazy
+// marker in the slot, for a proxy on v's chain and for a chain longer than
+// instanceOfWalk; InstanceOf then runs from the start.
+func (r *Realm) instanceOfPlain(v, target Value) (res, ok bool) {
+	if !target.IsObject() {
+		return false, false
+	}
+	c := target.AsObject()
+	s := c.shape
+	if s.parent != r.funcShape || s.key != StringKey(AtomPrototype) || s.attrs != attrWritable|attrLazy {
+		return false, false
+	}
+	pv := c.slots[s.slot]
+	if !pv.IsObject() {
+		return false, false
+	}
+	if !v.IsObject() {
+		return false, true
+	}
+	p, o := pv.AsObject(), v.AsObject()
+	for range instanceOfWalk {
+		if o.class == ClassProxy {
+			return false, false
+		}
+		if o = o.shape.proto; o == p || o == nil {
+			return o != nil, true
+		}
+	}
+	return false, false
+}
+
+// instanceOfWalk bounds instanceOfPlain's walk, which has no interrupt
+// check: a longer chain goes through OrdinaryHasInstance's.
+const instanceOfWalk = 64
 
 // OrdinaryHasInstance implements OrdinaryHasInstance(C, O).
 func (r *Realm) OrdinaryHasInstance(c, o Value) (bool, error) {

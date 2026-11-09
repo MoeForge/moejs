@@ -222,3 +222,23 @@ func TestBraceBounds(t *testing.T) {
 		}
 	}
 }
+
+// TestMatchMeterPastInt32 checks that a call's match work is counted past
+// what an int holds on 32-bit systems: past maxMatchWork it fails, rather
+// than wrap below it.
+func TestMatchMeterPastInt32(t *testing.T) {
+	var m matchMeter
+	for range 2 {
+		if err := m.add(1 << 30); err != nil {
+			t.Fatalf("add(2**30) = %v", err)
+		}
+	}
+	if err := m.add(1); err != errMatchTooComplex {
+		t.Fatalf("add past maxMatchWork = %v, want errMatchTooComplex", err)
+	}
+	// A long name times many instructions, past 2**32 in one count.
+	m = matchMeter{}
+	if err := m.add((1<<16 + 1) * (1<<16 + 1)); err != errMatchTooComplex {
+		t.Fatalf("add(2**32+) = %v, want errMatchTooComplex", err)
+	}
+}

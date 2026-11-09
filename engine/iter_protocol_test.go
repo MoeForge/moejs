@@ -3,9 +3,58 @@ package engine
 import (
 	"testing"
 
+	"github.com/MoeForge/moejs/bytecode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestIteratorRecordNonCallableNext runs verified bytecode whose iterator
+// record holds an array as its next method, as FuzzBytecode found. The
+// generic step must reject it before reading it as a function.
+func TestIteratorRecordNonCallableNext(t *testing.T) {
+	for _, op := range []bytecode.Op{bytecode.IterNext, bytecode.IterValue, bytecode.IterRest} {
+		t.Run(op.String(), func(t *testing.T) {
+			fn := &bytecode.Function{Name: "f", NumRegs: 3, Strict: true, Code: []uint32{
+				bytecode.EncodeABx(bytecode.NewObject, 0, 0),
+				bytecode.EncodeABx(bytecode.NewArray, 1, 0),
+				bytecode.EncodeABC(op, 0, 0, 0),
+				bytecode.EncodeABC(bytecode.RetUndef, 0, 0, 0),
+			}}
+			require.NoError(t, bytecode.VerifyRegisters(fn))
+			r := NewRealm()
+			f, _ := testClosure(r, fn)
+			_, err := r.CallObject(f, Undefined(), nil)
+			assertErrorKind(t, err, KindTypeError, "iterator.next is not a function")
+		})
+	}
+}
+
+// TestIterNextNumberPosNonArray runs verified bytecode whose iterator
+// record pairs an object other than an array with a number position: the
+// global object after two rebuilds (removeNamed) and an ordinary object.
+// IterNext's array fast mode must leave both to the generic step, which
+// finds them exhausted (9; a value would give 7).
+func TestIterNextNumberPosNonArray(t *testing.T) {
+	fn := &bytecode.Function{Name: "f", NumRegs: 3, Strict: true, Code: []uint32{
+		bytecode.EncodeABC(bytecode.LoadThis, 0, 0, 0),
+		bytecode.EncodeAsBx(bytecode.LoadInt, 1, 0),
+		bytecode.EncodeAsBx(bytecode.IterNext, 0, 2),
+		bytecode.EncodeAsBx(bytecode.LoadInt, 2, 7),
+		bytecode.EncodeABC(bytecode.Ret, 2, 0, 0),
+		bytecode.EncodeAsBx(bytecode.LoadInt, 2, 9),
+		bytecode.EncodeABC(bytecode.Ret, 2, 0, 0),
+	}}
+	require.NoError(t, bytecode.VerifyRegisters(fn))
+	r := NewRealm()
+	runScriptsIn(t, r, "globalThis.a = 1, globalThis.b = 2, globalThis.c = 3; delete globalThis.a; delete globalThis.b")
+	require.Equal(t, uint8(2), r.globalRebuilds())
+	f, _ := testClosure(r, fn)
+	for _, this := range []*Object{r.Global, r.NewObject()} {
+		v, err := r.CallObject(f, ObjectValue(this), nil)
+		require.NoError(t, err)
+		assert.Equal(t, 9.0, v.AsNumber())
+	}
+}
 
 // runMutableProtoCases runs cases that modify intrinsics (frozen in a
 // shared realm) in a mutable realm only.

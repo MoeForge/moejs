@@ -27,15 +27,15 @@ func (k RegKind) String() string {
 
 // KindOperands calls use(r, kind) for each register the instruction w
 // reads as kind without looking at it: the engine's interpreter reads
-// DefineField's instance as an object, ArrayPush's literal as an array,
-// and the for-in record of ForInNext as an object (the key list) and an
-// index (engine run and forInNext).
+// DefineField's instance as an object, the literal of ArrayPush and
+// ArrayPushK as an array, and the for-in record of ForInNext as an object
+// (the key list) and an index (engine run, coldOp and forInNext).
 func KindOperands(op Op, w uint32, use func(r int, kind RegKind)) {
 	a := int(DecodeA(w))
 	switch op {
 	case DefineField:
 		use(a, RegObject)
-	case ArrayPush:
+	case ArrayPush, ArrayPushK:
 		use(a, RegArray)
 	case ForInNext:
 		use(a, RegObject)
@@ -44,15 +44,17 @@ func KindOperands(op Op, w uint32, use func(r int, kind RegKind)) {
 }
 
 // readsKinds reports whether op has KindOperands.
-func readsKinds(op Op) bool { return op == DefineField || op == ArrayPush || op == ForInNext }
+func readsKinds(op Op) bool {
+	return op == DefineField || op == ArrayPush || op == ArrayPushK || op == ForInNext
+}
 
 // RegisterWrites calls write(r, k, kind) for each run of k registers from
 // r that the instruction w (with its first extra word x) may write, and
 // reports whether op has a known layout. kind is what the instruction
 // leaves in the run whenever it completes, given that its KindOperands
-// hold: an object for NewObject and ToObject, an array for NewArray, the
-// key list and the index of ForInInit's record and ForInNext's index;
-// RegAny for every other write. A row may name more than an instruction
+// hold: an object for NewObject, NewObjectLit and ToObject, an array for NewArray and
+// NewArrayK, the key list and the index of ForInInit's record and
+// ForInNext's index; RegAny for every other write. A row may name more than an instruction
 // writes (the argument registers of a call, which a native callee gets as
 // a slice of them), never less, and names only registers of the
 // instruction's RegisterSpans: the verifier takes a register no row names
@@ -60,38 +62,13 @@ func readsKinds(op Op) bool { return op == DefineField || op == ArrayPush || op 
 // an instruction that changes one or completes with another kind.
 func RegisterWrites(op Op, w, x uint32, write func(r, k int, kind RegKind)) bool {
 	a, b, c := int(DecodeA(w)), int(DecodeB(w)), int(DecodeC(w))
+	if k := writeKinds[op]; k != 255 {
+		if k != 0 {
+			write(a, 1, RegKind(k-1))
+		}
+		return true
+	}
 	switch op {
-	// No register.
-	case PushEnv, PopEnv, CopyEnv, Jmp, RetUndef, ThrowConstAssign, ThrowError, CoerceThis,
-		SetEnv, SetEnvW, CheckTDZ, SetGlobal, SetGlobalSloppy, InitGlobal, SetGlobalVar, SetGlobalRef,
-		RequireObjectCoercible, Ret, Throw, CheckSuper, GenFunc, AsyncFunc,
-		JmpT, JmpF, JmpNullish, JmpNotNullish, JmpNotUndef, JmpWith,
-		JmpLt, JmpLe, JmpGt, JmpGe, JmpNLt, JmpNLe, JmpNGt, JmpNGe, JmpStrictEq, JmpStrictNe,
-		JmpLtI, JmpLeI, JmpGtI, JmpGeI, JmpNLtI, JmpNLeI, JmpNGtI, JmpNGeI, JmpStrictEqI, JmpStrictNeI,
-		SetProp, SetPropSloppy, SetElem, SetElemSloppy, SetSuper, SetSuperSloppy, SetPrivate, WithSet,
-		DefineField, DefineElem, DefineMethod, DefineAccessor, DefineClassMethod, SetProto, SetHome,
-		CopyDataProps, CopyDataPropsEx, ArrayPush, ArrayHole, AppendSpread,
-		SetPrivateMethod, DefPrivate, AddBrand, AsyncIterClosed:
-
-	// A, of the kind it proves.
-	case NewObject, ToObject:
-		write(a, 1, RegObject)
-	case NewArray:
-		write(a, 1, RegArray)
-
-	// A.
-	case LoadConst, LoadInt, LoadUndef, LoadNull, LoadTrue, LoadFalse, LoadHole, LoadThis, LoadCallee, Move,
-		GetEnv, GetEnvChk, GetEnvW, GetEnvChkW, GetGlobal, GetGlobalOrUndef, GetImport, GetImportW, ImportMeta,
-		GetProp, GetLen, GetElem, GetSuper, GetPrivate, DelProp, DelElem, DelPropSloppy, DelElemSloppy,
-		In, InstanceOf, InPrivate, ResolveGlobal, DelGlobal, WithGet,
-		Closure, NewRegExp, GetTemplate, NewPrivateName, MapArguments, ImportCall,
-		Add, Sub, Mul, Div, Mod, Exp, AddImm, SubImm, Inc, Dec, Neg, Plus, Not, BitNot, ToNumeric, ToStr,
-		Concat, Typeof, TypeofIs, BitAnd, BitOr, BitXor, Shl, Shr, UShr,
-		Eq, Ne, StrictEq, StrictNe, Lt, Le, Gt, Ge,
-		CtorEntry, LoadNewTarget, LoadHome, ToPropertyKey, GetProtoOf, DerivedResult,
-		GenStart, AsyncStart, AsyncGenStart, AsyncReturn, AsyncThrow:
-		write(a, 1, RegAny)
-
 	// Runs: a call's whole block, as RegisterSpans names it.
 	case UndefRange:
 		write(a, b, RegAny)
@@ -99,6 +76,18 @@ func RegisterWrites(op Op, w, x uint32, write func(r, k int, kind RegKind)) bool
 		write(a, 2+b, RegAny)
 	case CallSpread, NewSpread, SuperCallSpread:
 		write(a, 3, RegAny)
+	case ApplyArguments: // a call of 2 arguments, and the arguments object it may create
+		write(a, 4, RegAny)
+		write(b, 1, RegAny)
+	case ArgsGet: // the element, and the arguments object it may create
+		write(a, 1, RegAny)
+		write(b, 1, RegAny)
+	case GetElemInc: // the element, and the key it increments
+		write(a, 1, RegAny)
+		write(c, 1, RegAny)
+	case PostInc, PostDec: // the old value, and the updated one
+		write(a, 1, RegAny)
+		write(b, 1, RegAny)
 	case CallEval:
 		if c != 0 {
 			write(a, 3, RegAny)
@@ -149,6 +138,8 @@ func RegisterWrites(op Op, w, x uint32, write func(r, k int, kind RegKind)) bool
 
 // ends reports whether the instruction after one of op runs only when a
 // jump lands on it: op jumps whenever it completes, throws or returns.
+// VerifyRegisters requires it of the last instruction, after which there
+// is none.
 func ends(op Op) bool {
 	switch op {
 	case Jmp, IterClose, Ret, RetUndef, Throw, ThrowError, ThrowConstAssign, IterThrow:
@@ -162,7 +153,9 @@ func ends(op Op) bool {
 // instruction starts in starts. At each such operand, every path through
 // fn that reaches the instruction leaves a value of that kind in the
 // register: the last instruction on the path that writes the register
-// writes it as that kind (RegisterWrites).
+// writes it as that kind (RegisterWrites). A Call or a New with
+// CallOverlap writes the registers from R[A+2] up besides, as anything
+// (overlapWrites).
 //
 // A path starts where the engine starts a frame of fn, with whatever its
 // registers hold (the arguments, and what earlier frames left in the
@@ -311,6 +304,20 @@ func verifyKinds(fn *Function, starts, lead []uint64, tracked *[4]uint64) error 
 			wild = true
 			return
 		}
+		// A span of arbitrary values clears facts a word at a time.
+		if kind == RegAny && k > 1 {
+			for end := r + k; r < end; {
+				i, next := r>>6, min(end, (r|63)+1)
+				mask := (^uint64(0) << (r & 63)) & (^uint64(0) >> (63 - ((next - 1) & 63))) & tracked[i]
+				kl[i] |= mask
+				for j := 0; j < 3; j, i = j+1, i+W {
+					g[i] &^= mask
+					m[i] &^= mask
+				}
+				r = next
+			}
+			return
+		}
 		for ; k > 0; r, k = r+1, k-1 {
 			if tracked[r>>6]&(1<<(r&63)) != 0 {
 				write(g, kl, m, r, 1, kind)
@@ -349,7 +356,14 @@ func verifyKinds(fn *Function, starts, lead []uint64, tracked *[4]uint64) error 
 			if readsKinds(op) {
 				KindOperands(op, w, use)
 			}
-			RegisterWrites(op, w, x, sum)
+			if k := writeKinds[op]; k != 255 {
+				if r := int(DecodeA(w)); k != 0 && tracked[r>>6]&(1<<(r&63)) != 0 {
+					sum(r, 1, RegKind(k-1))
+				}
+			} else {
+				RegisterWrites(op, w, x, sum)
+				overlapWrites(fn, w, sum)
+			}
 			if op.Jumps() { // the last of its block
 				jump[b] = int32(blockAt(JumpTarget(pc, w)))
 			}
@@ -456,6 +470,22 @@ func verifyKinds(fn *Function, starts, lead []uint64, tracked *[4]uint64) error 
 	return nil
 }
 
+// overlapWrites calls write for the registers from R[A+2] up to fn's
+// last if w is a Call or a New with CallOverlap: the callee's frame may
+// write any of them (CallOverlap). verifyKinds takes them as written
+// whatever the marks say, so that the proof of the kinds rests on no
+// proof of the marks (verifyOverlap, MarkOverlapCalls): a mark that is
+// wrong makes values wrong, never a register read as a kind it does not
+// hold. For a mark that holds the registers are dead, and nothing reads
+// them as a kind before it writes them.
+func overlapWrites(fn *Function, w uint32, write func(r, k int, kind RegKind)) {
+	if op := DecodeOp(w); (op == Call || op == New) && DecodeC(w)&CallOverlap != 0 {
+		if r := int(DecodeA(w)) + 2; r < int(fn.NumRegs) {
+			write(r, int(fn.NumRegs)-r, RegAny)
+		}
+	}
+}
+
 // kindError walks the instructions from pc to end of fn, from the facts
 // s at pc (three sets of W words, verifyKinds'), to the first operand of
 // KindOperands whose register is not of its kind, and returns its error.
@@ -478,7 +508,7 @@ func kindError(fn *Function, pc, end int, s []uint64, W int) error {
 		if next > pc+1 {
 			x = fn.Code[pc+1]
 		}
-		RegisterWrites(op, w, x, func(r, k int, kind RegKind) {
+		write := func(r, k int, kind RegKind) {
 			for ; k > 0; r, k = r+1, k-1 {
 				for j, i := 0, r>>6; j < 3; j, i = j+1, i+W {
 					if regFacts[kind]&(1<<j) != 0 {
@@ -488,7 +518,9 @@ func kindError(fn *Function, pc, end int, s []uint64, W int) error {
 					}
 				}
 			}
-		})
+		}
+		RegisterWrites(op, w, x, write)
+		overlapWrites(fn, w, write)
 		pc = next
 	}
 	if err == nil { // the sums and this walk disagree
@@ -500,3 +532,45 @@ func kindError(fn *Function, pc, end int, s []uint64, W int) error {
 // regFacts are the sets of verifyKinds a value of each kind is in: bit 0
 // the objects, bit 1 the arrays, bit 2 the indexes.
 var regFacts = [...]uint8{RegAny: 0, RegObject: 1, RegArray: 3, RegIndex: 4}
+
+// writeKinds has one plus the kind written to A, zero for no write,
+// and 255 for every other write layout. RegisterWrites and verifyKinds
+// share it, so the latter can skip writes of untracked single registers.
+var writeKinds = func() (t [256]uint8) {
+	for i := range t {
+		switch Op(i) {
+		case PushEnv, PopEnv, CopyEnv, Jmp, RetUndef, ThrowConstAssign, ThrowError,
+			SetEnv, SetEnvW, CheckTDZ, SetGlobal, SetGlobalSloppy, InitGlobal, SetGlobalVar, SetGlobalRef,
+			RequireObjectCoercible, Ret, Throw, CheckSuper, GenFunc, AsyncFunc,
+			JmpT, JmpF, JmpNullish, JmpNotNullish, JmpNotUndef, JmpWith,
+			JmpLt, JmpLe, JmpGt, JmpGe, JmpNLt, JmpNLe, JmpNGt, JmpNGe, JmpStrictEq, JmpStrictNe,
+			JmpLtI, JmpLeI, JmpGtI, JmpGeI, JmpNLtI, JmpNLeI, JmpNGtI, JmpNGeI, JmpStrictEqI, JmpStrictNeI,
+			JmpStrictEqK, JmpStrictNeK, JmpTypeofIs, JmpTypeofNot, JmpCaseK,
+			SetProp, SetPropSloppy, SetElem, SetElemSloppy, SetSuper, SetSuperSloppy, SetPrivate, WithSet,
+			DefineField, DefineElem, DefineMethod, DefineAccessor, DefineClassMethod, SetProto, SetHome,
+			CopyDataProps, CopyDataPropsEx, ArrayPush, ArrayPushK, ArrayHole, AppendSpread,
+			SetPrivateMethod, DefPrivate, AddBrand, AsyncIterClosed:
+			t[i] = 0
+		// RegExpTest writes A only when it jumps past its call, which
+		// writes A otherwise: a row may name more than an op writes.
+		case LoadConst, LoadInt, LoadUndef, LoadNull, LoadTrue, LoadFalse, LoadHole, LoadThis, CoerceThis, LoadCallee, Move,
+			GetEnv, GetEnv0, GetEnv1, GetEnv2, GetEnvChk, GetEnvW, GetEnvChkW, GetGlobal, GetGlobalOrUndef, GetImport, GetImportW, ImportMeta,
+			GetProp, GetLen, GetElem, GetSuper, GetPrivate, DelProp, DelElem, DelPropSloppy, DelElemSloppy,
+			In, InstanceOf, InPrivate, ResolveGlobal, DelGlobal, WithGet,
+			Closure, NewRegExp, GetTemplate, NewPrivateName, MapArguments, ImportCall, RegExpTest,
+			Add, Sub, Mul, Div, Mod, Exp, AddImm, SubImm, Inc, Dec, Neg, Plus, Not, BitNot, ToNumeric, ToStr,
+			Concat, Typeof, TypeofIs, BitAnd, BitOr, BitXor, Shl, Shr, UShr,
+			Eq, Ne, StrictEq, StrictNe, Lt, Le, Gt, Ge,
+			CtorEntry, LoadNewTarget, LoadHome, ToPropertyKey, GetProtoOf, DerivedResult,
+			GenStart, AsyncStart, AsyncGenStart, AsyncReturn, AsyncThrow, ArgsLen:
+			t[i] = uint8(RegAny) + 1
+		case NewArray, NewArrayK:
+			t[i] = uint8(RegArray) + 1
+		case NewObject, ToObject, NewObjectLit:
+			t[i] = uint8(RegObject) + 1
+		default:
+			t[i] = 255
+		}
+	}
+	return t
+}()

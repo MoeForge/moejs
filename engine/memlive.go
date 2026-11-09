@@ -23,11 +23,12 @@ import (
 // ones hosts registered (AddLiveRoots) and the ones the caller adds, each
 // node once, and sums what the charge points charge for it: an object by
 // the size of its struct and payload, the storage of its properties and
-// elements, an environment by its slots, a suspended frame by its
-// registers, a string by its header and units (an append buffer, and the
-// string whose units a substring or a JSON value shares, once), a Map or
-// Set by its table, an ArrayBuffer by its bytes (once for the buffers that
-// share them), a promise by its reactions, a BigInt by its words, a shape
+// elements, an environment by its slots, the interpreter's register stack
+// and frame table by their storage, a suspended frame by its registers, a
+// string by its header and units (an append buffer, and the string whose
+// units a substring or a JSON value shares, once), a Map or Set by its
+// table, an ArrayBuffer by its bytes (once for the buffers that share
+// them), a promise by its reactions, a BigInt by its words, a shape
 // of the realm's own tree with its key, the code eval and the Function
 // constructors compiled. A WeakMap's value counts while both its key and
 // the map are reached. The walk is iterative, so a deep structure costs no
@@ -49,11 +50,11 @@ import (
 // Sizes the walk counts besides those memlimit.go declares.
 const (
 	objectSize   = int64(unsafe.Sizeof(Object{}))
+	objectExtSz  = int64(unsafe.Sizeof(objectExt{}))
 	liveValue    = int64(valueSize)
 	weakEntrySz  = int64(unsafe.Sizeof(weakEntry{}))
 	collEntrySz  = int64(unsafe.Sizeof(collEntry{}))
 	reactionSize = int64(unsafe.Sizeof(promiseReaction{}))
-	envSize      = int64(unsafe.Sizeof(Env{}))
 	// mapEntrySize is an entry of a Go map the walk does not look into
 	// (a WeakMap's strong keys, the global lexical index).
 	mapEntrySize = 48
@@ -825,7 +826,7 @@ func (r *Realm) holds(i int, next *Object, atCheck bool) bool {
 	if fr.fn == nil {
 		return false
 	}
-	code := fr.fn.internal.(*FunctionData).code
+	code := fr.fn.funcData().code
 	if code == nil || int(fr.pc) >= len(code.Code) {
 		return false
 	}
@@ -833,12 +834,12 @@ func (r *Realm) holds(i int, next *Object, atCheck bool) bool {
 	switch op := bytecode.Op(w); op {
 	case bytecode.IterRest:
 		return true
-	case bytecode.Call, bytecode.CallSpread, bytecode.New, bytecode.NewSpread, bytecode.SuperCall, bytecode.SuperCallSpread, bytecode.CallEval:
+	case bytecode.Call, bytecode.CallSpread, bytecode.New, bytecode.NewSpread, bytecode.SuperCall, bytecode.SuperCallSpread, bytecode.CallEval, bytecode.ApplyArguments:
 		a := int(fr.base) + int(uint8(w>>8))
 		if a+1 >= len(st.stack) || !st.stack[a].IsObject() {
 			return true
 		}
-		callee, method := st.stack[a].AsObject(), op == bytecode.Call
+		callee, method := st.stack[a].AsObject(), op == bytecode.Call || op == bytecode.ApplyArguments
 		applied := false
 		for range MaxCallDepth {
 			fd := callee.FunctionData()
@@ -1008,6 +1009,7 @@ func (w *liveWalker) realmRoots() {
 		w.shapeTree(s)
 	}
 	st := &r.interp
+	w.size += int64(cap(st.stack))*liveValue + int64(len(st.frames))*int64(unsafe.Sizeof(frameInfo{}))
 	for _, v := range st.stack[:min(st.sp, len(st.stack))] {
 		w.value(v)
 	}
@@ -1041,8 +1043,10 @@ func (w *liveWalker) realmRoots() {
 			w.value(jb.arg)
 		}
 	}
-	w.shapeTree(lz.argumentsShape)
-	w.shapeTree(lz.mappedShape)
+	if sh := lz.shapes; sh != nil {
+		w.shapeTree(sh.arguments)
+		w.shapeTree(sh.mapped)
+	}
 	if lex := lz.lex; lex != nil {
 		w.size += int64(cap(lex.slots))*liveValue + int64(len(lex.index))*mapEntrySize
 		for k := range lex.index {
@@ -1076,6 +1080,51 @@ func (w *liveWalker) realmRoots() {
 	}
 	if s := lz.statics; s != nil {
 		w.str(s.s)
+	}
+	if ms := lz.memos; ms != nil {
+		w.size += int64(unsafe.Sizeof(*ms))
+		if c := ms.cases; c != nil {
+			w.size += int64(unsafe.Sizeof(*c))
+			for i := range c {
+				for _, s := range &c[i] {
+					w.str(s)
+				}
+			}
+		}
+		for i := range &ms.concats {
+			for _, s := range &ms.concats[i].s {
+				w.str(s)
+			}
+		}
+		for _, c := range &ms.recent {
+			w.str(c.a)
+			w.str(c.b)
+			w.str(c.s)
+		}
+		if t := ms.bigints; t != nil {
+			w.size += int64(unsafe.Sizeof(*t))
+			for i := range t {
+				for _, b := range &t[i].b {
+					w.bigint(b)
+				}
+			}
+		}
+	}
+	if t := lz.sites; t != nil {
+		w.size += int64(unsafe.Sizeof(*t)) + int64(cap(t.s))*int64(unsafe.Sizeof(allocSite{})) + int64(cap(t.pcs)+cap(t.held))*4
+		for i := range t.s {
+			w.object(t.s[i].last)
+		}
+	}
+	if sh := lz.shapes; sh != nil && sh.forIn != nil {
+		c := sh.forIn
+		w.size += int64(unsafe.Sizeof(*c))
+		for i := range c {
+			if e := &c[i]; e.shape != nil {
+				w.shape(e.shape)
+				w.object(e.keys)
+			}
+		}
 	}
 }
 
@@ -1181,30 +1230,30 @@ func (w *liveWalker) scan(o *Object) {
 		_, intr = w.intr[o]
 		methods = intr || o == w.r.Global
 	}
-	w.object(o.proto)
+	w.object(o.Proto())
 	if o.shape != nil && o.shape.key == hostSentinelKey {
 		// A host placeholder: its slots and internal are its Go value.
 		w.size += objectSize
 		return
 	}
 	if !intr {
-		w.size += objectSize + int64(cap(o.slots)+cap(o.elements))*liveValue
+		w.size += objectSize + int64(cap(o.slots)+cap(o.elemsReadOnly()))*liveValue
 		w.shape(o.shape)
 	}
 	for _, v := range o.slots {
 		w.child(v, methods)
 	}
-	for _, v := range o.elements {
+	for _, v := range o.elemsReadOnly() {
 		w.value(v)
 	}
-	if d := o.dict; d != nil {
+	if d := o.dictTable(); d != nil {
 		// The root of the shapes whose prototype is o.
-		w.shapeTree(d.root)
+		w.shapeTree(o.extData().root)
 		if !intr {
-			w.size += int64(len(d.entries))*int64(dictEntrySize) + int64(len(d.sparse))*int64(sparseEntrySize)
+			w.size += objectExtSz + d.size() + int64(len(d.sparse))*int64(sparseEntrySize)
 		}
 		for i := range d.entries {
-			if e := &d.entries[i]; e.live {
+			if e := &d.entries[i]; e.live() {
 				w.value(e.key.v)
 				w.child(e.cell.value, methods)
 			}
@@ -1217,7 +1266,7 @@ func (w *liveWalker) scan(o *Object) {
 		}
 	}
 	if !intr {
-		w.internal(o.internal)
+		w.internal(o.hostPayload())
 	}
 }
 
@@ -1244,7 +1293,7 @@ func (w *liveWalker) intrinsicMethod(o *Object) {
 	if o == nil {
 		return
 	}
-	if fd, ok := o.internal.(*FunctionData); ok && fd.kind == FuncNative {
+	if fd, ok := dataOk(o, kindFunction); ok && fd.kind == FuncNative {
 		if !w.seen.has(unsafe.Pointer(o)) {
 			w.intr[o] = struct{}{}
 		}
@@ -1254,7 +1303,7 @@ func (w *liveWalker) intrinsicMethod(o *Object) {
 // internal adds the class-specific payload of an object.
 func (w *liveWalker) internal(x any) {
 	switch x := x.(type) {
-	case nil, *ArrayData:
+	case nil:
 	case *FunctionData:
 		w.function(x)
 	case *primitiveWrapper:
@@ -1268,6 +1317,18 @@ func (w *liveWalker) internal(x any) {
 	case *argumentsMap:
 		w.size += int64(unsafe.Sizeof(argumentsMap{})) + 4*int64(cap(x.slots))
 		w.env(x.env)
+	case *argumentsEnv:
+		w.env((*Env)(x))
+	case *pendingDescs:
+		// The values are in the object's slot storage, which its slots
+		// leave empty while the descriptors are pending.
+		w.size += int64(unsafe.Sizeof(pendingDescs{})) + int64(cap(x.vals))*liveValue
+		for i := range x.props {
+			w.value(x.props[i].key.v)
+		}
+		for _, v := range x.vals {
+			w.value(v)
+		}
 	case *arrayBuffer:
 		w.buffer(x)
 	case *dataView:
@@ -1403,17 +1464,27 @@ func (w *liveWalker) internal(x any) {
 func (w *liveWalker) function(fd *FunctionData) {
 	w.size += int64(unsafe.Sizeof(FunctionData{}))
 	w.env(fd.env)
-	w.value(fd.thisValue)
+	w.value(fd.thisValue) // a method's home object too
 	w.str(fd.name)
-	switch d := fd.data.(type) {
-	case *Object:
-		w.object(d)
-	case *boundFunc:
+	switch fd.kind {
+	case FuncBound:
+		d := fd.bound()
 		w.size += int64(unsafe.Sizeof(boundFunc{})) + int64(cap(d.args))*liveValue
 		w.object(d.target)
 		for _, v := range d.args {
 			w.value(v)
 		}
+	case FuncNative, FuncNativeData, FuncProxy:
+		w.size += int64(unsafe.Sizeof(nativeState{}))
+		w.nativeData(fd.nat().data)
+	}
+}
+
+// nativeData adds the state of a function of the native kinds.
+func (w *liveWalker) nativeData(data any) {
+	switch d := data.(type) {
+	case *Object:
+		w.object(d)
 	case *proxyData:
 		w.object(d.target)
 		w.object(d.handler)
@@ -1479,8 +1550,8 @@ func (w *liveWalker) frame(g *genFrame) {
 // env adds an environment and the ones around it.
 func (w *liveWalker) env(e *Env) {
 	for ; e != nil && w.mark(unsafe.Pointer(e)); e = e.parent {
-		w.size += envSize + int64(cap(e.slots))*liveValue
-		for _, v := range e.slots {
+		w.size += int64(e.n+1) * liveValue
+		for _, v := range e.slots() {
 			w.value(v)
 		}
 	}
@@ -1615,11 +1686,20 @@ func (w *liveWalker) table(t *collTable) {
 	if t == nil || !w.mark(unsafe.Pointer(t)) {
 		return
 	}
-	w.size += int64(unsafe.Sizeof(collTable{})) + int64(cap(t.entries))*collEntrySz + 4*int64(cap(t.buckets)+cap(t.removed))
-	for i := range t.entries {
-		if e := &t.entries[i]; !e.key.IsHole() {
-			w.value(e.key)
-			w.value(e.value)
+	w.size += int64(unsafe.Sizeof(collTable{})) + int64(t.capacity())*collEntrySz + 4*int64(cap(t.buckets)+cap(t.removed))
+	if m := t.more; m != nil {
+		w.size += int64(unsafe.Sizeof(collMore{}))
+		if cap(m.segs) > len(m.inline) {
+			w.size += int64(cap(m.segs)) * int64(unsafe.Sizeof([]collEntry(nil)))
+		}
+	}
+	var buf [8][]collEntry
+	for _, s := range t.segments(buf[:0]) {
+		for i := range s {
+			if e := &s[i]; !e.key.IsHole() {
+				w.value(e.key)
+				w.value(e.value)
+			}
 		}
 	}
 }
@@ -1722,7 +1802,7 @@ func (w *liveWalker) str(s *String) {
 		if l, r := s.children(); l != nil {
 			w.ropes = append(w.ropes, l, r)
 		}
-	case strLazy:
+	default: // lazy (strLazy and its modes)
 		// Its data, its source (or the text it was parsed from, its share
 		// root) and what it decoded to, which another goroutine may be
 		// publishing meanwhile (resolved). A host's Go text that decodes

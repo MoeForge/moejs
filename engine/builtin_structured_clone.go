@@ -105,7 +105,7 @@ func structuredCloneTransfer(r *Realm, opts Value) ([]*Object, error) {
 func (c *cloner) reserveTransfer(list []*Object) error {
 	r := c.r
 	for _, o := range list {
-		if _, ok := o.internal.(*arrayBuffer); !ok || o.class != ClassArrayBuffer {
+		if _, ok := extDataOk(o, kindArrayBuffer); !ok || o.class != ClassArrayBuffer {
 			return r.TypeError("DataCloneError: %s could not be transferred", r.DisplayString(ObjectValue(o)))
 		}
 		if _, ok := c.memory[o]; ok {
@@ -123,11 +123,11 @@ func (c *cloner) reserveTransfer(list []*Object) error {
 // detached, in list order.
 func (c *cloner) transfer(list []*Object) error {
 	for _, o := range list {
-		b := o.internal.(*arrayBuffer)
+		b := extDataOf(o, kindArrayBuffer)
 		if b.detached {
 			return c.r.TypeError("DataCloneError: a detached ArrayBuffer could not be transferred")
 		}
-		*c.memory[o].internal.(*arrayBuffer) = arrayBuffer{data: b.data, max: b.max}
+		*extDataOf(c.memory[o], kindArrayBuffer) = arrayBuffer{data: b.data, max: b.max}
 		b.data, b.detached = nil, true
 	}
 	return nil
@@ -257,7 +257,7 @@ func (c *cloner) clone(v Value) (Value, error) {
 		pv, _ := o.PrimitiveValue()
 		dst, _ = r.ToObject(pv)
 	case ClassDate:
-		d, ok := o.internal.(*DateData)
+		d, ok := dataOk(o, kindDate)
 		if !ok {
 			return Undefined(), c.uncloneable(v)
 		}
@@ -272,7 +272,7 @@ func (c *cloner) clone(v Value) (Value, error) {
 			return Undefined(), err
 		}
 	case ClassMap, ClassSet:
-		src, ok := o.internal.(*collection)
+		src, ok := dataOk(o, kindCollection)
 		if !ok {
 			return Undefined(), c.uncloneable(v)
 		}
@@ -301,7 +301,7 @@ func (c *cloner) clone(v Value) (Value, error) {
 		}
 	case ClassObject:
 		switch o.Internal().(type) { // Internal hides a host map node's Go map
-		case nil, *lazyProps, *lazyKeys, *pendingCompile, *Realm: // deferred properties, not a payload
+		case nil, *lazyProps, *lazyKeys, *pendingCompile, *pendingDescs, *Realm: // deferred properties, not a payload
 		default:
 			return Undefined(), c.uncloneable(v)
 		}
@@ -348,8 +348,8 @@ func (c *cloner) remember(o, dst *Object) {
 func (c *cloner) cloneBinary(o *Object) (*Object, error) {
 	r := c.r
 	var v *dataView
-	ta, isTA := o.internal.(*typedArray)
-	switch x := o.internal.(type) {
+	ta, isTA := dataOk(o, kindTypedArray)
+	switch x := o.payload().(type) {
 	case *arrayBuffer:
 		if o.class == ClassSharedArrayBuffer {
 			return r.shareBuffer(x), nil
@@ -399,14 +399,17 @@ func collectionSnapshot(src *collection, isMap bool) []Value {
 		n *= 2
 	}
 	items := make([]Value, 0, n)
-	for i := range src.t.entries {
-		e := &src.t.entries[i]
-		if e.key.IsHole() {
-			continue
-		}
-		items = append(items, e.key)
-		if isMap {
-			items = append(items, e.value)
+	var buf [8][]collEntry
+	for _, s := range src.t.segments(buf[:0]) {
+		for i := range s {
+			e := &s[i]
+			if e.key.IsHole() {
+				continue
+			}
+			items = append(items, e.key)
+			if isMap {
+				items = append(items, e.value)
+			}
 		}
 	}
 	return items

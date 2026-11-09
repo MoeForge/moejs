@@ -26,39 +26,46 @@ type NativeDataFunc func(r *Realm, fd *FunctionData, this Value, args []Value) (
 type FuncKind uint8
 
 const (
-	FuncNative FuncKind = iota
+	// funcNone is the zero kind, the kind of a FunctionData that no
+	// function object initialized: none of its accessors follows the state
+	// the native and bound kinds keep after it (nat, bound).
+	funcNone FuncKind = iota
+	FuncNative
 	FuncBytecode
 	FuncBound
 	FuncNativeData // a NativeDataFunc and its payload
 	FuncProxy      // a callable proxy: dataFn is proxyCall, data the *proxyData
 )
 
-// FunctionData is the internal payload of ClassFunction objects.
-// Fields used by one kind only share the struct with the others, and state
-// only some functions of a kind have lives in data: at 96 bytes the payload
-// fills a funcObject's 240-byte size class exactly and a nativeFuncObject's
-// 224-byte one.
+// FunctionData is the internal payload of ClassFunction objects. It holds
+// what a bytecode function needs, which the other kinds share: at 64 bytes
+// a closure with a `prototype` is 160 bytes (funcObject) and one without
+// 144 (closureObject). The native kinds keep their state in a nativeState
+// right after it (nat), a bound function its boundFunc (bound). A
+// FunctionData lives inside its function object and must not be copied:
+// a copy has no state after it (go vet's copylocks check reports copies).
 type FunctionData struct {
-	native    NativeFunc
-	code      *bytecode.Function
-	env       *Env
-	thisValue Value // captured this of an arrow function; the bound this of a bound function
+	_    noCopy
+	code *bytecode.Function
+	env  *Env
+	// thisValue is the captured this of an arrow function, the bound this of
+	// a bound function, the promise of a resolve function (resolvingFns) and
+	// the [[HomeObject]] of the other bytecode functions, as an object or
+	// Undefined (HomeObject).
+	thisValue Value
 	realm     *Realm
 	name      *String
 	meta      *funcMeta // interpreter: materialized constants of code (interp.go)
-	// data is the state of the kind: the payload of a data native, the
-	// NativeCtor of a native constructor, the [[HomeObject]] of a method,
-	// the *boundFunc of a bound function.
-	data   any
-	dataFn NativeDataFunc // behaviour of a data native
-	icBase uint32         // interpreter: base of this function's inline caches in realm.ic
-	kind   FuncKind       // after icBase so the two share a word
+	icBase    uint32    // interpreter: base of this function's inline caches in realm.ic
+	kind      FuncKind  // after icBase so the two share a word
 	// plain is set on a closure whose entry binds only its parameters: no
 	// rest parameter, arguments object or captured binding (enterFrame).
 	plain bool
-	// ctorSlots is the most named properties (up to smallObjectMax) an
-	// object constructed with this function as new.target ended its
-	// construction with: the next one is allocated with room for them.
+	// ctorSlots is, in its low four bits (ctorSlotsMask), the most named
+	// properties (up to smallObjectMax) an object constructed with this
+	// function as new.target ended its construction with, or the room such
+	// objects went on to take (noteCtorSlots): the next one is allocated
+	// with room for them. The high four count the first ctorProbe objects.
 	ctorSlots uint8
 	// measurable is set on a host's functions, whose values kept for later
 	// go to AddLiveRoots or LiveReporter, and on the Promise constructor: a
@@ -67,24 +74,42 @@ type FunctionData struct {
 	measurable bool
 }
 
-// boundFunc is the state of a bound function beyond its bound this.
+// noCopy makes go vet's copylocks check report a copy of the struct that
+// holds it, as sync's noCopy does. It takes no space as a first field.
+type noCopy struct{}
+
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
+
+// nativeState is the state of a function of the native kinds (FuncNative,
+// FuncNativeData, FuncProxy), which their objects allocate right after its
+// FunctionData (nat).
+type nativeState struct {
+	native NativeFunc     // [[Call]] of a native function
+	dataFn NativeDataFunc // [[Call]] of a data native or callable proxy
+	// data is the state of the kind: the payload of a data native, the
+	// NativeCtor of a native constructor, the *proxyData of a callable
+	// proxy.
+	data any
+}
+
+// boundFunc is the state of a bound function beyond its bound this, which
+// its object allocates right after its FunctionData (bound).
 type boundFunc struct {
 	target *Object
 	args   []Value
 }
 
-// bound returns the state of a bound function.
-func (fd *FunctionData) bound() *boundFunc { return fd.data.(*boundFunc) }
-
 // ctor returns the [[Construct]] behaviour of a native constructor.
-func (fd *FunctionData) ctor() NativeCtor { return fd.data.(NativeCtor) }
+func (fd *FunctionData) ctor() NativeCtor { return fd.nat().data.(NativeCtor) }
 
 // setCtor records the [[Construct]] behaviour of a native function; nil
 // makes it a plain function.
 func (fd *FunctionData) setCtor(ctor NativeCtor) {
-	fd.data = nil
+	n := fd.nat()
+	n.data = nil
 	if ctor != nil {
-		fd.data = ctor
+		n.data = ctor
 	}
 }
 
@@ -100,19 +125,25 @@ func (fd *FunctionData) Env() *Env { return fd.env }
 // ThisValue returns the lexically captured this of an arrow function (the
 // bound this of a bound function).
 func (fd *FunctionData) ThisValue() Value {
-	if _, ok := fd.data.(*resolvingFns); ok {
-		return Undefined() // the promise it settles (resolvingFns)
+	switch fd.kind {
+	case FuncBytecode:
+		if fd.code.Kind != bytecode.KindArrow {
+			return Undefined() // its home object (HomeObject)
+		}
+	case FuncNativeData:
+		if _, ok := fd.nat().data.(*resolvingFns); ok {
+			return Undefined() // the promise it settles (resolvingFns)
+		}
 	}
 	return fd.thisValue
 }
 
 // HomeObject returns the [[HomeObject]] of a method (nil otherwise).
 func (fd *FunctionData) HomeObject() *Object {
-	if fd.kind != FuncBytecode {
+	if fd.kind != FuncBytecode || fd.code.Kind == bytecode.KindArrow || !fd.thisValue.IsObject() {
 		return nil
 	}
-	h, _ := fd.data.(*Object)
-	return h
+	return fd.thisValue.AsObject()
 }
 
 // Realm returns the realm that created the function, or nil for shared
@@ -125,14 +156,15 @@ func (fd *FunctionData) Realm() *Realm { return fd.realm }
 // through bound functions and proxy targets, or a callable proxy another
 // realm created, whose traps are that realm's code whatever its target.
 // That code's inline caches are bound in its own realm's table and its
-// prototype checks follow that realm's epoch, so calling or resuming it from
-// r gives wrong results or a Go panic; a host keeps the objects of a realm
-// inside it (engine-api.md, "One realm per value"). Dynamic code (eval, the
-// Function constructors) binds its caches in the calling realm and is not
-// foreign. A revoked proxy of r has no target and runs no code (using it is
-// a TypeError), so it is not foreign. IsForeign does not see a foreign
-// function reached through an object of another realm, the traps of a proxy
-// that is not callable among them.
+// prototype checks follow that realm's epoch, so its frames fail in r with
+// a TypeError before they start (errForeignFrame); a host keeps the objects
+// of a realm inside it (engine-api.md, "One realm per value"). The closures
+// of dynamic code (eval, the Function constructors, EvalScript) are the
+// realm's that compiled the code, which created them, and are foreign
+// elsewhere like any other. A revoked proxy of r has no target and runs no
+// code (using it is a TypeError), so it is not foreign. IsForeign does not
+// see a foreign function reached through an object of another realm, the
+// traps of a proxy that is not callable among them.
 func (r *Realm) IsForeign(v Value) bool {
 	if !v.IsObject() {
 		return false
@@ -146,28 +178,24 @@ func (r *Realm) IsForeign(v Value) bool {
 		var fd *FunctionData
 		switch o.class {
 		case ClassFunction:
-			fd, _ = o.internal.(*FunctionData)
+			fd = dataOf(o, kindFunction)
 			if fd != nil && fd.kind == FuncBound {
-				b, _ := fd.data.(*boundFunc)
-				if b == nil {
-					return false
-				}
-				o = b.target
+				o = fd.bound().target
 				continue
 			}
 		case ClassProxy:
 			// A callable proxy's state hangs off its function payload; a
 			// module namespace has none.
 			var pd *proxyData
-			if pf, ok := o.internal.(*FunctionData); ok {
+			if pf, ok := dataOk(o, kindFunction); ok {
 				// A callable proxy of another realm runs that realm's
 				// traps, whatever its target: foreign.
 				if pf.realm != nil && pf.realm != r {
 					return true
 				}
-				pd, _ = pf.data.(*proxyData)
+				pd, _ = pf.nat().data.(*proxyData)
 			} else {
-				pd, _ = o.internal.(*proxyData)
+				pd = dataOf(o, kindProxy)
 			}
 			if pd == nil || pd.target == nil {
 				return false
@@ -175,17 +203,17 @@ func (r *Realm) IsForeign(v Value) bool {
 			o = pd.target
 			continue
 		case ClassGenerator:
-			if g, _ := o.internal.(*genFrame); g != nil {
+			if g := dataOf(o, kindGenerator); g != nil {
 				fd = g.fd
 			}
 		case ClassAsyncGenerator:
-			if g, _ := o.internal.(*asyncGenerator); g != nil {
+			if g := extDataOf(o, kindAsyncGenerator); g != nil {
 				fd = g.g.fd
 			}
 		default:
 			return false
 		}
-		return fd != nil && fd.kind == FuncBytecode && fd.realm != r && fd.realm != nil && fd.meta.dyn == 0
+		return fd != nil && fd.kind == FuncBytecode && fd.realm != r && fd.realm != nil
 	}
 }
 
@@ -209,47 +237,73 @@ func (fd *FunctionData) BoundTarget() *Object {
 
 // Native returns the native implementation (nil for bytecode functions and
 // data natives).
-func (fd *FunctionData) Native() NativeFunc { return fd.native }
+func (fd *FunctionData) Native() NativeFunc {
+	if fd.kind != FuncNative {
+		return nil
+	}
+	return fd.nat().native
+}
 
 // Data returns the payload of a data native (nil otherwise).
 func (fd *FunctionData) Data() any {
 	if fd.kind != FuncNativeData {
 		return nil
 	}
-	return fd.data
+	return fd.nat().data
 }
 
 // IsConstructor reports whether the function has [[Construct]].
 func (fd *FunctionData) IsConstructor() bool {
 	switch fd.kind {
 	case FuncNative:
-		return fd.data != nil
+		return fd.nat().data != nil
 	case FuncBound:
-		return fd.bound().target.internal.(*FunctionData).IsConstructor()
+		return fd.bound().target.funcData().IsConstructor()
 	case FuncProxy:
-		return fd.data.(*proxyData).ctor
+		return fd.nat().data.(*proxyData).ctor
 	}
 	return fd.code != nil && (fd.code.Kind == bytecode.KindNormal || fd.code.Kind.IsClassCtor())
 }
 
-// funcObject co-allocates a function object, its payload and the slots of
-// its three intrinsic properties (length, name and, for ordinary functions,
-// prototype), so a closure or builtin function costs one allocation.
+// funcObject co-allocates a bytecode function, its payload and the slots of
+// its three intrinsic properties (length, name and prototype), so a closure
+// costs one allocation: 160 bytes. Ordinary functions, generator functions
+// and class constructors have a `prototype`.
 type funcObject struct {
 	obj   Object
 	fd    FunctionData
 	slots [3]Value
 }
 
-// nativeFuncObject is the funcObject of a function without a `prototype`
-// (plain and data natives): two slots, 224 bytes instead of 240.
-type nativeFuncObject struct {
+// closureObject is the funcObject of a bytecode function without a
+// `prototype` (arrow functions, methods, async functions): two slots, 144
+// bytes.
+type closureObject struct {
 	obj   Object
 	fd    FunctionData
 	slots [2]Value
 }
 
-// boundFuncObject co-allocates a bound function with its boundFunc.
+// nativeFuncObject co-allocates a function of the native kinds with its
+// nativeState and the slots of length and name: 176 bytes.
+type nativeFuncObject struct {
+	obj   Object
+	fd    FunctionData
+	nat   nativeState
+	slots [2]Value
+}
+
+// nativeCtorObject is the nativeFuncObject of a native constructor, with a
+// third slot for its `prototype`: 192 bytes.
+type nativeCtorObject struct {
+	obj   Object
+	fd    FunctionData
+	nat   nativeState
+	slots [3]Value
+}
+
+// boundFuncObject co-allocates a bound function with its boundFunc: 176
+// bytes.
 type boundFuncObject struct {
 	obj   Object
 	fd    FunctionData
@@ -257,20 +311,13 @@ type boundFuncObject struct {
 	slots [2]Value
 }
 
-// Env is a closure environment: captured bindings of one scope.
-type Env struct {
-	parent *Env
-	slots  []Value
-}
-
-// NewEnv creates an environment with n slots initialized to undefined.
+// NewEnv creates an environment with n slots initialized to undefined. It
+// panics if n is negative.
 func NewEnv(parent *Env, n int) *Env {
-	e := &Env{parent: parent, slots: make([]Value, n)}
-	u := Undefined()
-	for i := range e.slots {
-		e.slots[i] = u
+	if n < 0 {
+		panic("engine: NewEnv with a negative slot count")
 	}
-	return e
+	return newEnvSized(parent, n)
 }
 
 // Parent returns the enclosing environment.
@@ -284,17 +331,36 @@ func (e *Env) up(d uint8) *Env {
 	return e
 }
 
+// slotAt is the slot a GetEnv or SetEnv names in w: slot C of the
+// environment B out from e. Inlined, it costs run's size, which must stay
+// below the compiler's big-function size (DESIGN §6), only its call.
+func (e *Env) slotAt(w uint32) *Value {
+	return &e.up(uint8(w >> 16)).slots()[uint8(w>>24)]
+}
+
+// getSlotAt is slotAt for GetEnv. Depths below three have their own ops;
+// depth three reads its parents directly, without up's loop branches.
+// Other depths, including those below three, use up.
+func (e *Env) getSlotAt(w uint32) *Value {
+	if d := uint8(w >> 16); d == 3 {
+		e = e.parent.parent.parent
+	} else {
+		e = e.up(d)
+	}
+	return &e.slots()[uint8(w>>24)]
+}
+
 // Len returns the slot count.
-func (e *Env) Len() int { return len(e.slots) }
+func (e *Env) Len() int { return e.n }
 
 // Slot reads slot i.
-func (e *Env) Slot(i int) Value { return e.slots[i] }
+func (e *Env) Slot(i int) Value { return e.slots()[i] }
 
 // SetSlot writes slot i.
-func (e *Env) SetSlot(i int, v Value) { e.slots[i] = v }
+func (e *Env) SetSlot(i int, v Value) { e.slots()[i] = v }
 
 // Slots exposes the slot storage for the interpreter.
-func (e *Env) Slots() []Value { return e.slots }
+func (e *Env) Slots() []Value { return e.slots() }
 
 // ModuleEnv is the top-level environment of a module. Exports are live
 // bindings: GetBindingValue reads the slot each time.
@@ -317,7 +383,7 @@ func (m *ModuleEnv) GetBindingValue(name string) (Value, bool) {
 	if !ok {
 		return Undefined(), false
 	}
-	return m.slots[i], true
+	return m.slots()[i], true
 }
 
 // ExportNames returns the names of the local exports, sorted.
@@ -339,8 +405,17 @@ var constructFunction = func(r *Realm, fn *Object, fd *FunctionData, args []Valu
 	return Undefined(), ErrNoInterpreter
 }
 
-// MaxCallDepth is the frame limit before "Maximum call stack size exceeded".
-const MaxCallDepth = 512
+// MaxCallDepth is the limit for call nesting: past it a call or a function
+// constructor is a RangeError ("Maximum call stack size exceeded"). It caps
+// callDepth (CallDepth), which the builtins' array iteration and flat also
+// count a level at a time, and JSON walks take units of it (jsonWalkUnits).
+//
+// A call holds 0.56-1.2 KB of Go stack, a generator's yield* 2.2 KB: up to
+// about 9 MB at the limit. Nested JSON walks hold under 5 MB
+// (builtin_json.go). The register stack's worst case, a window of 256
+// registers of 16 bytes for each frame, is 16 MiB; MemoryLimit counts it
+// as it grows (moveStack).
+const MaxCallDepth = 4096
 
 // EnterCall accounts one frame; the interpreter calls it for JS-to-JS calls.
 func (r *Realm) EnterCall() error {
@@ -400,7 +475,7 @@ func IsConstructor(v Value) bool {
 	if !IsCallable(v) {
 		return false
 	}
-	fd, _ := v.AsObject().internal.(*FunctionData)
+	fd := dataOf(v.AsObject(), kindFunction)
 	return fd != nil && fd.IsConstructor()
 }
 
@@ -414,7 +489,8 @@ func (r *Realm) Call(fn Value, this Value, args []Value) (Value, error) {
 
 // CallObject calls a function object known to be callable.
 func (r *Realm) CallObject(fn *Object, this Value, args []Value) (Value, error) {
-	fd := fn.internal.(*FunctionData)
+	fd := (*FunctionData)(unsafe.Add(unsafe.Pointer(fn), unsafe.Sizeof(Object{}))) // funcData, inlined by hand: an inlined call would leave a NOP
+
 	if r.callDepth >= MaxCallDepth {
 		return Undefined(), r.RangeError("Maximum call stack size exceeded")
 	}
@@ -425,7 +501,7 @@ func (r *Realm) CallObject(fn *Object, this Value, args []Value) (Value, error) 
 	)
 	switch fd.kind {
 	case FuncNative:
-		res, err = fd.native(r, this, args)
+		res, err = fd.nat().native(r, this, args)
 	case FuncBytecode:
 		res, err = r.enterFrame(fn, fd, this, args)
 	default:
@@ -449,7 +525,7 @@ func (r *Realm) callOther(fd *FunctionData, this Value, args []Value) (Value, er
 		b := fd.bound()
 		return r.CallObject(b.target, fd.thisValue, appendArgs(b.args, args))
 	}
-	return fd.dataFn(r, fd, this, args)
+	return fd.nat().dataFn(r, fd, this, args)
 }
 
 // Construct implements the Construct abstract operation. newTarget nil means
@@ -462,7 +538,7 @@ func (r *Realm) Construct(fn Value, args []Value, newTarget *Object) (Value, err
 	if newTarget == nil {
 		newTarget = f
 	}
-	fd := f.internal.(*FunctionData)
+	fd := f.funcData()
 	if r.callDepth >= MaxCallDepth {
 		return Undefined(), r.RangeError("Maximum call stack size exceeded")
 	}
@@ -481,7 +557,7 @@ func (r *Realm) Construct(fn Value, args []Value, newTarget *Object) (Value, err
 		}
 		res, err = r.Construct(ObjectValue(b.target), appendArgs(b.args, args), newTarget)
 	case FuncProxy:
-		res, err = r.proxyConstruct(fd.data.(*proxyData), args, newTarget)
+		res, err = r.proxyConstruct(fd.nat().data.(*proxyData), args, newTarget)
 	default:
 		res, err = constructFunction(r, f, fd, args, newTarget)
 	}
@@ -504,16 +580,17 @@ func appendArgs(bound, args []Value) []Value {
 	return append(out, args...)
 }
 
-// newFunctionObject allocates a function object with the realm's shared
-// function shape (length, name) and room for a third property.
-func (r *Realm) newFunctionObject(name *String, length int, kind FuncKind) (*Object, *FunctionData) {
-	fo := &funcObject{}
-	r.chargeObject(unsafe.Sizeof(funcObject{}))
-	r.initFunction(&fo.obj, &fo.fd, fo.slots[:2:3], name, length, kind)
+// newNativeCtorObject allocates a native function object with the realm's
+// shared function shape (length, name) and room for a third property, its
+// `prototype`.
+func (r *Realm) newNativeCtorObject(name *String, length int) (*Object, *FunctionData) {
+	fo := &nativeCtorObject{}
+	r.chargeObject(unsafe.Sizeof(nativeCtorObject{}))
+	r.initFunction(&fo.obj, &fo.fd, fo.slots[:2:3], name, length, FuncNative)
 	return &fo.obj, &fo.fd
 }
 
-// newNativeFunctionObject is newFunctionObject for a function that has no
+// newNativeFunctionObject is newNativeCtorObject for a function that has no
 // `prototype`: a nativeFuncObject, from the bootstrap slab while the
 // intrinsics of a mutable realm are being built.
 func (r *Realm) newNativeFunctionObject(name *String, length int, kind FuncKind) (*Object, *FunctionData) {
@@ -534,10 +611,9 @@ func (r *Realm) newNativeFunctionObject(name *String, length int, kind FuncKind)
 // function shape and its length and name slots.
 func (r *Realm) initFunction(o *Object, fd *FunctionData, slots []Value, name *String, length int, kind FuncKind) {
 	o.shape = r.functionShape()
-	o.proto = r.FunctionPrototype
 	o.class = ClassFunction
 	o.flags = flagExtensible
-	o.internal = fd
+	setData(o, kindFunction, fd)
 	fd.kind = kind
 	fd.realm = r
 	fd.name = name
@@ -550,7 +626,7 @@ func (r *Realm) initFunction(o *Object, fd *FunctionData, slots []Value, name *S
 // just created (its `name` is still an own data property): object-literal
 // methods with computed keys are named after the evaluated key.
 func (r *Realm) setFunctionName(fn *Object, name *String) {
-	fn.internal.(*FunctionData).name = name
+	fn.funcData().name = name
 	if p, attrs, ok := fn.lookupNamed(StringKey(AtomName)); ok && attrs&attrAccessor == 0 {
 		*p = StringValue(name)
 	}
@@ -570,7 +646,7 @@ func (r *Realm) allocSlots(n int) []Value {
 // atom; length is the value of the `length` property.
 func (r *Realm) NewNativeFunction(name *String, length int, fn NativeFunc) *Object {
 	o, fd := r.newNativeFunctionObject(name, length, FuncNative)
-	fd.native = fn
+	fd.nat().native = fn
 	return o
 }
 
@@ -581,7 +657,7 @@ func (r *Realm) NewNativeFunction(name *String, length int, fn NativeFunc) *Obje
 // LiveReporter).
 func (r *Realm) NewHostFunction(name *String, length int, fn NativeFunc) *Object {
 	o, fd := r.newNativeFunctionObject(name, length, FuncNative)
-	fd.native = fn
+	fd.nat().native = fn
 	fd.measurable = true
 	return o
 }
@@ -602,7 +678,7 @@ var measurableBuiltins map[uintptr]bool
 // calls back: a host's function, the Promise constructor or one of
 // measurableBuiltins.
 func (fd *FunctionData) isMeasurable() bool {
-	return fd.measurable || fd.kind == FuncNative && measurableBuiltins[reflect.ValueOf(fd.native).Pointer()]
+	return fd.measurable || fd.kind == FuncNative && measurableBuiltins[reflect.ValueOf(fd.nat().native).Pointer()]
 }
 
 func init() {
@@ -626,8 +702,8 @@ func init() {
 // natives are not constructors.
 func (r *Realm) NewNativeDataFunction(name *String, length int, fn NativeDataFunc, data any) *Object {
 	o, fd := r.newNativeFunctionObject(name, length, FuncNativeData)
-	fd.dataFn = fn
-	fd.data = data
+	n := fd.nat()
+	n.dataFn, n.data = fn, data
 	return o
 }
 
@@ -635,19 +711,29 @@ func (r *Realm) NewNativeDataFunction(name *String, length int, fn NativeDataFun
 // [[Construct]] behaviour. call may be nil, in which case calling without
 // `new` throws a TypeError.
 func (r *Realm) NewNativeConstructor(name *String, length int, call NativeFunc, ctor NativeCtor) *Object {
-	o, fd := r.newFunctionObject(name, length, FuncNative)
+	o, fd := r.newNativeCtorObject(name, length)
 	if call == nil {
 		call = func(r *Realm, this Value, args []Value) (Value, error) {
 			return Undefined(), r.TypeError("Constructor %s requires 'new'", name.GoString())
 		}
 	}
-	fd.native = call
+	fd.nat().native = call
 	fd.setCtor(ctor)
 	return o
 }
 
-// SetHomeObject records the [[HomeObject]] of a method.
-func (fd *FunctionData) SetHomeObject(o *Object) { fd.data = o }
+// SetHomeObject records the [[HomeObject]] of a method: a bytecode function
+// other than an arrow function, which has none (its super is its
+// enclosing function's).
+func (fd *FunctionData) SetHomeObject(o *Object) {
+	if fd.kind != FuncBytecode || fd.code.Kind == bytecode.KindArrow {
+		return
+	}
+	fd.thisValue = Undefined()
+	if o != nil {
+		fd.thisValue = ObjectValue(o)
+	}
+}
 
 // NewBoundFunction implements BoundFunctionCreate plus the `length`/`name`
 // steps of Function.prototype.bind, so the bind method is a thin wrapper.
@@ -703,9 +789,10 @@ func (r *Realm) NewBoundFunction(target *Object, boundThis Value, boundArgs []Va
 	if len(boundArgs) != 0 {
 		bo.bound.args = append([]Value(nil), boundArgs...)
 	}
-	fd.data = &bo.bound
 	if proto != r.FunctionPrototype {
-		o.proto = proto
+		if proto != nil {
+			r.markPrototype(proto)
+		}
 		o.shape = r.functionShape().rebase(r, r.rootShapeFor(proto))
 	}
 	return o, nil
@@ -726,17 +813,40 @@ func (r *Realm) OrdinaryCreateFromConstructor(newTarget *Object, defaultProto *O
 // "%Object.prototype%") for the [[Construct]] of a bytecode function: the
 // object has room for the named properties the last objects constructed
 // with newTarget ended up with (FunctionData.ctorSlots, noteCtorSlots), so
-// a constructor that assigns them one by one does not grow its slots.
+// a constructor that assigns them one by one does not grow its slots, and
+// from the ctorProbe-th on for those most of them went on to take
+// (probeCtor).
+//
+// newTarget.prototype is read each time. An ordinary function whose shape
+// is still the one it was created with (newClosure: length, name and the
+// writable, lazily created prototype) has it in that shape's slot; any
+// other shape, a prototype that is not an object and the lazy marker go
+// through [[Get]].
 func (r *Realm) constructThis(newTarget *Object) (*Object, error) {
-	proto, err := r.GetPrototypeFromConstructor(newTarget, nil, r.ObjectPrototype)
-	if err != nil {
-		return nil, err
+	var proto *Object
+	if s := newTarget.shape; s.parent == r.funcShape && s.key == StringKey(AtomPrototype) && s.attrs == attrWritable|attrLazy {
+		if v := newTarget.slots[s.slot]; v.IsObject() {
+			proto = v.AsObject()
+		}
+	}
+	if proto == nil {
+		p, err := r.GetPrototypeFromConstructor(newTarget, nil, r.ObjectPrototype)
+		if err != nil {
+			return nil, err
+		}
+		proto = p
 	}
 	r.markPrototype(proto)
-	if fd := newTarget.FunctionData(); fd != nil && fd.ctorSlots != 0 {
-		return initObject(r.NewObjectCap(int(fd.ctorSlots)), ClassObject, r.rootShapeFor(proto)), nil
+	root := r.rootShapeFor(proto)
+	if fd := newTarget.FunctionData(); fd != nil {
+		if fd.ctorSlots < ctorProbe<<4 {
+			fd.probeCtor(r, root)
+		}
+		if n := fd.ctorSlots & ctorSlotsMask; n != 0 {
+			return initObject(r.NewObjectCap(int(n)), ClassObject, root), nil
+		}
 	}
-	return r.newObject(ClassObject, r.rootShapeFor(proto)), nil
+	return r.newObject(ClassObject, root), nil
 }
 
 // noteCtorSlots records in fd, the new.target of a [[Construct]] that
@@ -745,10 +855,35 @@ func noteCtorSlots(fd *FunctionData, v Value) {
 	if !v.IsObject() {
 		return
 	}
-	if n := len(v.AsObject().slots); n > int(fd.ctorSlots) && n <= smallObjectMax {
-		fd.ctorSlots = uint8(n)
+	if n := len(v.AsObject().slots); n > int(fd.ctorSlots&ctorSlotsMask) && n <= smallObjectMax {
+		fd.ctorSlots = fd.ctorSlots&^ctorSlotsMask | uint8(n)
 	}
 }
+
+// probeCtor counts one of the first ctorProbe objects constructed with fd,
+// whose root shape is root (constructThis). The last of them looks at
+// where the objects before it went on past the properties they were
+// constructed with (Shape.ctorRoom): where at least half of them grew
+// their slots there, as a tree's nodes do when they take their children,
+// it and the next ones get the room those took, up to smallObjectMax, and
+// do not grow. Objects that stay as they were constructed get none.
+func (fd *FunctionData) probeCtor(r *Realm, root *Shape) {
+	c := fd.ctorSlots + 1<<4
+	if own := int(c & ctorSlotsMask); c >= ctorProbe<<4 && root != r.plainRoot && !root.shared {
+		if m, grew := root.ctorRoom(own); m > own && 2*grew >= ctorProbe-1 {
+			c = c&^ctorSlotsMask | uint8(min(m, smallObjectMax))
+		}
+	}
+	fd.ctorSlots = c
+}
+
+// ctorSlotsMask selects the room in FunctionData.ctorSlots; ctorProbe is
+// the object of a constructor that looks at where the ones before it went
+// on (noteCtorSlots), counted in the bits above.
+const (
+	ctorSlotsMask = 1<<4 - 1
+	ctorProbe     = 15
+)
 
 // GetPrototypeFromConstructor implements GetPrototypeFromConstructor
 // (ECMA-262 §10.1.14) for the [[Construct]] of a builtin constructor ctor:

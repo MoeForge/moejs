@@ -28,7 +28,7 @@ func TestBufferDataAligned(t *testing.T) {
 	for i := range uint32(n) {
 		v, err := arr.AsObject().GetIndex(r, i)
 		require.NoError(t, err)
-		b := v.AsObject().internal.(*arrayBuffer).data
+		b := extDataOf(v.AsObject(), kindArrayBuffer).data
 		if cap(b) == 0 {
 			continue
 		}

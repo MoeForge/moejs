@@ -137,7 +137,7 @@ func thisSymbolValue(r *Realm, v Value, method string) (*Symbol, error) {
 		return v.AsSymbol(), nil
 	}
 	if v.IsObject() {
-		if s, ok := v.AsObject().internal.(*Symbol); ok && v.AsObject().class == ClassSymbol {
+		if s, ok := extDataOk(v.AsObject(), kindSymbol); ok && v.AsObject().class == ClassSymbol {
 			return s, nil
 		}
 	}

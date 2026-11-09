@@ -76,7 +76,7 @@ func rawToValue(t elemType, u uint64) Value {
 	case elemInt32:
 		return IntValue(int(int32(u)))
 	case elemUint32:
-		return IntValue(int(uint32(u)))
+		return Int64Value(int64(uint32(u))) // a uint32 past 2**31 is no int on 32-bit systems
 	case elemFloat16:
 		return NumberValue(float16ToFloat64(uint16(u)))
 	case elemFloat32:

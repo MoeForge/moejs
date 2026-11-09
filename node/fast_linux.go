@@ -267,9 +267,16 @@ func (r *fastRoot) open(rel string, flags int, mode uint32) (int, error) {
 	if r.fd < 0 {
 		return -1, errClosed
 	}
-	for {
+	for tries := 0; ; {
 		fd, _, e := syscall.Syscall6(sysOpenat2, uintptr(r.fd), uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&how)), unsafe.Sizeof(how), 0, 0)
 		if e == syscall.EINTR {
+			continue
+		}
+		if e == syscall.EAGAIN && tries < openRetries {
+			// A rename anywhere in the system ran while the kernel
+			// resolved a "..", so it cannot tell that the path stayed
+			// beneath the root, and the caller may retry (openat2(2)).
+			tries++
 			continue
 		}
 		if e != 0 {
@@ -279,10 +286,15 @@ func (r *fastRoot) open(rel string, flags int, mode uint32) (int, error) {
 	}
 }
 
+// openRetries bounds the retries of an openat2 that fails with EAGAIN;
+// one that still fails goes the os.Root way (fallback), which resolves
+// the path a name at a time.
+const openRetries = 4
+
 // fallback reports whether an error of open sends the operation the
 // os.Root way.
 func fallback(err error) bool {
-	return err == syscall.EXDEV || err == syscall.ENOSYS || err == syscall.EPERM
+	return err == syscall.EXDEV || err == syscall.ENOSYS || err == syscall.EPERM || err == syscall.EAGAIN
 }
 
 // statInfo is the fs.FileInfo of a stat the fast path made.

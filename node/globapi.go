@@ -72,7 +72,7 @@ func (e *env) globOp(c call, args []engine.Value) (engine.Value, error) {
 	}
 	// What compiling takes is bounded and charged, and the runtime's
 	// interrupt is checked between the expressions.
-	cc := &globCompile{charge: r.ChargeMemory, halt: r.CheckInterrupt}
+	cc := &globCompile{charge: r.ChargeMemory, halt: r.CheckInterrupt, win32: e.fsys.win32}
 	compile := func(list []string) ([]globPattern, error) {
 		var out []globPattern
 		done := map[string]bool{}
@@ -197,15 +197,20 @@ func (e *env) globValue(cwd string, ms []globMatch, withTypes bool, excludeFn en
 		if x, ok := excluded[p]; ok {
 			return x, nil
 		}
-		if dir := path.Dir(p); dir != "." && dir != "/" && dir != p {
+		if dir := path.Dir(p); dir != "." && dir != "/" && dir != p && !(e.fsys.win32 && win32IsVolume(dir)) {
 			if x, err := isExcluded(dir, direntDir); err != nil || x {
 				excluded[p] = x
 				return x, err
 			}
 		}
-		arg := str(p)
+		arg := str(e.fsys.globPath(p))
 		if withTypes {
-			arg = e.newDirent(str(path.Base(p)), str(path.Dir(path.Join(cwd, p))), typ)
+			if e.fsys.win32 {
+				full := e.fsys.globFull(cwd, p)
+				arg = e.newDirent(str(win32Base(full)), str(win32Dir(full)), typ)
+			} else {
+				arg = e.newDirent(str(path.Base(p)), str(path.Dir(path.Join(cwd, p))), typ)
+			}
 		}
 		v, err := r.Call(excludeFn, undefined, []engine.Value{arg})
 		if err != nil {
@@ -223,11 +228,16 @@ func (e *env) globValue(cwd string, ms []globMatch, withTypes bool, excludeFn en
 			continue
 		}
 		if withTypes {
+			if e.fsys.win32 {
+				full := e.fsys.globFull(cwd, m.path)
+				items = append(items, e.newDirent(str(win32Base(full)), str(win32Dir(full)), typ))
+				continue
+			}
 			full := path.Join(cwd, m.path)
 			items = append(items, e.newDirent(str(path.Base(full)), str(path.Dir(full)), typ))
 			continue
 		}
-		items = append(items, str(m.path))
+		items = append(items, str(e.fsys.globPath(m.path)))
 	}
 	return engine.ObjectValue(r.NewArrayFromSlice(items)), nil
 }

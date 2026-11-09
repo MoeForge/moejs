@@ -148,7 +148,7 @@ func errorHeader(o *Object) string {
 
 // lookupDataNoThrow walks the prototype chain for a data property.
 func lookupDataNoThrow(o *Object, key PropertyKey) (Value, bool) {
-	for obj := o; obj != nil; obj = obj.proto {
+	for obj := o; obj != nil; obj = obj.Proto() {
 		if v, ok := obj.GetOwnDataValue(key); ok {
 			return v, true
 		}
@@ -272,10 +272,9 @@ func (r *Realm) newErrorObjectSkip(proto *Object, message Value, skip *Object) *
 	r.chargeObject(unsafe.Sizeof(errorObject{}))
 	o := &eo.obj
 	shape := r.rootShapeFor(proto)
-	o.proto = proto
 	o.class = ClassError
 	o.flags = flagExtensible
-	o.internal = &eo.data
+	setData(o, kindError, &eo.data)
 	o.slots = eo.slots[:0:2]
 	if !message.IsUndefined() {
 		shape = shape.addProperty(r, StringKey(AtomMessage), attrHidden)
@@ -293,8 +292,8 @@ func (r *Realm) newErrorObjectSkip(proto *Object, message Value, skip *Object) *
 	} else if r.stackCapture != nil {
 		eo.data.frames = r.stackCapture(r)
 	}
-	if o.proto.flags&flagIsPrototype == 0 {
-		r.markPrototype(o.proto)
+	if o.Proto().flags&flagIsPrototype == 0 {
+		r.markPrototype(o.Proto())
 	}
 	return o
 }
@@ -302,7 +301,7 @@ func (r *Realm) newErrorObjectSkip(proto *Object, message Value, skip *Object) *
 // ErrorData returns the payload of an error object created by the engine,
 // or nil.
 func (o *Object) ErrorData() *ErrorData {
-	ed, _ := o.internal.(*ErrorData)
+	ed := dataOf(o, kindError)
 	return ed
 }
 

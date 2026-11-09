@@ -2,6 +2,7 @@ package moejs_test
 
 import (
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,6 +32,7 @@ func TestDirectEval(t *testing.T) {
 	// big declares enough variables that eval code is resolved against the
 	// names it uses rather than all its caller's (syntax's resolveEval).
 	const big = "var v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16;"
+	const fill = "function fill() { var a = {}, b = {}, c = {}, d = {}, e = {}, g = {}; return [a, b, c, d, e, g].length; }\n"
 	tests := []struct {
 		name, src string
 		want      any
@@ -39,6 +41,8 @@ func TestDirectEval(t *testing.T) {
 		{"non-string argument", `eval(42)`, int64(42)},
 		{"no argument", `eval()`, nil},
 		{"caller's bindings", `function f(a) { let l = 2; return eval("a * l"); } f(3)`, int64(6)},
+		{"switch on a local eval assigns", `function e(x) { switch (x) { case eval("x = 2, 1"): return 1; case 2: return 2; } return 0; } e(1)`, int64(1)},
+		{"for-in over a local eval assigns", `function e(o) { var n = 0; for (var k in o) { if (n++ == 0) eval("o = {z: 1, y: 2, w: 3}"); } return n; } e({p: 1, q: 2})`, int64(2)},
 		{"global lexical", `let gl = 3; eval("gl + 1")`, int64(4)},
 		{"sloppy var goes to the caller", `function f() { eval("var v = 1"); return typeof v; } f()`, "number"},
 		{"var of an existing name", `function f() { var s = 1; eval("var s = 2"); return s; } f()`, int64(2)},
@@ -56,6 +60,9 @@ func TestDirectEval(t *testing.T) {
 		{"arrow this", `var ar = () => eval("this === globalThis"); ar()`, true},
 		{"class field", `class F { x = eval("this.constructor.name"); } new F().x`, "F"},
 		{"arguments", `function f() { return eval("arguments.length"); } f(1, 2, 3)`, int64(3)},
+		{"assigns a mapped parameter", `function f(a) { eval("a = 3"); return arguments[0]; } f(1)`, int64(3)},
+		{"writes a mapped argument", `function f(a) { eval("arguments[0] = 4"); return a; } f(1)`, int64(4)},
+		{"mapped through a closure", `function f(a) { var g = () => eval("arguments[0] = 5"); g(); return a; } f(1)`, int64(5)},
 		{"new.target", `function F() { this.nt = eval("new.target === F"); } new F().nt`, true},
 		{"super property", `class B { m() { return "bm"; } } class C extends B { m() { return eval("super.m()"); } } new C().m()`, "bm"},
 		{"super call", `class D extends Object { x = 2; constructor() { eval("super()"); this.v = this.x + 1; } } new D().v`, int64(3)},
@@ -76,6 +83,12 @@ new C().m(4, 5)`, []any{int64(4), int64(2), int64(3), int64(2), nil}},
 		{"template objects per evaluation", "function tag(t) { return t; } var ts = []; for (var i = 0; i < 2; i++) ts.push(eval('[tag`x`, tag`x`, (() => tag`y`)()]'));" +
 			"[ts[0][0] === ts[1][0], ts[0][0] === ts[0][1], ts[0][2] === ts[1][2], eval('var s = []; for (var j = 0; j < 2; j++) s.push(tag`z`); s[0] === s[1]')]",
 			[]any{false, false, false, true}},
+		// Eval code leaves out of its UndefRange the vars a top-level
+		// declarator writes first (compiler allocVarRegs); fill leaves
+		// objects in the registers the frame takes.
+		{"var read before its declarator", fill + `function f() { return eval("var r = typeof x; var x = 1; r + x"); } fill(); f()`, "undefined1"},
+		{"strict var read before its declarator", fill + `function f() { "use strict"; return eval("var r = typeof x; var x = 1; r + x"); } fill(); f()`, "undefined1"},
+		{"caller's var read before its declarator", fill + `function f(s) { var r = eval(s); var x = 1; return r + x; } fill(); f("typeof x")`, "undefined1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -463,13 +476,43 @@ func TestDynamicCompileTime(t *testing.T) {
 	assert.Less(t, time.Since(t0), 60*time.Second)
 }
 
-// heapAfterGC returns the live heap after a full collection.
+// heapAfterGC returns the live heap after full collections, read once a
+// collection has queued no cleanup that has not run. Memory a cleanup
+// releases is garbage only for the collection after the cleanup ran, and
+// the cleanups one collection queues run concurrently with the next: the
+// checked build (-tags moejsregcheck) keeps its tables of each function it
+// ran in a cache whose entries cleanups delete, so dynamic code that dies
+// at once, as 20,000 async functions do when their jobs end, left up to
+// 10 MB of tables alive at the second of two collections, the more the
+// slower the cleanups ran.
 func heapAfterGC() uint64 {
-	runtime.GC()
-	runtime.GC()
+	queued := ^uint64(0)
+	for range 10 {
+		runtime.GC()
+		q := awaitCleanups()
+		if q == queued {
+			break
+		}
+		queued = q
+	}
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	return ms.HeapAlloc
+}
+
+// awaitCleanups waits until the runtime has run every cleanup it queued
+// and returns their count; zero on a runtime that does not count them.
+func awaitCleanups() uint64 {
+	s := []metrics.Sample{{Name: "/gc/cleanups/queued:cleanups"}, {Name: "/gc/cleanups/executed:cleanups"}}
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(time.Millisecond) {
+		metrics.Read(s)
+		if s[0].Value.Kind() != metrics.KindUint64 {
+			return 0
+		}
+		if q := s[0].Value.Uint64(); s[1].Value.Uint64() >= q || time.Now().After(deadline) {
+			return q
+		}
+	}
 }
 
 // TestDynamicCodeRetained: a runtime keeps a bounded amount of state for

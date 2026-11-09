@@ -50,8 +50,8 @@ func proxyRevocable(r *Realm, this Value, args []Value) (Value, error) {
 // proxyRevoke is a revoke function: the first call revokes the proxy and
 // drops the function's reference to it, later calls do nothing.
 func proxyRevoke(r *Realm, fd *FunctionData, this Value, args []Value) (Value, error) {
-	if pd, ok := fd.data.(*proxyData); ok {
-		fd.data = nil
+	if pd, ok := fd.nat().data.(*proxyData); ok {
+		fd.nat().data = nil
 		pd.target, pd.handler = nil, nil
 	}
 	return Undefined(), nil

@@ -82,9 +82,9 @@ func freshPrototype(t *testing.T, r *Realm, mk Value, argv []Value) (weak.Pointe
 	v, err := r.Call(mk, Undefined(), argv)
 	require.NoError(t, err)
 	p := v.AsObject()
-	if assert.NotNil(t, p.dict, "the prototype holds its root shape") && assert.NotNil(t, p.dict.root) {
-		assert.Same(t, p, p.dict.root.proto)
-		assert.Same(t, p.dict.root, r.rootShapeFor(p))
+	if assert.NotNil(t, p.ext, "the prototype holds its root shape") && assert.NotNil(t, p.extData().root) {
+		assert.Same(t, p, p.extData().root.proto)
+		assert.Same(t, p.extData().root, r.rootShapeFor(p))
 	}
 	return weak.Make(p), len(r.rootShapes)
 }
@@ -99,7 +99,7 @@ export function keys(p) { return Object.keys(p).join() + "|" + JSON.stringify(p)
 `, RealmOptions{SharedIntrinsics: true})
 	p, err := f.r.Call(fixtureFn(f, "proto"), Undefined(), nil)
 	require.NoError(t, err)
-	require.NotNil(t, p.AsObject().dict.root)
+	require.NotNil(t, p.AsObject().extData().root)
 	assert.True(t, hasOnlyShapeProps(p.AsObject()))
 	res, err := f.r.Call(fixtureFn(f, "keys"), Undefined(), []Value{p})
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ export function inheritEmpty(x) { Object.create(x.empty).own = 1; return Object.
 			src := map[string]any{"model": "gpt", "n": 1.0}
 			p := fromGo(src)
 			assert.Equal(t, "1:gpt:own", call("inherit", p))
-			require.NotNil(t, p.AsObject().dict.root)
+			require.NotNil(t, p.AsObject().extData().root)
 			got, ok := p.AsObject().HostValue()
 			if assert.True(t, ok, "a host node that is a prototype is unchanged") {
 				assertSameGo(t, src, got)
@@ -146,7 +146,7 @@ export function inheritEmpty(x) { Object.create(x.empty).own = 1; return Object.
 			q := fromGo(map[string]any{"model": "claude"})
 			call("protoOf", q)
 			require.Equal(t, hostSentinelKey, q.AsObject().shape.key, "still a placeholder")
-			require.NotNil(t, q.AsObject().dict.root)
+			require.NotNil(t, q.AsObject().extData().root)
 			assert.Equal(t, "7:claude", call("stamp", q))
 
 			in := map[string]any{"empty": map[string]any{}, "a": 1.0}
@@ -208,7 +208,7 @@ export function hook(req) {
 			assert.LessOrEqual(t, len(r.internCacheUTF16), internCacheMax)
 			assert.LessOrEqual(t, len(r.hostShapes), hostShapesMax)
 			assert.LessOrEqual(t, maxKeys, hostShapeKeysMax)
-			assert.Equal(t, cachedHostShapeKeys(r), r.fromGo.heap.shapeKeys)
+			assert.Equal(t, cachedHostShapeKeys(r), int(r.fromGo.heap.shapeKeys))
 			assert.NotEmpty(t, r.internCacheASCII)
 			assert.NotEmpty(t, r.internCacheUTF16)
 			assert.NotEmpty(t, r.hostShapes)

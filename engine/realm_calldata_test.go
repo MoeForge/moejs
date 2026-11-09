@@ -19,13 +19,15 @@ import (
 // inside a call.
 
 // callDataSource reads its argument through a closure (whose frame record
-// the call leaves above the live frames) and matches a UTF-16 subject on
-// the RE2 path (whose working copy the realm caches, and whose match the
-// legacy statics, read once, keep).
+// the call leaves above the live frames), matches a UTF-16 subject on the
+// native matcher (whose buffers the realm keeps) and on the RE2 path, as a
+// program too large for the native matcher runs (whose working copy the
+// realm caches, and whose match the legacy statics, read once, keep).
 const callDataSource = `
 export function hook(x, inside) {
 	const names = () => x.list.map(m => m.name + x.model);
-	const m = /(中+)文/.exec(x.text);
+	if (!/中+文/.test(x.text)) throw new Error("native");
+	const m = /(中+)文(?:中文|文中){0,700}/.exec(x.text);
 	if (RegExp.$1 !== m[1]) throw new Error("RegExp.$1");
 	inside();
 	return names().join() + "|" + m[1].length + "|" + x.meta.tag;
@@ -75,6 +77,7 @@ func TestReleaseCallData(t *testing.T) {
 				require.True(t, slices.ContainsFunc(st.stack[st.sp:], func(v Value) bool { return v.ptr != nil }), "request %d: stale registers", i)
 				require.True(t, slices.ContainsFunc(st.frames[st.nframes:], func(fi frameInfo) bool { return fi.fn != nil }), "request %d: stale frames", i)
 				require.NotNil(t, r.regexps.subjects[0].s, "request %d: RegExp subject", i)
+				require.NotNil(t, r.regexps.nat.visited, "request %d: native matcher's visited set", i)
 				require.NotNil(t, r.regexps.lastS, "request %d: RegExp statics' subject", i)
 				require.NotNil(t, r.lazy.statics, "request %d: RegExp statics' match", i)
 
@@ -96,6 +99,8 @@ func TestReleaseCallData(t *testing.T) {
 					assert.Nil(t, r.regexps.subjects[j].text, "RegExp working copy %d", j)
 				}
 				assert.Equal(t, int32(0), r.regexps.subjNext)
+				assert.Nil(t, r.regexps.nat.visited, "native matcher's visited set")
+				assert.Nil(t, r.regexps.nat.stack, "native matcher's stack")
 				assert.Nil(t, r.regexps.lastS, "RegExp statics' subject")
 				assert.Nil(t, r.regexps.lastC, "RegExp statics' program")
 				assert.Nil(t, r.lazy.statics, "RegExp statics' match")
@@ -287,6 +292,7 @@ func TestReleaseScratch(t *testing.T) {
 		for j := range r.regexps.subjects {
 			assert.Nil(t, r.regexps.subjects[j].s, "RegExp subject %d", j)
 		}
+		assert.Nil(t, r.regexps.nat.visited, "native matcher's visited set")
 		assert.NotNil(t, r.fromGo.heap.maps, "the host conversion's chunks stay")
 		assert.NotNil(t, r.regexps.lastS, "the RegExp statics stay")
 		assert.NotNil(t, r.lazy.statics, "the RegExp statics' match stays")
