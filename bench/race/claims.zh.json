@@ -158,7 +158,7 @@
   "通用测试：V8 benchmark suite v7，8 个程序各占 1/8 赛道",
   "通用测试画面按 0.8 倍速播放，时钟是实测秒数",
   "总得分：套件自带的 run.js，单独测量；上个版本：v0.1.0-alpha.11",
-  "moejs：当前开发版，-tags purego，CGO_ENABLED=0，Go 1.27.2",
+  "moejs：最新源码，-tags purego，CGO_ENABLED=0，Go 1.27.2",
   "Go 1.27.2 的 47 个系统/CPU 组合全部能编译（CGO_ENABLED=0）",
   "插件：new-api 任务插件，结果 SHA-256 与 C QuickJS 一致",
   "插件接力：5 段各占 1/5 赛道，每段用时是这一段单独实测的用时",
