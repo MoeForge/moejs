@@ -111,6 +111,18 @@ A runtime that an event loop runs (`eventloop`, below) is interrupted
 through `Loop.Interrupt`. `Runtime.Interrupt` alone stops the JavaScript
 that is running, but does not wake a loop that sleeps until its next timer.
 
+`RunContext(ctx, fn)` gives a sequence of runtime operations one cancellation
+scope. `fn` runs on the calling goroutine with exclusive use of the runtime;
+it can include `Load`, `Call` and result decoding. An already canceled context
+or pending interrupt prevents entry. Cancellation returns an `*InterruptedError`
+carrying `context.Cause(ctx)`; an error from `fn` takes precedence.
+
+Before returning or propagating a panic, `RunContext` stops its watcher or
+waits for it to finish. The host can then call `ClearInterrupt` and
+`ReleaseCallData` before reuse. It does not roll back changes or retry a failed
+`Load`. Blocking Go code must also honor `ctx`; host-side compilation uses
+`CompileOptions.Context`. Event loops still require `Loop.Interrupt`.
+
 ### Memory limit
 
 `Options.MemoryLimit` caps what the runtime's JavaScript keeps plus what it
