@@ -185,7 +185,7 @@ func TestRegExpUnicodeSetsSelection(t *testing.T) {
 		{`[\w&&\P{ASCII}]+`, "vi"}, {`[^\q{a}]`, "vi"}, {`[\q{ß}]`, "vi"},
 	} {
 		_, cr := compileForTest(t, c.pattern, c.flags)
-		assert.NotNil(t, cr.re, "/%s/%s should run on RE2", c.pattern, c.flags)
+		assert.True(t, cr.exact, "/%s/%s should run on RE2", c.pattern, c.flags)
 	}
 	deep := strings.Repeat("[", 3000) + strings.Repeat("]", 3000)
 	_, err := parseRegExp(FromGoString(deep).UTF16(), regexpFlags{unicode: true, unicodeSets: true})

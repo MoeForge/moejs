@@ -155,7 +155,7 @@ func TestNatMemoryCharge(t *testing.T) {
 // the backtracking VM alone, which implements the spec's semantics
 // directly.
 func natOracles(c *compiledRegExp) (re2, bt *compiledRegExp) {
-	re2 = &compiledRegExp{tr: c.tr, flags: c.flags, key: c.key, re: c.re, btCR: c.btCR, btFoldWord: c.btFoldWord, simple: c.simple, run: c.run}
+	re2 = &compiledRegExp{tr: c.tr, flags: c.flags, key: c.key, exact: c.exact, btCR: c.btCR, btFoldWord: c.btFoldWord, simple: c.simple, run: c.run}
 	re2.fast.Store(&reFast{})
 	bt = &compiledRegExp{tr: c.tr, flags: c.flags, key: c.key}
 	bt.fast.Store(&reFast{})

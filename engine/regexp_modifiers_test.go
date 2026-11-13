@@ -109,6 +109,6 @@ func TestRegExpModifiersSelection(t *testing.T) {
 		{`(?i:a)b`, ""}, {`a(?-i:b)`, "i"}, {`(?m:^b)`, ""}, {`(?s:.)x`, ""}, {`(?<a>x)|(?<a>y)`, ""},
 	} {
 		_, cr := compileForTest(t, c.pattern, c.flags)
-		assert.NotNil(t, cr.re, "/%s/%s should run on RE2", c.pattern, c.flags)
+		assert.True(t, cr.exact, "/%s/%s should run on RE2", c.pattern, c.flags)
 	}
 }

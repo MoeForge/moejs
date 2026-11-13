@@ -66,9 +66,13 @@ type compiledRegExp struct {
 	tr    *translatedRegExp
 	flags regexpFlags
 	key   regexpCacheKey
-	// re is the RE2 program, nil when the pattern runs on the backtracking
-	// VM only.
-	re *regexp.Regexp
+	// exact is set when the pattern runs on RE2: it is reExact and its
+	// largest search variant parsed. Its program is compiled on first use
+	// (program), as the search variants are: the run pattern, the native
+	// program and the literal fast path serve most matches without it, and
+	// compiling it was most of what building a RegExp cost.
+	exact bool
+	re    atomic.Pointer[regexp.Regexp]
 	// btCR is set when the pattern has an m-mode ^ or $, which RE2 does not
 	// apply at \r, U+2028 or U+2029; btFoldWord when a u-mode \b or \B
 	// ignores case, which makes U+017F and U+212A word characters. A subject
@@ -96,6 +100,22 @@ type compiledRegExp struct {
 }
 
 func (c *compiledRegExp) ngroups() int { return len(c.tr.names) - 1 }
+
+// program returns the RE2 program of an exact pattern, compiling it on first
+// use. compileRegExp parsed the largest search variant, which contains the
+// body, so compilation cannot fail; a failure is an internal error, never a
+// panic.
+func (c *compiledRegExp) program() (*regexp.Regexp, error) {
+	if re := c.re.Load(); re != nil {
+		return re, nil
+	}
+	re, err := regexp.Compile(c.tr.body)
+	if err != nil {
+		return nil, errors.New("regexp program failed to compile: " + err.Error())
+	}
+	c.re.Store(re)
+	return re, nil
+}
 
 func (c *compiledRegExp) anchored() (*regexp.Regexp, error) {
 	return c.variant(&c.anchRe, `\A(?:`)
@@ -166,7 +186,7 @@ func (c *compiledRegExp) fastPaths() *reFast {
 	f := &reFast{}
 	if ast, err := parseRegExp(c.key.units(), c.flags); err == nil {
 		f.lit = requiredLiteral(ast, c.flags)
-		if c.re != nil {
+		if c.exact {
 			f.nat = compileNat(ast, c.flags)
 		}
 	}
@@ -178,7 +198,7 @@ func (c *compiledRegExp) fastPaths() *reFast {
 
 // useBT reports whether sub runs on the backtracking VM.
 func (c *compiledRegExp) useBT(sub *reSubject) bool {
-	return c.re == nil || sub.private || c.btCR && sub.crLS || c.btFoldWord && sub.foldWord
+	return !c.exact || sub.private || c.btCR && sub.crLS || c.btFoldWord && sub.foldWord
 }
 
 // simpleExec reports whether RegExpBuiltinExec matches c with the
@@ -323,8 +343,8 @@ func compilePattern(key regexpCacheKey, units []uint16, flags regexpFlags) (*com
 	}
 	c := &compiledRegExp{flags: flags, key: key, simple: compileSimpleClass(units, flags), run: compileRunPattern(ast, flags)}
 	if reExact(ast.Root) {
-		if tr, re := compileRE2(ast, flags, len(units)); re != nil {
-			c.tr, c.re = tr, re
+		if tr := compileRE2(ast, flags, len(units)); tr != nil {
+			c.tr, c.exact = tr, true
 			ast.Root.Walk(func(n *reNode) {
 				switch n.Op {
 				case reOpBegin, reOpEnd:
@@ -341,25 +361,52 @@ func compilePattern(key regexpCacheKey, units []uint16, flags regexpFlags) (*com
 	return c, nil
 }
 
-// compileRE2 translates an exact pattern and compiles it, or returns a nil
-// program when RE2 rejects it (a size or nesting limit). The search variants
-// (matchAt) wrap the body in a prefix and a group, and a body at RE2's limit
-// compiles alone but not wrapped, so the largest variant is parsed first
-// (every RE2 limit is enforced by the parser); such a pattern runs on the
-// backtracking VM instead of failing on its first exec.
-func compileRE2(ast *reAST, flags regexpFlags, sizeHint int) (*translatedRegExp, *regexp.Regexp) {
+// compileRE2 translates an exact pattern and checks that RE2 takes it, or
+// returns nil when RE2 rejects it (a size or nesting limit). The search
+// variants (matchAt) wrap the body in a prefix and a group, and a body at
+// RE2's limit compiles alone but not wrapped, so the largest variant is
+// parsed (every RE2 limit is enforced by the parser); such a pattern runs on
+// the backtracking VM instead of failing on its first exec. The programs
+// themselves are compiled on first use (program, variant).
+func compileRE2(ast *reAST, flags regexpFlags, sizeHint int) *translatedRegExp {
 	tr, err := emitRE2(ast, flags, sizeHint)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
-	if _, err := syntax.Parse(variantOpenLargest+tr.body+`)`, syntax.Perl); err != nil {
-		return nil, nil
+	if needsLimitCheck(tr.body) {
+		if _, err := syntax.Parse(variantOpenLargest+tr.body+`)`, syntax.Perl); err != nil {
+			return nil
+		}
 	}
-	re, err := regexp.Compile(tr.body)
-	if err != nil {
-		return nil, nil
+	return tr
+}
+
+// limitFreeLen is the longest body that needs no limit check without a
+// counted repetition: RE2's limits are 1,000 levels of nesting and millions
+// of instructions and runes, and without {n,m} every node of the tree, and
+// every level, takes at least a byte of the body, so such a body and its
+// search variants stay far below them.
+const limitFreeLen = 900
+
+// needsLimitCheck reports whether a translated body could reach a limit of
+// RE2's parser once wrapped in a search variant: it is long or has a counted
+// repetition. The translation writes punctuation as \x{…}, so a brace right
+// after \x, \p or \P opens an escape, which RE2 never reads as a repetition.
+func needsLimitCheck(body string) bool {
+	if len(body) > limitFreeLen {
+		return true
 	}
-	return tr, re
+	for i := strings.IndexByte(body, '{'); i >= 0; {
+		if i < 2 || body[i-2] != '\\' || body[i-1] != 'x' && body[i-1] != 'p' && body[i-1] != 'P' {
+			return true
+		}
+		j := strings.IndexByte(body[i+1:], '{')
+		if j < 0 {
+			break
+		}
+		i += 1 + j
+	}
+	return false
 }
 
 func (r *Realm) regexpSyntaxError(pattern *String, flags regexpFlags, err error) error {
@@ -461,7 +508,7 @@ func (r *Realm) initRegExpSubject(sub *reSubject, s *String, c *compiledRegExp) 
 		return
 	}
 	u := f.units()
-	if c.re == nil {
+	if !c.exact {
 		*sub = reSubject{s: s, units: true, unicode: unicode, wide: u}
 		return
 	}
@@ -560,12 +607,15 @@ func (c *compiledRegExp) matchAt(r *Realm, sub *reSubject, bytePos int, sticky b
 		return c.matchBT(r, sub, bytePos, sticky)
 	}
 	if bytePos == 0 || !c.tr.leftContext {
-		re := c.re
+		var re *regexp.Regexp
+		var err error
 		if sticky {
-			var err error
-			if re, err = c.anchored(); err != nil {
-				return nil, err
-			}
+			re, err = c.anchored()
+		} else {
+			re, err = c.program()
+		}
+		if err != nil {
+			return nil, err
 		}
 		m := re.FindSubmatchIndex(sub.text[bytePos:])
 		for i := range m {
@@ -658,7 +708,11 @@ func (c *compiledRegExp) findAll(r *Realm, sub *reSubject) ([][]int, error) {
 		return c.findAllNat(r, sub)
 	}
 	if !sub.nat && !c.tr.minLen0 && !sticky && len(sub.text) <= regexpUninterruptedLimit && !c.useBT(sub) {
-		return c.re.FindAllSubmatchIndex(sub.text, -1), nil
+		re, err := c.program()
+		if err != nil {
+			return nil, err
+		}
+		return re.FindAllSubmatchIndex(sub.text, -1), nil
 	}
 	var out [][]int
 	pos := 0
@@ -1319,7 +1373,11 @@ func (r *Realm) matchesFrom0(c *compiledRegExp, s *String) (bool, error) {
 		return ok, err
 	}
 	if !c.useBT(&sub) {
-		return c.re.Match(sub.text), nil
+		re, err := c.program()
+		if err != nil {
+			return false, err
+		}
+		return re.Match(sub.text), nil
 	}
 	m, err := c.matchBT(r, &sub, 0, false)
 	return m != nil, err
@@ -1883,19 +1941,26 @@ func regexpReplaceFast(c *compiledRegExp, sub *reSubject, tmpl *String) (*String
 	if !ok && tmpl.Len() != 0 {
 		return nil, false
 	}
-	if lit := c.fastPaths().lit; lit != nil && lit.index(sub, 0, len(sub.text)) < 0 || !c.re.Match(sub.text) {
+	if lit := c.fastPaths().lit; lit != nil && lit.index(sub, 0, len(sub.text)) < 0 {
+		return sub.s, true
+	}
+	re, err := c.program()
+	if err != nil {
+		return nil, false
+	}
+	if !re.Match(sub.text) {
 		return sub.s, true
 	}
 	var b []byte
 	if strings.IndexByte(t, '$') < 0 {
 		// No substitution patterns: the template is literal text.
-		b = c.re.ReplaceAllLiteral(sub.text, asciiBytes(t))
+		b = re.ReplaceAllLiteral(sub.text, asciiBytes(t))
 	} else {
 		goTmpl, ok := jsTemplateToGo(t, c)
 		if !ok {
 			return nil, false
 		}
-		b = c.re.ReplaceAll(sub.text, goTmpl)
+		b = re.ReplaceAll(sub.text, goTmpl)
 	}
 	if len(b) > maxStringLength {
 		return nil, false

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"regexp/syntax"
 	"strings"
 	"testing"
 
@@ -205,7 +206,7 @@ func TestRegExpEngineSelection(t *testing.T) {
 	}
 	for _, p := range exact {
 		_, c := compileForTest(t, p, "")
-		assert.NotNil(t, c.re, "/%s/ should run on RE2", p)
+		assert.True(t, c.exact, "/%s/ should run on RE2", p)
 		assert.Nil(t, c.bt.Load(), "/%s/ should not build a backtracking program", p)
 	}
 	inexact := []string{
@@ -214,8 +215,53 @@ func TestRegExpEngineSelection(t *testing.T) {
 	}
 	for _, p := range inexact {
 		_, c := compileForTest(t, p, "")
-		assert.Nil(t, c.re, "/%s/ should run on the backtracking VM", p)
+		assert.False(t, c.exact, "/%s/ should run on the backtracking VM", p)
 		assert.NotNil(t, c.bt.Load(), "/%s/ should have a backtracking program", p)
+	}
+}
+
+// An RE2 pattern is checked when it is built and compiled on first use: a
+// RegExp the run pattern, the native program or a literal serves never pays
+// for the RE2 program. The program is the translation's, compiled once.
+func TestRegExpProgramCompiledOnFirstUse(t *testing.T) {
+	r, c := compileForTest(t, `^item-(\d+)-(\d+)$`, "")
+	require.True(t, c.exact)
+	assert.Nil(t, c.re.Load(), "building a RegExp must not compile its RE2 program")
+	rx, err := r.regexpCreate(r.RegExpPrototype, FromGoString(`^item-(\d+)-(\d+)$`), FromGoString(""), regexpFlags{})
+	require.NoError(t, err)
+	v, err := regexpProtoTest(r, ObjectValue(rx), []Value{StringValue(FromGoString("item-7-42"))})
+	require.NoError(t, err)
+	assert.True(t, ToBoolean(v))
+	assert.Nil(t, c.re.Load(), "a match the run pattern serves must not compile the RE2 program")
+	re, err := c.program()
+	require.NoError(t, err)
+	assert.Equal(t, c.tr.body, re.String())
+	again, err := c.program()
+	require.NoError(t, err)
+	assert.Same(t, re, again)
+}
+
+// The limit check is skipped only for a short body without a counted
+// repetition; an escape's brace is not one.
+func TestRegExpNeedsLimitCheck(t *testing.T) {
+	for body, want := range map[string]bool{
+		`\Aitem\x{2d}7\x{2d}([0-9]+)\z`:     false,
+		`\p{Greek}+\P{L}`:                   false,
+		`a{2,5}`:                            true,
+		`\x{2d}{3}`:                         true,
+		`{`:                                 true,
+		strings.Repeat("a", limitFreeLen+1): true,
+		strings.Repeat("(", limitFreeLen/2) + strings.Repeat(")", limitFreeLen/2): false,
+	} {
+		assert.Equal(t, want, needsLimitCheck(body), "%.40q", body)
+	}
+	// Past the check, the largest search variant still parses: its program
+	// compiles on first use.
+	for p, flags := range map[string]string{`^item-7-(\d+)$`: "", `[\s-_]+(\w)`: "g", `\p{L}+`: "u", `(((((a)))))`: "i"} {
+		_, c := compileForTest(t, p, flags)
+		require.True(t, c.exact, p)
+		_, err := syntax.Parse(variantOpenLargest+c.tr.body+`)`, syntax.Perl)
+		assert.NoError(t, err, p)
 	}
 }
 
@@ -237,7 +283,7 @@ func TestRegExpBacktrackSubjectFallback(t *testing.T) {
 	}
 	for _, c := range cases {
 		r, cr := compileForTest(t, c.pattern, c.flags)
-		require.NotNil(t, cr.re, "/%s/%s", c.pattern, c.flags)
+		require.True(t, cr.exact, "/%s/%s", c.pattern, c.flags)
 		require.NotNil(t, cr.fastPaths().nat, "/%s/%s", c.pattern, c.flags)
 		var sub reSubject
 		for _, s := range []string{c.plain, c.special} {
@@ -262,7 +308,7 @@ func TestRegExpBacktrackSubjectFallback(t *testing.T) {
 // polls every btCheckInterval steps.
 func TestRegExpBacktrackInterrupt(t *testing.T) {
 	r, c := compileForTest(t, `(a+)+(?=$)`, "")
-	require.Nil(t, c.re)
+	require.False(t, c.exact)
 	subject := FromGoString(strings.Repeat("a", 30) + "b")
 	p, err := c.btProgram()
 	require.NoError(t, err)
@@ -304,7 +350,7 @@ func TestRegExpBacktrackProgramShared(t *testing.T) {
 	pattern := `(?<=shared-bt-)\w+(\1)`
 	_, c1 := compileForTest(t, pattern, "g")
 	_, c2 := compileForTest(t, pattern, "g")
-	require.Nil(t, c1.re)
+	require.False(t, c1.exact)
 	assert.Same(t, c1, c2)
 	p1, err := c1.btProgram()
 	require.NoError(t, err)
@@ -320,7 +366,7 @@ func TestRegExpBacktrackProgramFromKey(t *testing.T) {
 	pat := FromUTF16([]uint16{'(', '?', '<', '=', 0xD800, ')', 'x'})
 	c, err := r.compileRegExp(pat, regexpFlags{})
 	require.NoError(t, err)
-	require.Nil(t, c.re)
+	require.False(t, c.exact)
 	fresh := &compiledRegExp{flags: c.flags, key: c.key}
 	p, err := fresh.btProgram()
 	require.NoError(t, err)
