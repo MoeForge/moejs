@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"regexp/syntax"
 	"strings"
 	"testing"
 
@@ -238,6 +239,30 @@ func TestRegExpProgramCompiledOnFirstUse(t *testing.T) {
 	again, err := c.program()
 	require.NoError(t, err)
 	assert.Same(t, re, again)
+}
+
+// The limit check is skipped only for a short body without a counted
+// repetition; an escape's brace is not one.
+func TestRegExpNeedsLimitCheck(t *testing.T) {
+	for body, want := range map[string]bool{
+		`\Aitem\x{2d}7\x{2d}([0-9]+)\z`:     false,
+		`\p{Greek}+\P{L}`:                   false,
+		`a{2,5}`:                            true,
+		`\x{2d}{3}`:                         true,
+		`{`:                                 true,
+		strings.Repeat("a", limitFreeLen+1): true,
+		strings.Repeat("(", limitFreeLen/2) + strings.Repeat(")", limitFreeLen/2): false,
+	} {
+		assert.Equal(t, want, needsLimitCheck(body), "%.40q", body)
+	}
+	// Past the check, the largest search variant still parses: its program
+	// compiles on first use.
+	for p, flags := range map[string]string{`^item-7-(\d+)$`: "", `[\s-_]+(\w)`: "g", `\p{L}+`: "u", `(((((a)))))`: "i"} {
+		_, c := compileForTest(t, p, flags)
+		require.True(t, c.exact, p)
+		_, err := syntax.Parse(variantOpenLargest+c.tr.body+`)`, syntax.Perl)
+		assert.NoError(t, err, p)
+	}
 }
 
 // Subject-dependent fallbacks: an RE2 pattern runs a subject on the VM when

@@ -373,10 +373,40 @@ func compileRE2(ast *reAST, flags regexpFlags, sizeHint int) *translatedRegExp {
 	if err != nil {
 		return nil
 	}
-	if _, err := syntax.Parse(variantOpenLargest+tr.body+`)`, syntax.Perl); err != nil {
-		return nil
+	if needsLimitCheck(tr.body) {
+		if _, err := syntax.Parse(variantOpenLargest+tr.body+`)`, syntax.Perl); err != nil {
+			return nil
+		}
 	}
 	return tr
+}
+
+// limitFreeLen is the longest body that needs no limit check without a
+// counted repetition: RE2's limits are 1,000 levels of nesting and millions
+// of instructions and runes, and without {n,m} every node of the tree, and
+// every level, takes at least a byte of the body, so such a body and its
+// search variants stay far below them.
+const limitFreeLen = 900
+
+// needsLimitCheck reports whether a translated body could reach a limit of
+// RE2's parser once wrapped in a search variant: it is long or has a counted
+// repetition. The translation writes punctuation as \x{…}, so a brace right
+// after \x, \p or \P opens an escape, which RE2 never reads as a repetition.
+func needsLimitCheck(body string) bool {
+	if len(body) > limitFreeLen {
+		return true
+	}
+	for i := strings.IndexByte(body, '{'); i >= 0; {
+		if i < 2 || body[i-2] != '\\' || body[i-1] != 'x' && body[i-1] != 'p' && body[i-1] != 'P' {
+			return true
+		}
+		j := strings.IndexByte(body[i+1:], '{')
+		if j < 0 {
+			break
+		}
+		i += 1 + j
+	}
+	return false
 }
 
 func (r *Realm) regexpSyntaxError(pattern *String, flags regexpFlags, err error) error {
