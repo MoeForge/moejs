@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -134,6 +135,33 @@ func BenchmarkRegExpCompileMiss(b *testing.B) {
 		clear(r.regexpState().cache)
 		if _, err := r.NewRegExp(pattern, flags); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkRegExpNew builds a RegExp of a pattern no cache holds (each
+// iteration's differs), as `new RegExp("^item-" + id + "-(\\d+)$")` in a
+// loop does; BenchmarkRegExpNewTest then tests it once.
+func BenchmarkRegExpNew(b *testing.B) { benchRegExpNew(b, false) }
+
+func BenchmarkRegExpNewTest(b *testing.B) { benchRegExpNew(b, true) }
+
+func benchRegExpNew(b *testing.B, test bool) {
+	r := NewRealm()
+	flags := FromGoString("")
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		i++
+		id := strconv.Itoa(i)
+		rx, err := r.NewRegExp(FromGoString(`^item-`+id+`-(\d+)$`), flags)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if test {
+			if _, err := regexpProtoTest(r, ObjectValue(rx), []Value{str("item-" + id + "-42")}); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }

@@ -210,8 +210,8 @@ func FuzzRegExp(f *testing.F) {
 		if err != nil {
 			t.Fatalf("/%s/%s parses but NewRegExp fails: %v", pattern, flags, err)
 		}
-		if d := rx.RegExpData(); (d.c.re != nil) != onRE2 {
-			t.Fatalf("/%s/%s: runs on RE2 = %v, want %v", pattern, flags, d.c.re != nil, onRE2)
+		if d := rx.RegExpData(); (d.c.exact) != onRE2 {
+			t.Fatalf("/%s/%s: runs on RE2 = %v, want %v", pattern, flags, d.c.exact, onRE2)
 		}
 		watchdog := time.AfterFunc(time.Second, func() { r.Interrupt("fuzz watchdog") })
 		defer watchdog.Stop()
@@ -277,7 +277,7 @@ func FuzzRegExp(f *testing.F) {
 			t.Fatal(err)
 		}
 		d2 := rx2.RegExpData()
-		d2.c = &compiledRegExp{tr: d.c.tr, flags: d.c.flags, key: d.c.key, re: d.c.re, btCR: d.c.btCR, btFoldWord: d.c.btFoldWord}
+		d2.c = &compiledRegExp{tr: d.c.tr, flags: d.c.flags, key: d.c.key, exact: d.c.exact, btCR: d.c.btCR, btFoldWord: d.c.btFoldWord}
 		if want := replace(rx2, d2); got != want {
 			t.Fatalf("/%s/%s on %q: single-class replace = %q, without it %q", pattern, flags, subject, got, want)
 		}

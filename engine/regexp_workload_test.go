@@ -84,7 +84,7 @@ func workloadSelection(t *testing.T, files []string) []string {
 				if pattern == "(" {
 					assert.Error(t, err, "the corpus's invalid pattern")
 				} else if assert.NoError(t, err, "%s: /%s/%s", path, pattern, flags) {
-					assert.True(t, c.re != nil || c.simple != nil, "%s: /%s/%s must run on RE2 or the fast path", path, pattern, flags)
+					assert.True(t, c.exact || c.simple != nil, "%s: /%s/%s must run on RE2 or the fast path", path, pattern, flags)
 				}
 			}
 			h := fnv.New32a()
@@ -102,7 +102,7 @@ func regexpEngine(c *compiledRegExp) string {
 	switch {
 	case c.simple != nil:
 		return "simple"
-	case c.re == nil:
+	case !c.exact:
 		return "bt"
 	}
 	engine := "re2"

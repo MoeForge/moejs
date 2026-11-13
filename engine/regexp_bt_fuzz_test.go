@@ -66,7 +66,7 @@ func FuzzRegexpRE2VsBacktrack(f *testing.F) {
 		}
 		r := NewRealm()
 		c, err := r.compileRegExp(p, fl)
-		if err != nil || c.re == nil {
+		if err != nil || !c.exact {
 			return // RE2 rejected it (size limits): the VM runs it alone
 		}
 		bt := &compiledRegExp{flags: c.flags, key: c.key, tr: c.tr}

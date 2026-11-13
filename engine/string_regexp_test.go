@@ -14,7 +14,7 @@ import (
 // runReference is c without its run pattern: the engines it would
 // otherwise run on (RE2, or the backtracking VM).
 func runReference(c *compiledRegExp) *compiledRegExp {
-	ref := &compiledRegExp{flags: c.flags, key: c.key, tr: c.tr, re: c.re, btCR: c.btCR, btFoldWord: c.btFoldWord}
+	ref := &compiledRegExp{flags: c.flags, key: c.key, tr: c.tr, exact: c.exact, btCR: c.btCR, btFoldWord: c.btFoldWord}
 	if p := c.bt.Load(); p != nil {
 		ref.bt.Store(p)
 	}

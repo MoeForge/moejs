@@ -77,8 +77,8 @@ func TestRequiredLiteral(t *testing.T) {
 // withoutLiteral returns c without its required literal: the program as it
 // runs without the prefilter.
 func withoutLiteral(c *compiledRegExp) *compiledRegExp {
-	c0 := &compiledRegExp{tr: c.tr, flags: c.flags, key: c.key, re: c.re, btCR: c.btCR, btFoldWord: c.btFoldWord, simple: c.simple, run: c.run}
-	if c.re == nil {
+	c0 := &compiledRegExp{tr: c.tr, flags: c.flags, key: c.key, exact: c.exact, btCR: c.btCR, btFoldWord: c.btFoldWord, simple: c.simple, run: c.run}
+	if !c.exact {
 		c0.bt.Store(c.bt.Load())
 	}
 	c0.fast.Store(&reFast{nat: c.fastPaths().nat})

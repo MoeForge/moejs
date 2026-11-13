@@ -583,7 +583,7 @@ func TestAuditRegExpVariantCompilePanic(t *testing.T) {
 	}()
 	require.Nil(t, rec, "construction panicked: %v", rec)
 	require.NoError(t, err)
-	require.Nil(t, rx.RegExpData().c.re, "a pattern whose search variant cannot compile runs on the backtracking VM")
+	require.False(t, rx.RegExpData().c.exact, "a pattern whose search variant cannot compile runs on the backtracking VM")
 	for _, c := range []struct {
 		subject string
 		match   bool
@@ -599,7 +599,7 @@ func TestAuditRegExpVariantCompilePanic(t *testing.T) {
 	small := strings.Repeat("a{1000}", 3) + "a{5}"
 	rx, err = r.NewRegExp(FromGoString(small), FromGoString("y"))
 	require.NoError(t, err)
-	require.NotNil(t, rx.RegExpData().c.re)
+	require.True(t, rx.RegExpData().c.exact)
 	subject := FromGoString("b" + strings.Repeat("a", 3005))
 	for _, lastIndex := range []int{0, 1} {
 		require.NoError(t, r.setRegExpLastIndex(rx, lastIndex))
