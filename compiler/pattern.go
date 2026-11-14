@@ -56,6 +56,14 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 		// RequireObjectCoercible(value) still applies (`{} = null`,
 		// `{...rest} = null`).
 		f.emitA(bytecode.RequireObjectCoercible, src)
+	} else if f.observableBeforeRead(p) {
+		// RequireObjectCoercible(value) also precedes the first property
+		// key and target: test inline, so that a non-nullish value costs a
+		// jump and not a call of the rare op.
+		skip := f.newLabel()
+		f.emitJump(bytecode.JmpNotNullish, src, skip)
+		f.emitA(bytecode.RequireObjectCoercible, src)
+		f.bind(skip)
 	}
 	excl := -1
 	if p.Rest != nil {
@@ -109,6 +117,36 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 			f.bindPattern(p.Rest, r, mode)
 		}
 	}
+}
+
+// observableBeforeRead reports whether the non-empty object pattern p may
+// run code or throw before its first property read, which throws by itself
+// for a null or undefined value: a target reference evaluated first, or a
+// computed key other than a literal or a read of a local binding that
+// cannot throw.
+// With a rest element a computed key is converted (ToPropertyKey) before
+// the read.
+func (f *funcState) observableBeforeRead(p *syntax.ObjectPattern) bool {
+	prop := p.Props[0]
+	if f.isRefTarget(prop.Value) {
+		return true
+	}
+	if !prop.Computed {
+		return false
+	}
+	if p.Rest != nil {
+		return true
+	}
+	switch k := prop.Key.(type) {
+	case *syntax.StringLit, *syntax.NumberLit:
+		return false
+	case *syntax.Ident:
+		// A global declaration reads the global object (which a getter
+		// may own) or a binding the engine checks for initialization.
+		b := k.Binding
+		return b == nil || b.NeedsTDZ || b.Kind == syntax.BindImport || f.c.locs[b].isGlobal() || f.withsFor(b) != nil
+	}
+	return true
 }
 
 func (f *funcState) arrayPattern(p *syntax.ArrayPattern, src int, mode bindMode) {

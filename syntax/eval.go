@@ -104,7 +104,7 @@ func (r *resolver) markEvalSites() {
 			s.evalDone = true
 			for _, b := range s.Bindings {
 				b.Captured = true
-				if b.Kind.IsLexical() || b.Kind == BindParam && b.initEnd > 0 {
+				if b.hasTDZ() {
 					b.NeedsTDZ = true
 				}
 			}
