@@ -88,7 +88,7 @@ moejs 自己的代码是纯 Go，没有汇编，也不用 cgo。可以用 `CGO_E
 go get github.com/MoeForge/moejs
 ```
 
-需要 Go 1.25 或更高版本。moejs 唯一的依赖是 [moego](https://github.com/MoeForge/moego)，用于 Base64：在 amd64 和 arm64 上用 SIMD，在其他架构上或加 `-tags purego` 时是纯 Go。测试用到 testify。v0.1.0-alpha.10 及更早版本的模块路径是 `github.com/Calcium-Ion/moejs`，
+需要 Go 1.25 或更高版本。moejs 唯一的依赖是 [moego](https://github.com/MoeForge/moego)，用于 Base64，以及 `Unmarshal`、`ToGoInto`、`FromGo` 中经过 `encoding/json` 的转换：在 amd64 和 arm64 上用 SIMD，在其他架构上或加 `-tags purego` 时是纯 Go。测试用到 testify。v0.1.0-alpha.10 及更早版本的模块路径是 `github.com/Calcium-Ion/moejs`，
 之后的版本是 `github.com/MoeForge/moejs`，从旧版本升级时改一次导入路径即可。
 
 ```go

@@ -1,11 +1,12 @@
 package engine
 
 import (
-	"encoding/json"
 	"strconv"
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // Lazy host conversion. FromGo turns a non-empty JSON-shaped Go map

@@ -156,9 +156,10 @@ go get github.com/MoeForge/moejs
 ```
 
 moejs needs Go 1.25 or later. Its one dependency is
-[moego](https://github.com/MoeForge/moego), for Base64: SIMD on amd64 and
-arm64, pure Go on other architectures or with `-tags purego`. Tests use
-testify. Releases up to v0.1.0-alpha.10 have the module path
+[moego](https://github.com/MoeForge/moego), for Base64 and for the
+`encoding/json` round trips of `Unmarshal`, `ToGoInto` and `FromGo`: SIMD on
+amd64 and arm64, pure Go on other architectures or with `-tags purego`. Tests
+use testify. Releases up to v0.1.0-alpha.10 have the module path
 `github.com/Calcium-Ion/moejs`, and later ones `github.com/MoeForge/moejs`, so
 upgrading from them changes the import path once.
 

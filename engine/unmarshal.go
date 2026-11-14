@@ -2,7 +2,6 @@ package engine
 
 import (
 	"encoding"
-	"encoding/json"
 	"math"
 	"reflect"
 	"slices"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // Unmarshal without the text. Realm.Unmarshal stores a value into a Go

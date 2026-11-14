@@ -1,8 +1,9 @@
 package engine
 
 import (
-	"encoding/json"
 	"unsafe"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // json.RawMessage in FromGo. A RawMessage is JSON text the host already

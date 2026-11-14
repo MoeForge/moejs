@@ -1,8 +1,7 @@
 package moejs
 
 import (
-	"encoding/json"
-
+	"github.com/MoeForge/moego/json"
 	"github.com/MoeForge/moejs/engine"
 )
 

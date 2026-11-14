@@ -2,10 +2,11 @@ package engine
 
 import (
 	"encoding"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"unicode/utf8"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // FromGo of the types its type switches do not name. They are rare in a hook

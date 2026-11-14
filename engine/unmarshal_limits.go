@@ -2,7 +2,6 @@ package engine
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/MoeForge/moego/json"
 )
 
 // Bounded decodes. A host that decodes a hook's result into Go (Unmarshal,
