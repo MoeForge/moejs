@@ -51,6 +51,8 @@ test262 directory and how to update the baseline.
 
 - The root package is the public API: `Runtime`, `Module`, values,
   `Unmarshal` and the rest that [docs/guide.md](docs/guide.md) describes.
+- `tests` holds the root package's tests and benchmarks; its godoc
+  examples stay in the root's `example_test.go`.
 - `engine` has the values, objects, builtins and the interpreter. Most
   builtins live in an `engine/builtin_*.go` file, with their tests next to
   it.

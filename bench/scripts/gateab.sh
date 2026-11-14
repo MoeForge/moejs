@@ -46,7 +46,7 @@ one() { # one <base|head> <tree>
 		want=BenchmarkCompile/
 	else
 		(cd "$2/engine" && "$B/engine-$1$S.test" -test.run xxx -test.benchmem -test.benchtime "$BTIME" -test.bench '^Benchmark(Call|CallJSToJS|LoopSum|ForOfArray|TryCatchThrow|ObjectAssign|PropertyGetMonomorphic|PropertyGetPrototype|PluginHook|ModuleInstantiate|ArrayMap)$') >>"$f" 2>&1
-		(cd "$2" && "$B/root-$1$S.test" -test.run xxx -test.benchmem -test.benchtime "$BTIME" -test.bench '^BenchmarkCall$') >>"$f" 2>&1
+		(cd "$2/tests" && "$B/root-$1$S.test" -test.run xxx -test.benchmem -test.benchtime "$BTIME" -test.bench '^BenchmarkCall$') >>"$f" 2>&1
 		(cd "$2/bench" && BENCH_ENGINES=moejs "$B/bench-$1$S.test" -test.run xxx -test.benchmem -test.benchtime "$BTIME" -test.bench '^Benchmark(HookSuite|NewRuntime)$|^BenchmarkHostFlow$/^moejs$/./^all$|^BenchmarkInstantiate$/^moejs$/^(alibaba|sora)$|^BenchmarkMicro$/./^moejs$') >>"$f" 2>&1
 		want=BenchmarkHookSuite/
 	fi

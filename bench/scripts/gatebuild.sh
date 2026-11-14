@@ -49,5 +49,5 @@ fi
 cd "$T"
 go test -c $OV -ldflags=-funcalign=64 -o "$O/engine-$N.test" ./engine
 [ "${SCREEN:-1}" = 0 ] || sh "$SD/dispatchscreen.sh" "$O/engine-$N.test" "$T"
-go test -c $OV -ldflags=-funcalign=64 -o "$O/root-$N.test" .
+go test -c $OV -ldflags=-funcalign=64 -o "$O/root-$N.test" ./tests
 cd bench && go test -c $OV -ldflags=-funcalign=64 -o "$O/bench-$N.test" .
