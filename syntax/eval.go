@@ -104,6 +104,7 @@ func (r *resolver) markEvalSites() {
 			s.evalDone = true
 			for _, b := range s.Bindings {
 				b.Captured = true
+				b.EvalReach = true
 				if b.hasTDZ() {
 					b.NeedsTDZ = true
 				}

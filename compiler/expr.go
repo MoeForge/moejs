@@ -1205,7 +1205,7 @@ func (f *funcState) assign(e *syntax.AssignExpr, dst int, want bool) {
 			v = f.alloc()
 		}
 		f.expr(e.Value, v)
-		f.bindPattern(target, v, bindAssign)
+		f.bindPatternValue(target, v, bindAssign, e.Value)
 	case *syntax.CallExpr:
 		f.callTarget(target, "Invalid left-hand side in assignment")
 	default:
@@ -1587,11 +1587,25 @@ func (f *funcState) optChainMember(m *syntax.MemberExpr, base int) {
 	f.optLabel = f.newLabel()
 	f.expr(m.Object, base+1)
 	f.setPos(m.Pos)
+	done := f.newLabel()
 	if m.Optional {
-		f.optShort(base + 1)
+		// The chain's last link is optional: a non-nullish object jumps
+		// over the short circuit's undefined to the read, so that the
+		// read takes one dispatch less than with a jump over the
+		// undefined after it.
+		get := f.newLabel()
+		f.emitJump(bytecode.JmpNotNullish, base+1, get)
+		f.bind(f.optLabel)
+		f.emitA(bytecode.LoadUndef, base)
+		f.emitJump(bytecode.Jmp, 0, done)
+		f.bind(get)
+		f.setPos(m.Pos)
+		f.emitGet(base, base+1, m)
+		f.bind(done)
+		f.optLabel = saved
+		return
 	}
 	f.emitGet(base, base+1, m)
-	done := f.newLabel()
 	f.emitJump(bytecode.Jmp, 0, done)
 	f.bind(f.optLabel)
 	f.emitA(bytecode.LoadUndef, base)

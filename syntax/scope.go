@@ -53,9 +53,11 @@ func (k BindKind) IsLexical() bool { return k == BindLet || k == BindConst || k 
 // hasTDZ reports whether b can be read before it is initialised: a
 // let/const/class binding, or a parameter or catch parameter bound by a
 // pattern whose own expressions may run while it is still uninitialised
-// (initEnd marks where it is initialised).
+// (initEnd marks where it is initialised). Only those get an initEnd
+// (declare), so a positive one is tested first: one compare for every
+// lexical binding with an initialiser and for those parameters.
 func (b *Binding) hasTDZ() bool {
-	return b.Kind.IsLexical() || (b.Kind == BindParam || b.Kind == BindCatch) && b.initEnd > 0
+	return b.initEnd > 0 || b.Kind.IsLexical()
 }
 
 // Binding is a declared name. Every Ident that declares or references it
@@ -83,6 +85,15 @@ type Binding struct {
 	// lets the arguments object of a function none of whose parameters is
 	// Assigned alias them lazily (MapArguments).
 	Assigned bool
+	// NonNullInit marks a let or const identifier initialized by an
+	// expression whose normal result cannot be null or undefined.
+	NonNullInit bool
+	// Reassigned marks a binding that an assignment, update, destructuring
+	// assignment or for-in/of target names; unlike Assigned, the binding's
+	// own declaration does not set it.
+	Reassigned bool
+	// EvalReach marks a binding a direct eval can reach, and so write.
+	EvalReach bool
 
 	initEnd int // end offset of the initialising declarator or pattern (see hasTDZ)
 }
@@ -372,11 +383,11 @@ func (r *resolver) declare(s *Scope, id *Ident, kind BindKind, initEnd int) *Bin
 
 // declareLex declares a lexical binding, also rejecting a clash with a var
 // declared anywhere inside the scope's node.
-func (r *resolver) declareLex(s *Scope, id *Ident, kind BindKind, initEnd int) {
+func (r *resolver) declareLex(s *Scope, id *Ident, kind BindKind, initEnd int) *Binding {
 	if slices.Contains(r.varsIn[s.Node], id.Name) {
 		r.fail(id.Pos, "Identifier '"+id.Name+"' has already been declared")
 	}
-	r.declare(s, id, kind, initEnd)
+	return r.declare(s, id, kind, initEnd)
 }
 
 func (r *resolver) declareFunc(s *Scope, fd *FuncDecl, name *Ident) {
@@ -523,7 +534,8 @@ func (r *resolver) declareLexical(s *Scope, stmts []Stmt) {
 			}
 			for _, d := range st.Decls {
 				for _, id := range boundNames(d.Target, nil) {
-					r.declareLex(s, id, kind, d.End)
+					b := r.declareLex(s, id, kind, d.End)
+					b.NonNullInit = d.Target == id && HasNonNullResult(d.Init)
 				}
 			}
 		case *ClassDecl:
@@ -1177,6 +1189,7 @@ func (r *resolver) assignTarget(pat Pattern) {
 		r.ident(pat)
 		if pat.Binding != nil {
 			pat.Binding.Assigned = true
+			pat.Binding.Reassigned = true
 		}
 	case *MemberExpr:
 		r.expr(pat)
