@@ -822,6 +822,9 @@ func (r *Realm) OrdinaryCreateFromConstructor(newTarget *Object, defaultProto *O
 // writable, lazily created prototype) has it in that shape's slot; any
 // other shape, a prototype that is not an object and the lazy marker go
 // through [[Get]].
+//
+// A shared intrinsic as newTarget (Reflect.construct(F, [], Object)) keeps
+// no ctorSlots: every runtime reads it, so it is never written.
 func (r *Realm) constructThis(newTarget *Object) (*Object, error) {
 	var proto *Object
 	if s := newTarget.shape; s.parent == r.funcShape && s.key == StringKey(AtomPrototype) && s.attrs == attrWritable|attrLazy {
@@ -838,7 +841,7 @@ func (r *Realm) constructThis(newTarget *Object) (*Object, error) {
 	}
 	r.markPrototype(proto)
 	root := r.rootShapeFor(proto)
-	if fd := newTarget.FunctionData(); fd != nil {
+	if fd := newTarget.FunctionData(); fd != nil && newTarget.flags&flagShared == 0 {
 		if fd.ctorSlots < ctorProbe<<4 {
 			fd.probeCtor(r, root)
 		}

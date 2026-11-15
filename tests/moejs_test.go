@@ -998,6 +998,44 @@ func TestModuleSharedAcrossRuntimes(t *testing.T) {
 	}
 }
 
+// TestConstructSharedNewTargetAcrossRuntimes constructs a bytecode
+// function with a shared intrinsic as new.target in runtimes on several
+// goroutines: the intrinsic is the same object in all of them, so
+// constructing must not write to it. Run with -race.
+func TestConstructSharedNewTargetAcrossRuntimes(t *testing.T) {
+	mod, err := moejs.Compile("ctor.js", `function F() { this.a = 1; }
+export function run() {
+	for (const nt of [Object, Array, Error]) {
+		for (let i = 0; i < 40; i++) {
+			const o = Reflect.construct(F, [], nt);
+			if (o.a !== 1 || Object.getPrototypeOf(o) !== nt.prototype) return "bad";
+		}
+	}
+	return "ok";
+}`)
+	require.NoError(t, err)
+	run := mustHook(t, mod, "run")
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() {
+			rt := moejs.NewRuntime(moejs.Options{})
+			if errs[i] = rt.Load(mod); errs[i] != nil {
+				return
+			}
+			res, err := rt.Call(run)
+			if err == nil && res.String() != "ok" {
+				err = fmt.Errorf("got %s", res.String())
+			}
+			errs[i] = err
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		assert.NoError(t, err)
+	}
+}
+
 // TestModuleSharedAcrossRuntimesInterrupted runs one compiled module in 16
 // runtimes at once, each calling a hook 100 times while other goroutines
 // interrupt some of the calls: an interrupted call returns an
