@@ -39,7 +39,7 @@ func (f *funcState) bindPattern(pat syntax.Pattern, src int, mode bindMode) {
 		f.bind(skip)
 		f.bindPattern(p.Target, src, mode)
 	case *syntax.ObjectPattern:
-		f.objectPattern(p, src, mode)
+		f.objectPattern(p, src, mode, false)
 	case *syntax.ArrayPattern:
 		f.arrayPattern(p, src, mode)
 	default:
@@ -48,14 +48,39 @@ func (f *funcState) bindPattern(pat syntax.Pattern, src int, mode bindMode) {
 	}
 }
 
-func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMode) {
+// bindPatternValue binds a value whose source expression has already run.
+// A known non-null result needs no second null check before an object pattern.
+func (f *funcState) bindPatternValue(pat syntax.Pattern, src int, mode bindMode, value syntax.Expr) {
+	if p, ok := pat.(*syntax.ObjectPattern); ok {
+		nonNull := syntax.HasNonNullResult(value)
+		if id, ok := value.(*syntax.Ident); ok {
+			b := id.Binding
+			nonNull = b != nil && b.HoldsNonNull() && !f.c.locs[b].isGlobal() && f.withsFor(b) == nil
+		}
+		f.objectPattern(p, src, mode, nonNull)
+		return
+	}
+	f.bindPattern(pat, src, mode)
+}
+
+func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMode, nonNull bool) {
 	mark := f.nregs
 	defer f.free(mark)
-	if len(p.Props) == 0 {
+	check := -1
+	if !nonNull && len(p.Props) == 0 {
 		// No property read would throw for null/undefined, but
 		// RequireObjectCoercible(value) still applies (`{} = null`,
 		// `{...rest} = null`).
 		f.emitA(bytecode.RequireObjectCoercible, src)
+	} else if !nonNull && f.observableBeforeRead(p) {
+		// RequireObjectCoercible(value) also precedes the first property
+		// key and target: test inline, so that a non-nullish value costs a
+		// jump and not a call of the rare op. Neither instruction takes a
+		// line-table entry of its own (shareLine below).
+		pos := f.curPos
+		f.curPos = -1
+		check = f.emitCheck(src)
+		f.curPos = pos
 	}
 	excl := -1
 	if p.Rest != nil {
@@ -83,20 +108,35 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 			f.emitABx(bytecode.LoadConst, k, f.stringConst(name))
 		}
 		target, isRef := f.prepareTarget(prop.Value)
+		// A declaration's plain name in a register takes the value
+		// straight from the read, which writes it only once it has the
+		// value, instead of through v and a Move: no code can see the
+		// register in between (closures see environment bindings, and an
+		// assignment, which checks the binding first, takes v).
+		dst := v
+		if id, ok := prop.Value.(*syntax.Ident); ok && mode == bindInit {
+			if r := f.regOf(id.Binding); r >= 0 && r != src && r != k {
+				dst = r
+			}
+		}
 		if k >= 0 && (prop.Computed || isArrayIndexName(name)) {
-			f.emitABC(bytecode.GetElem, v, src, k)
+			f.emitABC(bytecode.GetElem, dst, src, k)
 		} else {
-			f.emitGetNamed(v, src, name)
+			f.emitGetNamed(dst, src, name)
 		}
 		if excl >= 0 {
 			f.emitAB(bytecode.ArrayPush, excl, k)
 		}
 		if isRef {
 			f.storeTarget(target, v, mode)
-		} else {
+		} else if dst == v {
 			f.bindPattern(prop.Value, v, mode)
 		}
 		f.free(m)
+		if check >= 0 {
+			f.shareLine(check, check+2)
+			check = -1
+		}
 	}
 	if p.Rest != nil {
 		target, isRef := f.prepareTarget(p.Rest)
@@ -109,6 +149,63 @@ func (f *funcState) objectPattern(p *syntax.ObjectPattern, src int, mode bindMod
 			f.bindPattern(p.Rest, r, mode)
 		}
 	}
+}
+
+// emitCheck emits RequireObjectCoercible of register src behind a jump
+// that skips it for any other value, and returns the jump's pc. The jump
+// skips the one instruction after it: patched in place, with no label to
+// allocate.
+func (f *funcState) emitCheck(src int) int {
+	at := f.emitWord(bytecode.EncodeAsBx(bytecode.JmpNotNullish, uint8(src), 0))
+	f.emitA(bytecode.RequireObjectCoercible, src)
+	f.patchJump(at, f.pc())
+	return at
+}
+
+// shareLine gives the instructions from pc to next, emitted without a
+// line-table entry, the position of the instruction at next when an entry
+// starts there, instead of a second entry: the entry starts at pc. Else
+// they keep the entry before them.
+func (f *funcState) shareLine(pc, next int) {
+	for i := len(f.lines) - 1; i >= 0; i-- {
+		switch at := int(f.lines[i].PC); {
+		case at == next:
+			f.lines[i].PC = uint32(pc)
+			return
+		case at < next:
+			return
+		}
+	}
+}
+
+// observableBeforeRead reports whether the non-empty object pattern p may
+// run code or throw before its first property read, which throws by itself
+// for a null or undefined value: a target reference evaluated first, or a
+// computed key other than a literal or a read of a local binding that
+// cannot throw.
+// With a rest element a computed key is converted (ToPropertyKey) before
+// the read.
+func (f *funcState) observableBeforeRead(p *syntax.ObjectPattern) bool {
+	prop := p.Props[0]
+	if f.isRefTarget(prop.Value) {
+		return true
+	}
+	if !prop.Computed {
+		return false
+	}
+	if p.Rest != nil {
+		return true
+	}
+	switch k := prop.Key.(type) {
+	case *syntax.StringLit, *syntax.NumberLit:
+		return false
+	case *syntax.Ident:
+		// A global declaration reads the global object (which a getter
+		// may own) or a binding the engine checks for initialization.
+		b := k.Binding
+		return b == nil || b.NeedsTDZ || b.Kind == syntax.BindImport || f.c.locs[b].isGlobal() || f.withsFor(b) != nil
+	}
+	return true
 }
 
 func (f *funcState) arrayPattern(p *syntax.ArrayPattern, src int, mode bindMode) {

@@ -189,7 +189,7 @@ func (f *funcState) varDecl(d *syntax.VarDecl) {
 			continue
 		}
 		v := f.patternSource(decl.Init, decl.Target)
-		f.bindPattern(decl.Target, v, bindInit)
+		f.bindPatternValue(decl.Target, v, bindInit, decl.Init)
 		f.free(mark)
 	}
 }

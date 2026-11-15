@@ -50,6 +50,16 @@ func (k BindKind) String() string {
 // has a temporal dead zone.
 func (k BindKind) IsLexical() bool { return k == BindLet || k == BindConst || k == BindClass }
 
+// hasTDZ reports whether b can be read before it is initialised: a
+// let/const/class binding, or a parameter or catch parameter bound by a
+// pattern whose own expressions may run while it is still uninitialised
+// (initEnd marks where it is initialised). Only those get an initEnd
+// (declare), so a positive one is tested first: one compare for every
+// lexical binding with an initialiser and for those parameters.
+func (b *Binding) hasTDZ() bool {
+	return b.initEnd > 0 || b.Kind.IsLexical()
+}
+
 // Binding is a declared name. Every Ident that declares or references it
 // points here.
 type Binding struct {
@@ -75,8 +85,17 @@ type Binding struct {
 	// lets the arguments object of a function none of whose parameters is
 	// Assigned alias them lazily (MapArguments).
 	Assigned bool
+	// NonNullInit marks a let or const identifier initialized by an
+	// expression whose normal result cannot be null or undefined.
+	NonNullInit bool
+	// Reassigned marks a binding that an assignment, update, destructuring
+	// assignment or for-in/of target names; unlike Assigned, the binding's
+	// own declaration does not set it.
+	Reassigned bool
+	// EvalReach marks a binding a direct eval can reach, and so write.
+	EvalReach bool
 
-	initEnd int // end offset of the initialising declarator (lexical bindings)
+	initEnd int // end offset of the initialising declarator or pattern (see hasTDZ)
 }
 
 // Scope is a node of the scope tree.
@@ -364,11 +383,11 @@ func (r *resolver) declare(s *Scope, id *Ident, kind BindKind, initEnd int) *Bin
 
 // declareLex declares a lexical binding, also rejecting a clash with a var
 // declared anywhere inside the scope's node.
-func (r *resolver) declareLex(s *Scope, id *Ident, kind BindKind, initEnd int) {
+func (r *resolver) declareLex(s *Scope, id *Ident, kind BindKind, initEnd int) *Binding {
 	if slices.Contains(r.varsIn[s.Node], id.Name) {
 		r.fail(id.Pos, "Identifier '"+id.Name+"' has already been declared")
 	}
-	r.declare(s, id, kind, initEnd)
+	return r.declare(s, id, kind, initEnd)
 }
 
 func (r *resolver) declareFunc(s *Scope, fd *FuncDecl, name *Ident) {
@@ -515,7 +534,8 @@ func (r *resolver) declareLexical(s *Scope, stmts []Stmt) {
 			}
 			for _, d := range st.Decls {
 				for _, id := range boundNames(d.Target, nil) {
-					r.declareLex(s, id, kind, d.End)
+					b := r.declareLex(s, id, kind, d.End)
+					b.NonNullInit = d.Target == id && HasNonNullResult(d.Init)
 				}
 			}
 		case *ClassDecl:
@@ -1169,6 +1189,7 @@ func (r *resolver) assignTarget(pat Pattern) {
 		r.ident(pat)
 		if pat.Binding != nil {
 			pat.Binding.Assigned = true
+			pat.Binding.Reassigned = true
 		}
 	case *MemberExpr:
 		r.expr(pat)
@@ -1295,8 +1316,10 @@ func (r *resolver) tryStmt(s *TryStmt) {
 			s.CatchScope = cs
 			r.push(cs)
 			names := boundNames(s.Param, nil)
-			for _, id := range names {
-				r.declare(cs, id, BindCatch, 0)
+			if isSimpleParam(s.Param) {
+				r.declare(cs, s.Param.(*Ident), BindCatch, 0)
+			} else {
+				r.declareCatchPattern(cs, s.Param, 0)
 			}
 			if !isSimpleParam(s.Param) {
 				for _, name := range r.varsIn[s.Handler] {
@@ -1312,6 +1335,40 @@ func (r *resolver) tryStmt(s *TryStmt) {
 	}
 	if s.Finalizer != nil {
 		r.block(s.Finalizer, nil)
+	}
+}
+
+// declareCatchPattern declares the names a catch parameter pattern binds.
+// The pattern's defaults and computed keys may read them before they are
+// initialised, so each gets as initEnd the end of the element that
+// initialises it: the identifier itself, or the outermost element with a
+// default around it, whose default runs before the target is bound. The
+// elements run in source order, so code that ends before initEnd may run
+// first and code past it runs after.
+func (r *resolver) declareCatchPattern(cs *Scope, pat Pattern, initEnd int) {
+	switch p := pat.(type) {
+	case *Ident:
+		_, end := p.Range()
+		r.declare(cs, p, BindCatch, max(end, initEnd))
+	case *AssignPattern:
+		_, end := p.Range()
+		r.declareCatchPattern(cs, p.Target, max(end, initEnd))
+	case *ObjectPattern:
+		for _, prop := range p.Props {
+			r.declareCatchPattern(cs, prop.Value, initEnd)
+		}
+		if p.Rest != nil {
+			r.declareCatchPattern(cs, p.Rest, initEnd)
+		}
+	case *ArrayPattern:
+		for _, e := range p.Elems {
+			if e != nil {
+				r.declareCatchPattern(cs, e, initEnd)
+			}
+		}
+		if p.Rest != nil {
+			r.declareCatchPattern(cs, p.Rest, initEnd)
+		}
 	}
 }
 
@@ -1587,7 +1644,7 @@ func (r *resolver) ident(id *Ident) {
 		} else {
 			info.earlyRef = min(info.earlyRef, first.fn.Pos)
 		}
-	case (b.Kind.IsLexical() || b.Kind == BindParam && b.initEnd > 0) && !b.NeedsTDZ:
+	case b.hasTDZ() && !b.NeedsTDZ:
 		r.checkTDZ(id, b, owner, last)
 	}
 }

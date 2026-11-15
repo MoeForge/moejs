@@ -1205,7 +1205,7 @@ func (f *funcState) assign(e *syntax.AssignExpr, dst int, want bool) {
 			v = f.alloc()
 		}
 		f.expr(e.Value, v)
-		f.bindPattern(target, v, bindAssign)
+		f.bindPatternValue(target, v, bindAssign, e.Value)
 	case *syntax.CallExpr:
 		f.callTarget(target, "Invalid left-hand side in assignment")
 	default:
@@ -1539,20 +1539,7 @@ func (f *funcState) call(e *syntax.CallExpr, dst int) {
 			undefThis = f.undefThis(plain, base)
 			break
 		}
-		saved := f.optLabel
-		f.optLabel = f.newLabel()
-		f.expr(m.Object, base+1)
-		f.setPos(m.Pos)
-		if m.Optional {
-			f.optShort(base + 1)
-		}
-		f.emitGet(base, base+1, m)
-		done := f.newLabel()
-		f.emitJump(bytecode.Jmp, 0, done)
-		f.bind(f.optLabel)
-		f.emitA(bytecode.LoadUndef, base)
-		f.bind(done)
-		f.optLabel = saved
+		f.optChainMember(m, base)
 	default:
 		if id, ok := callee.(*syntax.Ident); ok && f.withsFor(id.Binding) != nil {
 			f.withCallee(id, base)
@@ -1589,6 +1576,41 @@ func (f *funcState) call(e *syntax.CallExpr, dst int) {
 		f.emitAB(bytecode.Call, base, len(e.Args))
 	}
 	f.emitMove(dst, base)
+}
+
+// optChainMember loads the callee of a call or tag that is an optional
+// chain ending in the member access m, such as (a?.b)() or (a?.b)`x`: the
+// function into R[base] and its this value, the object, into R[base+1]. A
+// short-circuited chain leaves undefined in R[base] for the call to reject.
+func (f *funcState) optChainMember(m *syntax.MemberExpr, base int) {
+	saved := f.optLabel
+	f.optLabel = f.newLabel()
+	f.expr(m.Object, base+1)
+	f.setPos(m.Pos)
+	done := f.newLabel()
+	if m.Optional {
+		// The chain's last link is optional: a non-nullish object jumps
+		// over the short circuit's undefined to the read, so that the
+		// read takes one dispatch less than with a jump over the
+		// undefined after it.
+		get := f.newLabel()
+		f.emitJump(bytecode.JmpNotNullish, base+1, get)
+		f.bind(f.optLabel)
+		f.emitA(bytecode.LoadUndef, base)
+		f.emitJump(bytecode.Jmp, 0, done)
+		f.bind(get)
+		f.setPos(m.Pos)
+		f.emitGet(base, base+1, m)
+		f.bind(done)
+		f.optLabel = saved
+		return
+	}
+	f.emitGet(base, base+1, m)
+	f.emitJump(bytecode.Jmp, 0, done)
+	f.bind(f.optLabel)
+	f.emitA(bytecode.LoadUndef, base)
+	f.bind(done)
+	f.optLabel = saved
 }
 
 // applyArguments compiles f.apply(x, arguments) of a function with
@@ -1753,6 +1775,14 @@ func (f *funcState) taggedTemplate(e *syntax.TaggedTemplate, dst int) {
 		f.expr(tag.Object, base+1)
 		f.setPos(tag.Pos)
 		f.emitGet(base, base+1, tag)
+	case *syntax.OptChain:
+		// (a?.b)`x` still calls with this = a, as (a?.b)() does.
+		if m, ok := tag.X.(*syntax.MemberExpr); ok {
+			f.optChainMember(m, base)
+			break
+		}
+		f.expr(tag, base)
+		undefThis = true
 	default:
 		if id, ok := tag.(*syntax.Ident); ok && f.withsFor(id.Binding) != nil {
 			f.withCallee(id, base)
