@@ -401,6 +401,9 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 		var a *Object
 		var err error
 		usesList := !IsConstructor(this) || this.AsObject() == r.ArrayCtor
+		if fast && usesList && mapper == nil && items.IsString() {
+			return arrayFromString(r, items.AsString())
+		}
 		if !usesList {
 			if a, _, err = arrayCreateFrom(r, this, 0, false); err != nil {
 				return Undefined(), err
@@ -495,6 +498,67 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 		}
 	}
 	return ObjectValue(a), nil
+}
+
+// arrayFromString handles the unobservable string iteration of Array.from:
+// no mapper or custom constructor can run code while the array is filled.
+// Count code points before allocating instead of growing a temporary list,
+// and reuse the shared ASCII characters instead of allocating substrings.
+func arrayFromString(r *Realm, s *String) (Value, error) {
+	f := s
+	if s.needsFlat() {
+		f = s.flat(new(String))
+	}
+	n := f.Len()
+	if f.kind == strUTF16 {
+		u := f.units()
+		for i := 0; i < len(u); i++ {
+			if err := interruptEvery(r, int64(i)); err != nil {
+				return Undefined(), err
+			}
+			if u[i] >= 0xdc00 && u[i] < 0xe000 && i > 0 && u[i-1] >= 0xd800 && u[i-1] < 0xdc00 {
+				n--
+			}
+		}
+	}
+	if n > int(^uint(0)>>1)/valueSize {
+		return Undefined(), r.RangeError("Invalid array length")
+	}
+	if err := r.reserve(n * valueSize); err != nil {
+		return Undefined(), err
+	}
+	ao, values := r.newArrayExact(n)
+	// The storage was charged before allocation; initArray charges only
+	// the object, then takes ownership of that storage without charging it again.
+	a := r.initArray(ao, nil, uint32(n))
+	a.setElems(values)
+	if f.kind == strASCII {
+		for i := range values {
+			if err := interruptEvery(r, int64(i)); err != nil {
+				return Undefined(), err
+			}
+			values[i] = StringValue(charString(uint16(f.s[i])))
+		}
+	} else {
+		u := f.units()
+		for i, k := 0, 0; k < n; k++ {
+			if err := interruptEvery(r, int64(k)); err != nil {
+				return Undefined(), err
+			}
+			c := u[i]
+			if c >= 0xd800 && c < 0xdc00 && i+1 < len(u) && u[i+1] >= 0xdc00 && u[i+1] < 0xe000 {
+				values[k] = StringValue(r.substring(s, i, i+2))
+				i += 2
+			} else {
+				if c >= 0x80 {
+					r.chargeString(2)
+				}
+				values[k] = StringValue(charString(c))
+				i++
+			}
+		}
+	}
+	return ObjectValue(a), r.CheckInterrupt()
 }
 
 // arrayOf implements Array.of(...items).
