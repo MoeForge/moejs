@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -51,8 +52,8 @@ func TestArrayFromStringInterrupted(t *testing.T) {
 		r := NewRealm()
 		cause := errors.New("canceled")
 		r.Interrupt(cause)
-		// Call the builtin directly so its loops, rather than the call entry,
-		// must observe the pending interrupt in either counting or filling.
+		// Call the builtin directly so it, rather than the public call
+		// entry, must observe the pending interrupt.
 		_, err := arrayFrom(r, ObjectValue(r.ArrayCtor), []Value{StringValue(FromGoString(text))})
 		require.ErrorIs(t, err, cause)
 		r.ClearInterrupt()
@@ -74,4 +75,55 @@ func TestArrayFromStringObservableProtocol(t *testing.T) {
 		{"nonconstructor receiver", `return Array.from.call(null,"a\u{1f600}").length`, "2"},
 		{"boxed string", `return Array.from(new String("a\u{1f600}")).length`, "2"},
 	})
+}
+
+// Allocation counts alone cannot catch a full-size backing array: it is
+// one allocation regardless of the input length.
+func TestArrayFromStringInterruptedAllocation(t *testing.T) {
+	r := NewRealm() // Default configuration, with no memory limit.
+	s := FromGoString(strings.Repeat("a", 64<<10))
+	args := []Value{StringValue(s)}
+	cause := errors.New("canceled")
+	r.Interrupt(cause)
+	_, err := arrayFrom(r, ObjectValue(r.ArrayCtor), args)
+	require.ErrorIs(t, err, cause)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	const runs = 16
+	for range runs {
+		_, err = arrayFrom(r, ObjectValue(r.ArrayCtor), args)
+		require.ErrorIs(t, err, cause)
+	}
+	runtime.ReadMemStats(&after)
+	// Allow ample room for errors and incidental allocations, but not
+	// the 1 MiB backing store that this input would require.
+	require.Less(t, (after.TotalAlloc-before.TotalAlloc)/runs, uint64(64<<10))
+}
+
+func TestArrayFromStringSingleCharacterReuse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		s    *String
+		want []uint16
+	}{
+		{"BMP", FromGoString("中"), []uint16{0x4e2d}},
+		{"lazy BMP", FromHostString("中"), []uint16{0x4e2d}},
+		{"high surrogate", FromUTF16([]uint16{0xd800}), []uint16{0xd800}},
+		{"low surrogate", FromUTF16([]uint16{0xdc00}), []uint16{0xdc00}},
+		{"pair", FromGoString("😀"), []uint16{0xd83d, 0xde00}},
+		{"lazy pair", FromHostString("😀"), []uint16{0xd83d, 0xde00}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRealm()
+			v, err := arrayFrom(r, ObjectValue(r.ArrayCtor), []Value{StringValue(tc.s)})
+			require.NoError(t, err)
+			require.Equal(t, uint32(1), v.AsObject().ArrayLength())
+			got, err := getIndex(r, v.AsObject(), 0)
+			require.NoError(t, err)
+			require.Same(t, tc.s, got.AsString())
+			require.Equal(t, tc.want, got.AsString().UTF16())
+		})
+	}
 }

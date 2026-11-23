@@ -507,6 +507,10 @@ func arrayFrom(r *Realm, this Value, args []Value) (Value, error) {
 func arrayFromString(r *Realm, s *String) (Value, error) {
 	f := s
 	if s.needsFlat() {
+		// Do not decode or flatten a string for an already canceled call.
+		if err := r.CheckInterrupt(); err != nil {
+			return Undefined(), err
+		}
 		f = s.flat(new(String))
 	}
 	n := f.Len()
@@ -524,6 +528,11 @@ func arrayFromString(r *Realm, s *String) (Value, error) {
 	if n > int(^uint(0)>>1)/valueSize {
 		return Undefined(), r.RangeError("Invalid array length")
 	}
+	// Counting or flattening may take time, and reserve only polls when
+	// a memory limit is active. Check before allocating in either case.
+	if err := r.CheckInterrupt(); err != nil {
+		return Undefined(), err
+	}
 	if err := r.reserve(n * valueSize); err != nil {
 		return Undefined(), err
 	}
@@ -539,6 +548,10 @@ func arrayFromString(r *Realm, s *String) (Value, error) {
 			}
 			values[i] = StringValue(charString(uint16(f.s[i])))
 		}
+	} else if n == 1 && f.units()[0] >= 0x80 {
+		// The only code point spans the input. Keep its original owner,
+		// not a temporary flat view, and avoid charging a new string.
+		values[0] = StringValue(s)
 	} else {
 		u := f.units()
 		for i, k := 0, 0; k < n; k++ {
